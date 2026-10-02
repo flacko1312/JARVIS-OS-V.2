@@ -87,29 +87,49 @@ class LilithClient:
         raise LilithConnectionError(str(last_exc))
 
     @staticmethod
+    def _detail(resp: httpx.Response) -> dict:
+        """Structured error detail ({code, message, retryable}) if the body has one."""
+        try:
+            detail = resp.json().get("detail", {}) if resp.content else {}
+        except ValueError:
+            return {}
+        return detail if isinstance(detail, dict) else {"message": str(detail)}
+
+    @staticmethod
     def _handle_response(resp: httpx.Response) -> dict:
+        # JL-H005: keep LILITH's structured error code (e.g. entity_unavailable) so the
+        # caller can report the real reason instead of a generic "HTTP 502".
+        detail = LilithClient._detail(resp)
+        code = detail.get("code")
         if resp.status_code == 401:
             raise LilithAuthError()
         if resp.status_code == 403:
-            detail = resp.json().get("detail", {}) if resp.content else {}
-            code = detail.get("code", "forbidden") if isinstance(detail, dict) else "forbidden"
-            msg = detail.get("message", "Acceso denegado") if isinstance(detail, dict) else str(detail)
-            raise LilithForbiddenError(msg, code=code)
+            raise LilithForbiddenError(detail.get("message", "Acceso denegado"), code=code or "forbidden")
         if resp.status_code == 404:
-            detail = resp.json().get("detail", {}) if resp.content else {}
-            msg = detail.get("message", "No encontrado") if isinstance(detail, dict) else str(detail)
-            raise LilithNotFoundError(msg)
+            exc = LilithNotFoundError(detail.get("message", "No encontrado"))
+            if code:
+                exc.code = code
+            raise exc
         if resp.status_code >= 500:
-            raise LilithServerError(f"HTTP {resp.status_code}")
+            exc = LilithServerError(detail.get("message") or f"HTTP {resp.status_code}")
+            if code:
+                exc.code = code
+            exc.retryable = bool(detail.get("retryable", True))
+            raise exc
+        if resp.status_code >= 400:
+            from lilith_client.errors import LilithError
+            raise LilithError(
+                detail.get("message", f"HTTP {resp.status_code}"),
+                code=code or "bad_request", retryable=bool(detail.get("retryable", False)),
+            )
 
         body = resp.json()
         if not body.get("ok", False):
-            detail = body
-            code = detail.get("code", "unknown")
-            msg = detail.get("message", "Error desconocido")
-            retryable = detail.get("retryable", False)
             from lilith_client.errors import LilithError
-            raise LilithError(msg, code=code, retryable=retryable)
+            raise LilithError(
+                body.get("message", "Error desconocido"),
+                code=body.get("code", "unknown"), retryable=body.get("retryable", False),
+            )
 
         return body.get("data", body)
 
@@ -181,3 +201,13 @@ class LilithClient:
         if parameters:
             payload["parameters"] = parameters
         return await self._request("POST", f"{_INTEGRATION}/home/action", json=payload)
+
+    # ── 6. Home Resolve (JL-H005) ───────────────────────────────────────
+
+    async def home_resolve(self, query: str) -> dict:
+        """Resolve a natural device reference to an entity_id (read-only).
+
+        Returns ``{"status": resolved|ambiguous|unknown|not_allowed, ...}``. LILITH owns
+        the entities and the authorization; this never executes anything.
+        """
+        return await self._request("POST", f"{_INTEGRATION}/home/resolve", json={"query": query})

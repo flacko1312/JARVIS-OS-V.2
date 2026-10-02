@@ -45,6 +45,13 @@ this PC when tested), `LILITH_API_KEY` = the **token part only** of an `API_INTE
 it can use memory and `/home/action` (allowlisted lights only) and is rejected on `/api/ha/services/*`.
 **Never use an ADMIN token here.**
 
+## Install note (important)
+
+The `jarvis` command runs from an editable install whose module map is fixed at install time. After
+pulling this branch run once: `.venv\Scripts\python.exe -m pip install -e . --no-deps`. Without it
+`runtime`/`router`/`lilith_client` are not importable from the `jarvis` command and the bridge disables
+itself (the HUD then shows `SYS: LILITH is configured but the integration could not be loaded.`).
+
 ## Tests
 
 * `tests/test_lilith_runtime_wiring.py`: 35 offline unittest tests (bridge, real router through the real

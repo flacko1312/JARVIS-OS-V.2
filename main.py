@@ -2038,6 +2038,9 @@ class JarvisLive:
         # machine's LILITH credential.
         if not self.cloud_safe:
             self._lilith = LilithBridge.from_env()
+            if self._lilith is None and os.environ.get("LILITH_API_URL") and os.environ.get("LILITH_API_KEY"):
+                # Configured but not loadable (e.g. stale editable install): never fail silently.
+                self.ui.write_log("SYS: LILITH is configured but the integration could not be loaded.")
             if self._lilith is not None:
                 started = await self._lilith.start()
                 state = "online" if self._lilith.lilith_available else "offline (will reconnect)"

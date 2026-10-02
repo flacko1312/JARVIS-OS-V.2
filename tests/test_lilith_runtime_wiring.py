@@ -252,8 +252,11 @@ class FakeLilithClient:
         self.searched.append(query)
         return [{"value": "mi test es azul"}]
 
-    async def home_action(self, *a, **kw):  # must never be reached without an entity
-        raise AssertionError("home_action must not run without entity resolution")
+    async def home_action(self, *a, **kw):  # must never be reached without an on/off command
+        raise AssertionError("home_action must not run for texts without an on/off command")
+
+    async def home_resolve(self, *a, **kw):
+        raise AssertionError("home_resolve must not run for texts without an on/off command")
 
 
 def _real_runtime_bridge(available=True):
@@ -280,13 +283,12 @@ class RealRouterThroughBridgeTests(unittest.TestCase):
         self.assertTrue(out.handled)
         self.assertIn("mi test es azul", out.message)
 
-    def test_home_like_texts_still_reach_gemini(self):
-        """HOME words ('luz', 'bombilla', 'puerta', ...) are classified as HOME but
-        entity resolution is JL-H005, so LILITH does nothing: these must keep going
-        to Gemini instead of being swallowed by a clarification question."""
+    def test_home_like_texts_without_on_off_command_still_reach_gemini(self):
+        """HOME words ('luz', 'puerta', ...) without a supported on/off verb: LILITH does
+        nothing and the text keeps going to Gemini (JL-H005 handles the on/off commands,
+        see test_lilith_home_resolution.py)."""
         bridge, fake = _real_runtime_bridge()
-        for text in ("enciende la luz del salón", "baja la luz de la pantalla",
-                     "cierra la puerta del garaje"):
+        for text in ("baja la luz de la pantalla", "cierra la puerta del garaje"):
             out = asyncio.run(bridge.route_typed(text))
             self.assertFalse(out.handled, text)
             self.assertEqual(out.reason, "needs_clarification", text)
@@ -407,9 +409,19 @@ class RunLifecycleTests(unittest.TestCase):
 
         async def live():
             ran.append(True)
-        self._run(jarvis, None, live)
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("LILITH_API_URL", None)   # hermetic: .env may define them
+            os.environ.pop("LILITH_API_KEY", None)
+            self._run(jarvis, None, live)
         self.assertEqual(ran, [True])
         self.assertEqual(client.logs, [])
+
+    def test_configured_but_unloadable_bridge_is_reported_in_the_hud(self):
+        jarvis, client = _live()
+        env = {"LILITH_API_URL": "http://x:8000", "LILITH_API_KEY": "k"}
+        with patch.dict(os.environ, env):
+            self._run(jarvis, None)
+        self.assertTrue(any("could not be loaded" in l for l in client.logs))
 
     def test_cloud_safe_never_starts_the_bridge(self):
         bridge = FakeBridge()

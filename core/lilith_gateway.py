@@ -10,9 +10,10 @@ Design rules:
   * Optional: with ``LILITH_API_URL`` / ``LILITH_API_KEY`` unset the bridge is
     ``None`` and JARVIS behaves exactly as before.
   * Never raises into the caller; every failure means "pass through to Gemini".
-  * Pass through (do NOT swallow the text) when LILITH is offline, when the router
-    needs clarification (HOME without entity resolution, JL-H005), when the router
-    did not handle the text, or on any error.
+  * Pass through (do NOT swallow the text) when LILITH is offline (except HOME, whose
+    failure is reported in the HUD so Gemini cannot claim a success), when the router
+    has no supported command (HOME without an on/off verb), when the router did not
+    handle the text, or on any error.
   * Voice is not routed here (Gemini transcripts arrive too late); see JL-W005.
 """
 from __future__ import annotations
@@ -142,13 +143,19 @@ class LilithBridge:
             return TypedRouteOutcome(handled=False, reason="not_handled", domain=domain)
 
         data = result.get("data")
+        if isinstance(data, dict) and data.get("offline") and domain == "home":
+            # Physical control: say it could not be done instead of letting Gemini improvise.
+            return TypedRouteOutcome(
+                handled=True, reason="lilith_offline", domain=domain,
+                message=str(data.get("message") or "LILITH no está disponible. No puedo controlar la casa ahora."),
+            )
         if isinstance(data, dict) and data.get("offline"):
             return TypedRouteOutcome(
                 handled=False, reason="lilith_offline", domain=domain,
                 notice="LILITH no disponible; continúo con Gemini.",
             )
         if isinstance(data, dict) and data.get("needs_clarification"):
-            # JL-H005: no name->entity resolution yet, so LILITH did nothing.
+            # HOME text without a supported on/off command: LILITH did nothing.
             return TypedRouteOutcome(handled=False, reason="needs_clarification", domain=domain)
 
         return TypedRouteOutcome(
