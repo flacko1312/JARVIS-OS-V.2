@@ -1594,7 +1594,28 @@ class JarvisLive:
         except Exception as e:
             print(f"[JARVIS] ⚠️ Greeting failed: {e}")
 
-    def _build_config(self) -> types.LiveConnectConfig:
+    @staticmethod
+    def _format_lilith_context(ctx: dict) -> str:
+        """Format LILITH personal knowledge into a system-prompt block."""
+        categories = ctx.get("categories", {})
+        if not categories:
+            return ""
+        lines = ["[LILITH PERSISTENT MEMORY — authoritative facts about this person]\n"]
+        for cat, facts in categories.items():
+            if not facts:
+                continue
+            lines.append(f"{cat.replace('_', ' ').title()}:")
+            for f in facts[:12]:
+                val = f.get("value", "")
+                if val:
+                    lines.append(f"  - {val}")
+            lines.append("")
+        result = "\n".join(lines)
+        if len(result) > 3000:
+            result = result[:2997] + "…"
+        return result
+
+    def _build_config(self, *, lilith_context: dict | None = None) -> types.LiveConnectConfig:
         from datetime import datetime
 
         memory     = load_memory()
@@ -1610,6 +1631,10 @@ class JarvisLive:
         )
 
         parts = [LANGUAGE_RULE, time_ctx]
+        if lilith_context:
+            lilith_str = self._format_lilith_context(lilith_context)
+            if lilith_str:
+                parts.append(lilith_str)
         if mem_str:
             parts.append(mem_str)
         parts.append(sys_prompt)
@@ -2289,7 +2314,18 @@ class JarvisLive:
             try:
                 print("[JARVIS] 🔌 Connecting...")
                 self.ui.set_state("THINKING")
-                config = self._build_config()
+                # JL-M003: fetch LILITH personal knowledge for system-prompt injection.
+                lilith_ctx = None
+                bridge = getattr(self, "_lilith", None)
+                if bridge is not None and bridge.is_running:
+                    try:
+                        lilith_ctx = await bridge._runtime.client.get_context()
+                        n = lilith_ctx.get("total_facts", 0) if lilith_ctx else 0
+                        if n:
+                            print(f"[JARVIS] LILITH context loaded: {n} facts")
+                    except Exception as exc:
+                        print(f"[JARVIS] LILITH context fetch skipped: {exc}")
+                config = self._build_config(lilith_context=lilith_ctx)
 
                 async with (
                     client.aio.live.connect(model=live_model_id, config=config) as session,

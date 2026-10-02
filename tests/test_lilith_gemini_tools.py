@@ -364,5 +364,49 @@ class TestPreservation(unittest.TestCase):
         self.assertIn("save_memory", names)
 
 
+# ── 9. Context injection (JL-M003) ──────────────────────────────────────
+
+class TestLilithContextInjection(unittest.TestCase):
+
+    def test_format_lilith_context_basic(self):
+        ctx = {
+            "categories": {
+                "preferences": [
+                    {"key": "color", "value": "azul", "confidence": 0.9, "source": "s"},
+                    {"key": "comida", "value": "pizza", "confidence": 0.8, "source": "s"},
+                ],
+                "family": [
+                    {"key": "madre", "value": "María", "confidence": 1.0, "source": "identity_document"},
+                ],
+            },
+            "total_facts": 3,
+        }
+        result = main.JarvisLive._format_lilith_context(ctx)
+        self.assertIn("LILITH PERSISTENT MEMORY", result)
+        self.assertIn("azul", result)
+        self.assertIn("pizza", result)
+        self.assertIn("María", result)
+        self.assertIn("Preferences:", result)
+        self.assertIn("Family:", result)
+
+    def test_format_lilith_context_empty(self):
+        result = main.JarvisLive._format_lilith_context({"categories": {}, "total_facts": 0})
+        self.assertEqual(result, "")
+
+    def test_format_lilith_context_none(self):
+        result = main.JarvisLive._format_lilith_context({})
+        self.assertEqual(result, "")
+
+    def test_format_lilith_context_truncation(self):
+        ctx = {
+            "categories": {
+                "notes": [{"key": f"k{i}", "value": "x" * 200, "confidence": 0.5, "source": "s"} for i in range(30)],
+            },
+            "total_facts": 30,
+        }
+        result = main.JarvisLive._format_lilith_context(ctx)
+        self.assertLessEqual(len(result), 3001)
+
+
 if __name__ == "__main__":
     unittest.main()

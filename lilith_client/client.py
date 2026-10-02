@@ -162,6 +162,21 @@ class LilithClient:
         data = await self._request("POST", f"{_INTEGRATION}/memory/search", json=payload)
         return data.get("results", [])
 
+    # ── 2b. Memory Context (JL-M003) ──────────────────────────────────
+
+    async def get_context(self) -> dict:
+        """Structured personal knowledge for system-prompt injection.
+
+        Returns ``{"categories": {...}, "total_facts": N}`` with all known facts
+        grouped by category. Called once at session start; never raises — returns
+        an empty structure on any failure so the session can proceed.
+        """
+        try:
+            return await self._request("GET", f"{_INTEGRATION}/memory/context")
+        except Exception as exc:
+            logger.warning("LILITH context fetch failed: %s", exc)
+            return {"categories": {}, "total_facts": 0}
+
     # ── 3. Memory Store ─────────────────────────────────────────────────
 
     async def store_memory(
