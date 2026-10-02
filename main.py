@@ -1165,6 +1165,83 @@ TOOL_DECLARATIONS = [
             "required": ["category", "key", "value"]
         }
     },
+    # ── LILITH integration tools (JL-W005) ─────────────────────────────
+    {
+        "name": "lilith_memory_search",
+        "description": (
+            "Search the user's persistent memory stored in LILITH. "
+            "Use when the user asks what LILITH knows, remembers, or has stored. "
+            "Returns real facts from LILITH's semantic memory database."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "query": {"type": "STRING", "description": "Search text in natural language"},
+                "limit": {"type": "INTEGER", "description": "Max results, 1-20. Default: 5"},
+            },
+            "required": ["query"]
+        }
+    },
+    {
+        "name": "lilith_memory_store",
+        "description": (
+            "Store a fact in LILITH's persistent memory. Use when the user explicitly "
+            "asks LILITH to remember something. LILITH enforces restricted categories "
+            "(identity, housing, beliefs, economy, psychology). "
+            "Content should be in the user's language."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "content": {"type": "STRING", "description": "The fact to remember, in the user's language"},
+                "category": {
+                    "type": "STRING",
+                    "description": (
+                        "Memory category: preferences | family | pets | work | skills | projects | "
+                        "places | relationships | devices | goals | events | health | habits"
+                    )
+                },
+                "confidence": {"type": "NUMBER", "description": "0.0-1.0. Default: 1.0 for explicit user statements"},
+            },
+            "required": ["content"]
+        }
+    },
+    {
+        "name": "lilith_home_action",
+        "description": (
+            "Control a smart home device through LILITH and Home Assistant. "
+            "Describe the device in natural language — LILITH resolves the real entity. "
+            "Never invent entity IDs. Only turn_on and turn_off are supported. "
+            "LILITH enforces safety rules and will reject prohibited actions."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "target": {
+                    "type": "STRING",
+                    "description": "Natural language device reference (e.g. 'luz del mueble', 'bombilla del salón')"
+                },
+                "action": {
+                    "type": "STRING",
+                    "enum": ["turn_on", "turn_off"],
+                    "description": "The action to perform"
+                },
+            },
+            "required": ["target", "action"]
+        }
+    },
+    {
+        "name": "lilith_health",
+        "description": (
+            "Check LILITH system health and service status. "
+            "Use when the user asks about LILITH, the smart home server, or system status."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {},
+            "required": []
+        }
+    },
 ]
 
 # Tool names exposed by hosted clients. The names here are Gemini function
@@ -1800,6 +1877,105 @@ class JarvisLive:
                     status = queue.get_status(task_id)
                     result = json.dumps(status, ensure_ascii=False) if status else f"Task {task_id} was not found."
 
+            # ── LILITH integration tools (JL-W005) ─────────────────────
+            elif name == "lilith_memory_search":
+                bridge = getattr(self, "_lilith", None)
+                if bridge is None or not bridge.is_running:
+                    result = "LILITH is not available. Cannot search persistent memory."
+                else:
+                    client = bridge._runtime.client
+                    query = str(args.get("query", ""))
+                    limit = int(args.get("limit", 5))
+                    try:
+                        hits = await client.search_memory(query, limit=limit)
+                        if not hits:
+                            result = f"No results in LILITH memory for: {query}"
+                        else:
+                            lines = []
+                            for h in hits[:10]:
+                                text = h.get("text") or h.get("value") or h.get("key") or str(h)
+                                score = h.get("score", "")
+                                lines.append(f"- {text}" + (f" (score: {score})" if score else ""))
+                            result = "\n".join(lines)
+                    except Exception as exc:
+                        result = f"LILITH memory search failed: {exc}"
+
+            elif name == "lilith_memory_store":
+                bridge = getattr(self, "_lilith", None)
+                if bridge is None or not bridge.is_running:
+                    result = "LILITH is not available. Cannot store memory."
+                else:
+                    client = bridge._runtime.client
+                    content = str(args.get("content", ""))
+                    category = str(args.get("category", "jarvis_fact"))
+                    confidence = float(args.get("confidence", 1.0))
+                    key = content[:60].lower().replace(" ", "_")
+                    try:
+                        data = await client.store_memory(
+                            key, content, category=category, confidence=confidence,
+                        )
+                        action_done = data.get("action", "stored")
+                        result = f"Memory {action_done} in LILITH: {content[:80]}"
+                    except Exception as exc:
+                        result = f"LILITH memory store failed: {exc}"
+
+            elif name == "lilith_home_action":
+                bridge = getattr(self, "_lilith", None)
+                if bridge is None or not bridge.is_running:
+                    result = "LILITH is not available. Cannot control home devices."
+                else:
+                    client = bridge._runtime.client
+                    target = str(args.get("target", ""))
+                    action_name = str(args.get("action", ""))
+                    if action_name not in ("turn_on", "turn_off"):
+                        result = f"Only turn_on and turn_off are supported, not '{action_name}'."
+                    elif not target:
+                        result = "No device target specified."
+                    else:
+                        try:
+                            res = await client.home_resolve(target)
+                            status = res.get("status")
+                            if status == "ambiguous":
+                                names = ", ".join(
+                                    c.get("friendly_name") or c.get("entity_id")
+                                    for c in res.get("candidates", [])
+                                )
+                                result = f"Ambiguous: which one? {names}. No action taken."
+                            elif status == "unknown":
+                                result = f"Unknown device: '{target}'. No action taken."
+                            elif status == "not_allowed":
+                                result = f"Not allowed to control '{target}' from JARVIS. No action taken."
+                            elif status == "resolved" and res.get("entity_id"):
+                                entity_id = res["entity_id"]
+                                friendly = res.get("friendly_name") or target
+                                await client.home_action(entity_id, action_name)
+                                # readback
+                                try:
+                                    state_data = await client.home_entity(entity_id)
+                                    current = state_data.get("state", "unknown")
+                                    result = f"{action_name} on '{friendly}' ({entity_id}). Current state: {current}."
+                                except Exception:
+                                    result = f"{action_name} sent to '{friendly}' ({entity_id}). Could not confirm state."
+                            else:
+                                result = f"LILITH resolve returned unexpected status: {status}"
+                        except Exception as exc:
+                            result = f"LILITH home action failed: {exc}"
+
+            elif name == "lilith_health":
+                bridge = getattr(self, "_lilith", None)
+                if bridge is None or not bridge.is_running:
+                    result = "LILITH integration is not configured or not running."
+                else:
+                    try:
+                        health = await bridge._runtime.client.health()
+                        status = health.get("status", "unknown")
+                        version = health.get("version", "")
+                        services = health.get("services", {})
+                        svc_str = ", ".join(f"{k}: {'OK' if v else 'DOWN'}" for k, v in services.items())
+                        result = f"LILITH {version} is {status}. Services: {svc_str}."
+                    except Exception as exc:
+                        result = f"LILITH health check failed: {exc}"
+
             else:
                 result = f"Unknown tool: {name}"
                 logger.warning("TOOL_UNKNOWN  %s  args=%s", name, args)
@@ -1827,6 +2003,7 @@ class JarvisLive:
             "computer_settings", "computer_control", "desktop_control", "file_controller",
             "file_processor", "code_helper", "dev_agent", "game_updater",
             "create_presentation", "save_memory", "jarvis_ui_control", "graphics_quality",
+            "lilith_memory_store", "lilith_home_action",
         }
         call_list = list(calls or [])
         # Real tool activity -> UI (drives the EXECUTING state of the core visual).
