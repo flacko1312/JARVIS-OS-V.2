@@ -1256,6 +1256,38 @@ TOOL_DECLARATIONS = [
         }
     },
     {
+        "name": "lilith_request_approval",
+        "description": (
+            "Request approval for a home action that LILITH requires confirmation for. "
+            "Use ONLY when lilith_home_action returned 'approval_required'. "
+            "Returns a token — ask the user to approve or reject, then call lilith_resolve_approval."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "entity_id": {"type": "STRING", "description": "The entity_id from the resolve step"},
+                "action": {"type": "STRING", "enum": ["turn_on", "turn_off"], "description": "The action"},
+            },
+            "required": ["entity_id", "action"]
+        }
+    },
+    {
+        "name": "lilith_resolve_approval",
+        "description": (
+            "Approve or reject a pending home-action approval. "
+            "Use ONLY after the user explicitly said yes or no to the approval request. "
+            "Never approve without explicit user consent."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "token": {"type": "STRING", "description": "The approval token from lilith_request_approval"},
+                "resolution": {"type": "STRING", "enum": ["approved", "rejected"], "description": "User's decision"},
+            },
+            "required": ["token", "resolution"]
+        }
+    },
+    {
         "name": "lilith_health",
         "description": (
             "Check LILITH system health and service status. "
@@ -2058,6 +2090,55 @@ class JarvisLive:
                         except Exception as exc:
                             result = f"LILITH home action failed: {exc}"
 
+            elif name == "lilith_request_approval":
+                bridge = getattr(self, "_lilith", None)
+                if bridge is None or not bridge.is_running:
+                    result = "LILITH is not available. Cannot request approval."
+                else:
+                    client = bridge._runtime.client
+                    entity_id = str(args.get("entity_id", ""))
+                    action_name = str(args.get("action", ""))
+                    if not entity_id or not action_name:
+                        result = "Missing entity_id or action."
+                    else:
+                        try:
+                            data = await client.request_approval(entity_id, action_name)
+                            token = data.get("token", "")
+                            expires = data.get("expires_at", "")
+                            result = (
+                                f"Approval requested for {action_name} on {entity_id}. "
+                                f"Token: {token}. Expires: {expires}. "
+                                f"Ask the user to approve or reject."
+                            )
+                        except Exception as exc:
+                            result = f"LILITH approval request failed: {exc}"
+
+            elif name == "lilith_resolve_approval":
+                bridge = getattr(self, "_lilith", None)
+                if bridge is None or not bridge.is_running:
+                    result = "LILITH is not available. Cannot resolve approval."
+                else:
+                    client = bridge._runtime.client
+                    token = str(args.get("token", ""))
+                    resolution = str(args.get("resolution", ""))
+                    if not token or resolution not in ("approved", "rejected"):
+                        result = "Invalid token or resolution. Must be 'approved' or 'rejected'."
+                    else:
+                        try:
+                            data = await client.resolve_approval(token, resolution)
+                            res = data.get("resolution", "unknown")
+                            if res == "executed":
+                                exec_data = data.get("execution", {})
+                                result = f"Approved and executed: {exec_data.get('action', '')} on {exec_data.get('entity_id', '')}."
+                            elif res == "rejected":
+                                result = "Action rejected. Not executed."
+                            elif res == "expired":
+                                result = "Approval expired. Request a new one if needed."
+                            else:
+                                result = f"Approval resolution: {res}"
+                        except Exception as exc:
+                            result = f"LILITH approval resolution failed: {exc}"
+
             elif name == "lilith_health":
                 bridge = getattr(self, "_lilith", None)
                 if bridge is None or not bridge.is_running:
@@ -2101,6 +2182,7 @@ class JarvisLive:
             "file_processor", "code_helper", "dev_agent", "game_updater",
             "create_presentation", "save_memory", "jarvis_ui_control", "graphics_quality",
             "lilith_memory_store", "lilith_memory_delete", "lilith_home_action",
+            "lilith_resolve_approval",
         }
         call_list = list(calls or [])
         # Real tool activity -> UI (drives the EXECUTING state of the core visual).

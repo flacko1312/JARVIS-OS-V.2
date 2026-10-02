@@ -235,3 +235,28 @@ class LilithClient:
         the entities and the authorization; this never executes anything.
         """
         return await self._request("POST", f"{_INTEGRATION}/home/resolve", json={"query": query})
+
+    # ── 7. Home Approval (JL-S003) ─────────────────────────────────────
+
+    async def request_approval(
+        self,
+        entity_id: str,
+        action: str,
+        *,
+        parameters: dict | None = None,
+        session_id: str | None = None,
+    ) -> dict:
+        """Request approval for an action that exceeds the auto-execute level."""
+        payload: dict[str, Any] = {"entity_id": entity_id, "action": action}
+        if parameters:
+            payload["parameters"] = parameters
+        if session_id:
+            payload["session_id"] = session_id
+        return await self._request("POST", f"{_INTEGRATION}/home/request-approval", json=payload)
+
+    async def resolve_approval(self, token: str, resolution: str) -> dict:
+        """Approve or reject a pending approval token."""
+        return await self._request(
+            "POST", f"{_INTEGRATION}/home/resolve-approval",
+            json={"token": token, "resolution": resolution},
+        )

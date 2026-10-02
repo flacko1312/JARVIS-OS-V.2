@@ -92,13 +92,15 @@ class TestToolDeclarations(unittest.TestCase):
     def test_lilith_tools_registered(self):
         names = {t["name"] for t in TOOL_DECLARATIONS}
         for tool in ("lilith_memory_search", "lilith_memory_store",
-                     "lilith_memory_delete", "lilith_home_action", "lilith_health"):
+                     "lilith_memory_delete", "lilith_home_action", "lilith_health",
+                     "lilith_request_approval", "lilith_resolve_approval"):
             self.assertIn(tool, names)
 
     def test_lilith_tools_excluded_from_cloud_safe(self):
         cloud_tools = {t["name"] for t in get_tool_declarations(cloud_safe=True)}
         for tool in ("lilith_memory_search", "lilith_memory_store",
-                     "lilith_memory_delete", "lilith_home_action", "lilith_health"):
+                     "lilith_memory_delete", "lilith_home_action", "lilith_health",
+                     "lilith_request_approval", "lilith_resolve_approval"):
             self.assertNotIn(tool, cloud_tools)
 
     def test_existing_tools_preserved(self):
@@ -390,6 +392,7 @@ class TestMutatingSet(unittest.TestCase):
         src = open(os.path.join(os.path.dirname(__file__), "..", "main.py")).read()
         self.assertIn('"lilith_memory_store"', src)
         self.assertIn('"lilith_home_action"', src)
+        self.assertIn('"lilith_resolve_approval"', src)
 
 
 # ── 8. Preservation ─────────────────────────────────────────────────────
@@ -484,6 +487,109 @@ class TestLilithContextInjection(unittest.TestCase):
         idx_habits = result.index("Habits:")
         self.assertLess(idx_identity, idx_preferences)
         self.assertLess(idx_preferences, idx_habits)
+
+
+# ── 10. Approval tools (JL-S003) ──────────────────────────────────────
+
+class TestLilithRequestApproval(unittest.TestCase):
+
+    def test_request_approval_ok(self):
+        mock = AsyncMock()
+        mock.request_approval.return_value = {
+            "token": "abc123", "expires_at": "2026-10-02T12:00:00Z",
+        }
+        jarvis = _make_jarvis(lilith_client=mock)
+        resp = _run(jarvis._execute_tool(_fake_fc("lilith_request_approval", {
+            "entity_id": "light.bombilla", "action": "turn_on",
+        })))
+        self.assertIn("abc123", resp.response["result"])
+        self.assertIn("Approval requested", resp.response["result"])
+
+    def test_request_approval_offline(self):
+        jarvis = _make_jarvis()
+        resp = _run(jarvis._execute_tool(_fake_fc("lilith_request_approval", {
+            "entity_id": "light.x", "action": "turn_on",
+        })))
+        self.assertIn("not available", resp.response["result"])
+
+    def test_request_approval_missing_args(self):
+        mock = AsyncMock()
+        jarvis = _make_jarvis(lilith_client=mock)
+        resp = _run(jarvis._execute_tool(_fake_fc("lilith_request_approval", {
+            "entity_id": "", "action": "turn_on",
+        })))
+        self.assertIn("Missing", resp.response["result"])
+
+    def test_request_approval_error(self):
+        mock = AsyncMock()
+        mock.request_approval.side_effect = Exception("offline")
+        jarvis = _make_jarvis(lilith_client=mock)
+        resp = _run(jarvis._execute_tool(_fake_fc("lilith_request_approval", {
+            "entity_id": "light.x", "action": "turn_on",
+        })))
+        self.assertIn("failed", resp.response["result"])
+
+
+class TestLilithResolveApproval(unittest.TestCase):
+
+    def test_resolve_approve_executed(self):
+        mock = AsyncMock()
+        mock.resolve_approval.return_value = {
+            "resolution": "executed",
+            "execution": {"entity_id": "light.x", "action": "turn_on"},
+        }
+        jarvis = _make_jarvis(lilith_client=mock)
+        resp = _run(jarvis._execute_tool(_fake_fc("lilith_resolve_approval", {
+            "token": "tok123", "resolution": "approved",
+        })))
+        self.assertIn("Approved and executed", resp.response["result"])
+
+    def test_resolve_rejected(self):
+        mock = AsyncMock()
+        mock.resolve_approval.return_value = {"resolution": "rejected"}
+        jarvis = _make_jarvis(lilith_client=mock)
+        resp = _run(jarvis._execute_tool(_fake_fc("lilith_resolve_approval", {
+            "token": "tok123", "resolution": "rejected",
+        })))
+        self.assertIn("rejected", resp.response["result"])
+
+    def test_resolve_expired(self):
+        mock = AsyncMock()
+        mock.resolve_approval.return_value = {"resolution": "expired"}
+        jarvis = _make_jarvis(lilith_client=mock)
+        resp = _run(jarvis._execute_tool(_fake_fc("lilith_resolve_approval", {
+            "token": "tok123", "resolution": "approved",
+        })))
+        self.assertIn("expired", resp.response["result"])
+
+    def test_resolve_invalid_resolution(self):
+        mock = AsyncMock()
+        jarvis = _make_jarvis(lilith_client=mock)
+        resp = _run(jarvis._execute_tool(_fake_fc("lilith_resolve_approval", {
+            "token": "tok123", "resolution": "maybe",
+        })))
+        self.assertIn("Invalid", resp.response["result"])
+
+    def test_resolve_offline(self):
+        jarvis = _make_jarvis()
+        resp = _run(jarvis._execute_tool(_fake_fc("lilith_resolve_approval", {
+            "token": "tok123", "resolution": "approved",
+        })))
+        self.assertIn("not available", resp.response["result"])
+
+    def test_resolve_error(self):
+        mock = AsyncMock()
+        mock.resolve_approval.side_effect = Exception("timeout")
+        jarvis = _make_jarvis(lilith_client=mock)
+        resp = _run(jarvis._execute_tool(_fake_fc("lilith_resolve_approval", {
+            "token": "tok123", "resolution": "approved",
+        })))
+        self.assertIn("failed", resp.response["result"])
+
+    def test_resolve_approval_tool_in_declarations(self):
+        src = open(os.path.join(os.path.dirname(__file__), "..", "main.py")).read()
+        self.assertIn('"lilith_request_approval"', src)
+        self.assertIn('"lilith_resolve_approval"', src)
 
 
 if __name__ == "__main__":
