@@ -1594,26 +1594,54 @@ class JarvisLive:
         except Exception as e:
             print(f"[JARVIS] ⚠️ Greeting failed: {e}")
 
+    _CONTEXT_SKIP_CATEGORIES = frozenset({
+        "jarvis_fact", "project_status", "conversation_summary", "signal",
+    })
+    _CONTEXT_PRIORITY = (
+        "identity", "preferences", "work", "family", "pets", "goals",
+        "projects", "places", "housing", "skills", "hobbies",
+    )
+    _CONTEXT_MAX_CHARS = 3000
+
     @staticmethod
     def _format_lilith_context(ctx: dict) -> str:
-        """Format LILITH personal knowledge into a system-prompt block."""
+        """Format LILITH personal knowledge into a system-prompt block.
+
+        Filters out operational/test categories and prioritises identity-first.
+        Truncates at line boundaries to avoid cutting mid-fact.
+        """
         categories = ctx.get("categories", {})
         if not categories:
             return ""
-        lines = ["[LILITH PERSISTENT MEMORY — authoritative facts about this person]\n"]
-        for cat, facts in categories.items():
-            if not facts:
-                continue
-            lines.append(f"{cat.replace('_', ' ').title()}:")
+
+        skip = JarvisLive._CONTEXT_SKIP_CATEGORIES
+        cats = {c: fs for c, fs in categories.items() if c not in skip and fs}
+        if not cats:
+            return ""
+
+        ordered = []
+        for c in JarvisLive._CONTEXT_PRIORITY:
+            if c in cats:
+                ordered.append((c, cats.pop(c)))
+        for c in sorted(cats):
+            ordered.append((c, cats[c]))
+
+        header = "[LILITH PERSISTENT MEMORY — authoritative facts about this person]\n"
+        lines = [header]
+        budget = JarvisLive._CONTEXT_MAX_CHARS - len(header)
+        for cat, facts in ordered:
+            section = [f"{cat.replace('_', ' ').title()}:"]
             for f in facts[:12]:
                 val = f.get("value", "")
                 if val:
-                    lines.append(f"  - {val}")
-            lines.append("")
-        result = "\n".join(lines)
-        if len(result) > 3000:
-            result = result[:2997] + "…"
-        return result
+                    section.append(f"  - {val}")
+            section.append("")
+            block = "\n".join(section)
+            if len(block) > budget:
+                break
+            lines.append(block)
+            budget -= len(block) + 1
+        return "\n".join(lines)
 
     def _build_config(self, *, lilith_context: dict | None = None) -> types.LiveConnectConfig:
         from datetime import datetime

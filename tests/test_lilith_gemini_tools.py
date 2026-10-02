@@ -397,7 +397,7 @@ class TestLilithContextInjection(unittest.TestCase):
         result = main.JarvisLive._format_lilith_context({})
         self.assertEqual(result, "")
 
-    def test_format_lilith_context_truncation(self):
+    def test_format_lilith_context_truncation_at_line_boundary(self):
         ctx = {
             "categories": {
                 "notes": [{"key": f"k{i}", "value": "x" * 200, "confidence": 0.5, "source": "s"} for i in range(30)],
@@ -406,6 +406,41 @@ class TestLilithContextInjection(unittest.TestCase):
         }
         result = main.JarvisLive._format_lilith_context(ctx)
         self.assertLessEqual(len(result), 3001)
+        self.assertFalse(result.endswith("…"), "should truncate at section boundary, not mid-text")
+
+    def test_format_skips_operational_categories(self):
+        ctx = {
+            "categories": {
+                "jarvis_fact": [{"key": "test", "value": "JL-S004 probe", "confidence": 0.8, "source": "jarvis"}],
+                "project_status": [{"key": "audit", "value": "pytest 1108 passed", "confidence": 0.9, "source": "codex"}],
+                "conversation_summary": [{"key": "conv:x", "value": "old convo", "confidence": 0.8, "source": "conv"}],
+                "signal": [{"key": "_asked:x", "value": "internal", "confidence": 0.5, "source": "system"}],
+                "identity": [{"key": "nombre", "value": "Flako", "confidence": 1.0, "source": "identity_document"}],
+            },
+            "total_facts": 5,
+        }
+        result = main.JarvisLive._format_lilith_context(ctx)
+        self.assertIn("Flako", result)
+        self.assertNotIn("JL-S004", result)
+        self.assertNotIn("pytest", result)
+        self.assertNotIn("old convo", result)
+        self.assertNotIn("internal", result)
+
+    def test_format_priority_order(self):
+        ctx = {
+            "categories": {
+                "habits": [{"key": "h", "value": "café", "confidence": 0.9, "source": "s"}],
+                "identity": [{"key": "n", "value": "Flako", "confidence": 1.0, "source": "s"}],
+                "preferences": [{"key": "p", "value": "jazz", "confidence": 0.8, "source": "s"}],
+            },
+            "total_facts": 3,
+        }
+        result = main.JarvisLive._format_lilith_context(ctx)
+        idx_identity = result.index("Identity:")
+        idx_preferences = result.index("Preferences:")
+        idx_habits = result.index("Habits:")
+        self.assertLess(idx_identity, idx_preferences)
+        self.assertLess(idx_preferences, idx_habits)
 
 
 if __name__ == "__main__":
