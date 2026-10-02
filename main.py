@@ -18,6 +18,8 @@ from memory.memory_manager import (
 import hashlib
 import importlib
 import time
+import logging
+import logging.handlers
 
 from core.live_model import pick_live_model
 
@@ -78,6 +80,45 @@ def _load_dotenv():
 
 BASE_DIR        = get_base_dir()
 _load_dotenv()
+
+
+def _setup_logging() -> None:
+    """Configure persistent rotating log at BASE_DIR/logs/jarvis.log.
+
+    Call once at module load.  Safe to call multiple times — exits early
+    if handlers are already attached so test imports don't double-configure.
+    """
+    log_dir = BASE_DIR / "logs"
+    log_dir.mkdir(exist_ok=True)
+    log_path = log_dir / "jarvis.log"
+
+    root = logging.getLogger()
+    if root.handlers:
+        return  # already configured
+
+    root.setLevel(logging.DEBUG)
+
+    # Rotating file: 5 MB × 5 backups → max ~25 MB on disk
+    fh = logging.handlers.RotatingFileHandler(
+        log_path, maxBytes=5 * 1024 * 1024, backupCount=5, encoding="utf-8"
+    )
+    fh.setLevel(logging.INFO)
+    fh.setFormatter(logging.Formatter(
+        "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+    ))
+
+    # Console: WARNING only — keeps existing stdout output uncluttered
+    ch = logging.StreamHandler()
+    ch.setLevel(logging.WARNING)
+    ch.setFormatter(logging.Formatter("[%(levelname)s] %(name)s: %(message)s"))
+
+    root.addHandler(fh)
+    root.addHandler(ch)
+
+
+_setup_logging()
+logger = logging.getLogger("jarvis.main")
+
 API_CONFIG_PATH = BASE_DIR / "config" / "api_keys.json"
 PROMPT_PATH     = BASE_DIR / "core" / "prompt.txt"
 LIVE_MODEL = "models/gemini-2.5-flash-native-audio-preview-12-2025"
@@ -353,13 +394,36 @@ def _load_system_prompt() -> str:
         )
     except Exception:
         return (
-            "You are JARVIS, Tony Stark's AI assistant. "
+            "You are FRANKENSTEIN, a personal AI assistant. "
             "Be concise, direct, and always use the provided tools to complete tasks. "
             "Never simulate or guess results — always call the appropriate tool. "
             "Always address the user respectfully as 'Sir' or 'Madam' where appropriate, while remaining efficient and direct."
         )
 
 _CTRL_RE = re.compile(r"<ctrl\d+>", re.IGNORECASE)
+
+def _pcm16_level(pcm) -> float:
+    """Normalized 0..1 loudness (RMS) of a 16-bit PCM buffer, for UI display only."""
+    try:
+        import numpy as np
+        samples = np.frombuffer(pcm, dtype=np.int16)
+        if samples.size == 0:
+            return 0.0
+        rms = float(np.sqrt(np.mean(samples.astype(np.float32) ** 2))) / 32768.0
+        return min(1.0, (rms ** 0.5) * 2.0)
+    except Exception:
+        return 0.0
+
+
+def _report_audio_level(ui, kind: str, pcm) -> None:
+    """Forward a real audio level to the UI; never touches or stores the audio."""
+    setter = getattr(ui, f"set_{kind}_audio_level", None)
+    if callable(setter):
+        try:
+            setter(_pcm16_level(pcm))
+        except Exception:
+            pass
+
 
 def _clean_transcript(text: str) -> str:    
     text = _CTRL_RE.sub("", text)
@@ -583,10 +647,11 @@ TOOL_DECLARATIONS = [
     {
         "name": "computer_settings",
         "description": (
-            "Controls the computer: volume, brightness, window management, keyboard shortcuts, "
-            "typing text on screen, closing apps, fullscreen, dark mode, WiFi, restart, shutdown, "
-            "scrolling, tab management, zoom, screenshots, lock screen, refresh/reload page. "
-            "Use for ANY single computer control command. NEVER route to agent_task."
+            "Controls the computer at the OS level: volume, brightness, window management, "
+            "keyboard shortcuts, typing text on screen, closing app windows, fullscreen, "
+            "dark mode, WiFi, restart, shutdown, scrolling, zoom, screenshots, lock screen, "
+            "refresh/reload page. Use action='close_window' to close any OS window or named "
+            "application. Use for ANY single OS-level command. NEVER route to agent_task."
         ),
         "parameters": {
             "type": "OBJECT",
@@ -601,10 +666,14 @@ TOOL_DECLARATIONS = [
     {
         "name": "browser_control",
         "description": (
-            "Controls any web browser. Use for: opening websites, searching the web, "
-            "clicking elements, filling forms, scrolling, screenshots, navigation, any web-based task. "
+            "Controls JARVIS's own Playwright-managed browser session. Use for: opening websites, "
+            "searching the web, clicking elements, filling forms, scrolling, screenshots, navigation, "
+            "any web-based automation task inside JARVIS's controlled browser. "
             "Always pass the 'browser' parameter when the user specifies a browser (e.g. 'open in Edge', "
-            "'use Firefox', 'open Chrome'). Multiple browsers can run simultaneously."
+            "'use Firefox', 'open Chrome'). Multiple browsers can run simultaneously. "
+            "IMPORTANT: close_tab here closes a tab in the JARVIS-controlled Playwright session ONLY — "
+            "it does NOT close tabs in the user's native browser. To close the user's active OS/browser "
+            "tab, use computer_settings with action='close_tab' instead."
         ),
         "parameters": {
             "type": "OBJECT",
@@ -1280,7 +1349,7 @@ class JarvisLive:
         self._pending_self_quit = True
         self._pending_self_quit_farewell_received = False
         try:
-            self.ui.write_log("SYS: Shutdown queued; waiting for JARVIS's farewell.")
+            self.ui.write_log("SYS: Shutdown queued; waiting for FRANKENSTEIN's farewell.")
         except Exception:
             pass
         # A voice model can occasionally omit audio/turn_complete. Do not
@@ -1503,6 +1572,7 @@ class JarvisLive:
             )
 
         print(f"[JARVIS] 🔧 {name}  {args}")
+        logger.info("TOOL_CALL  %s  args=%s", name, args)
         self.ui.set_state("THINKING")
 
         intercepted = self._intercept_ui_tool_call(name, args)
@@ -1712,9 +1782,11 @@ class JarvisLive:
 
             else:
                 result = f"Unknown tool: {name}"
+                logger.warning("TOOL_UNKNOWN  %s  args=%s", name, args)
 
         except Exception as e:
             result = f"Tool '{name}' failed: {e}"
+            logger.error("TOOL_FAILED  %s  error=%s", name, e, exc_info=True)
             traceback.print_exc()
             self.speak_error(name, e)
 
@@ -1722,6 +1794,7 @@ class JarvisLive:
             self.ui.set_state("LISTENING")
 
         print(f"[JARVIS] 📤 {name} → {str(result)[:80]}")
+        logger.info("TOOL_RESULT  %s  result=%s", name, str(result)[:120])
         return types.FunctionResponse(
             id=fc.id, name=name,
             response={"result": result}
@@ -1736,9 +1809,19 @@ class JarvisLive:
             "create_presentation", "save_memory", "jarvis_ui_control", "graphics_quality",
         }
         call_list = list(calls or [])
-        if any(getattr(call, "name", "") in mutating for call in call_list):
-            return [await self._execute_tool(call) for call in call_list]
-        return list(await asyncio.gather(*(self._execute_tool(call) for call in call_list)))
+        # Real tool activity -> UI (drives the EXECUTING state of the core visual).
+        ui = getattr(self, "ui", None)
+        show_progress = getattr(ui, "show_tool_progress", None)
+        hide_progress = getattr(ui, "hide_tool_progress", None)
+        if callable(show_progress) and call_list:
+            show_progress(getattr(call_list[0], "name", "tool"))
+        try:
+            if any(getattr(call, "name", "") in mutating for call in call_list):
+                return [await self._execute_tool(call) for call in call_list]
+            return list(await asyncio.gather(*(self._execute_tool(call) for call in call_list)))
+        finally:
+            if callable(hide_progress):
+                hide_progress()
 
     async def _send_realtime(self):
         while True:
@@ -1758,6 +1841,7 @@ class JarvisLive:
                 jarvis_speaking = self._is_speaking
             if not jarvis_speaking and not self.ui.muted:
                 data = indata.tobytes()
+                _report_audio_level(self.ui, "input", data)
                 loop.call_soon_threadsafe(
                     self.out_queue.put_nowait,
                     {"data": data, "mime_type": "audio/pcm"}
@@ -1912,6 +1996,7 @@ class JarvisLive:
                     pass  # drain silently
                 else:
                     self.set_speaking(True)
+                    _report_audio_level(self.ui, "output", chunk)
                     if self.external_audio:
                         send_audio = getattr(self.client, "send_audio", None)
                         if callable(send_audio):
@@ -1989,7 +2074,7 @@ class JarvisLive:
 
                     print("[JARVIS] ✅ Connected.")
                     self.ui.set_state("LISTENING")
-                    self.ui.write_log("SYS: JARVIS online.")
+                    self.ui.write_log("SYS: FRANKENSTEIN online.")
                     if not self.cloud_safe:
                         try:
                             jarvis_status.write_status({
@@ -2117,13 +2202,16 @@ def main():
                     except Exception as e:
                         print(f"[JARVIS] Could not close session: {e}")
         ui.on_tts_provider_change = _on_tts_change
+        logger.info("JARVIS_START  model=%s", LIVE_MODEL)
         try:
             asyncio.run(jarvis.run())
         except KeyboardInterrupt:
             print("\n🔴 Shutting down...")
+            logger.info("JARVIS_SHUTDOWN  reason=KeyboardInterrupt")
         except Exception as exc:
             message = f"Gemini startup failed: {str(exc)[:180]}"
             print(f"[JARVIS] ❌ {message}")
+            logger.error("JARVIS_STARTUP_FAILED  %s", message, exc_info=True)
             try:
                 ui.write_log(f"ERR: {message}")
                 ui.set_state("LISTENING")

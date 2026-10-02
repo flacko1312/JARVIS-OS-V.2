@@ -149,15 +149,15 @@ class UIRegressionTests(unittest.TestCase):
     def test_quit_button_is_visible_and_accessible(self):
         button = self.window._quit_btn
         self.assertEqual(button.objectName(), "JarvisQuitButton")
-        self.assertEqual(button.accessibleName(), "Quit JARVIS")
-        self.assertEqual(button.toolTip(), "Quit JARVIS")
+        self.assertEqual(button.accessibleName(), "Quit FRANKENSTEIN")
+        self.assertEqual(button.toolTip(), "Quit FRANKENSTEIN")
         self.assertFalse(button.isHidden())
 
     def test_dock_uses_crisp_command_rail_visual_language(self):
         rail = self.window._dock_frame
         style = rail.styleSheet().lower()
         self.assertEqual(rail.objectName(), "JarvisCommandRail")
-        self.assertEqual(rail.accessibleName(), "JARVIS command rail")
+        self.assertEqual(rail.accessibleName(), "FRANKENSTEIN command rail")
         self.assertIsNone(rail.graphicsEffect())
         self.assertNotIn("qlineargradient", style)
         self.assertNotIn("border-radius: 24px", style)

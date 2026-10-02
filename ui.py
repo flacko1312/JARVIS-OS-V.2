@@ -22,7 +22,7 @@ from PyQt6.QtCore import (
 from PyQt6.QtGui import (
     QAction, QBrush, QColor, QDragEnterEvent, QDropEvent, QFont as _QFont,
     QFontDatabase, QIcon, QImage, QKeySequence, QLinearGradient, QPainter,
-    QPainterPath, QPen, QPixmap, QRadialGradient, QShortcut,
+    QPainterPath, QPen, QPixmap, QPolygonF, QRadialGradient, QShortcut,
 )
 from PyQt6.QtWidgets import (
     QApplication, QComboBox, QCheckBox, QFormLayout, QFrame, QGraphicsOpacityEffect,
@@ -266,6 +266,33 @@ class ThemeManager:
     )
 
     _THEMES = {
+        "frankenstein": {
+            "name": "Frankenstein",
+            "BG": "#07060a",
+            "PANEL": "#0d0b12",
+            "PANEL2": "#110e18",
+            "DARK": "#050408",
+            "DARK2": "#131019",
+            "BAR_BG": "#16121e",
+            "CARD": "#0e0b14",
+            "CARD_B": "#130f1b",
+            "BORDER": "#2b2140",
+            "BORDER_B": "#6d3fb0",
+            "BORDER_A": "#432a6b",
+            "STEEL": "#241c33",
+            "WHITE": "#f1eaf8",
+            "WHITE_DIM": "#b3a6c4",
+            "PRI": "#b794ff", "PRI_DIM": "#5b3f9a", "PRI_GHO": "#150f24",
+            "PRI_GLOW": "#b794ff14", "ENERGY": "#ff5fd0", "ENERGY_D": "#9b3fb8",
+            "ACC": "#ff4fa8", "ACC2": "#ff7ac6", "PURPLE": "#8b5cf6",
+            "GREEN": "#7ee8c0", "RED": "#ff3b6b", "TEXT": "#d9c8ff",
+            "TEXT_DIM": "#5a4b78", "TEXT_MED": "#9784bd",
+            "RED_BG": "#220812", "GREEN_BG": "#08201a", "PURPLE_BG": "#150f24",
+            "MUTED_C": "#ff5c8a",
+            "HOLOGRAM": "#b794ff08", "AMBER": "#e879f9", "AMBER_D": "#a21caf",
+            "PURPLE_D": "#5b21b6", "GREEN_D": "#34b58a", "GREEN_GLO": "#7ee8c010",
+            "RED_D": "#b01245",
+        },
         "arc_reactor": {
             "name": "Arc Reactor Blue",
             "BG": "#000306",
@@ -292,6 +319,48 @@ class ThemeManager:
             "HOLOGRAM": "#00d4ff06", "AMBER": "#ffb300", "AMBER_D": "#cc8800",
             "PURPLE_D": "#3d2fa0", "GREEN_D": "#00aa55", "GREEN_GLO": "#00ff8810",
             "RED_D": "#aa1133",
+        },
+        "lilith": {
+            "name": "Violet Classic",
+            "BG": "#04000a",
+            "PANEL": "#08000f",
+            "PANEL2": "#0a0012",
+            "DARK": "#030008",
+            "DARK2": "#100018",
+            "BAR_BG": "#0f001a",
+            "CARD": "#070010",
+            "CARD_B": "#0c0018",
+            "BORDER": "#2a0540",
+            "BORDER_B": "#7c2aaa",
+            "BORDER_A": "#4a1570",
+            "STEEL": "#2a0f3a",
+            "WHITE": "#f5e8ff",
+            "WHITE_DIM": "#c8a0e0",
+            "PRI": "#c084fc",      # violeta lila — energía primaria
+            "PRI_DIM": "#6b21a8",
+            "PRI_GHO": "#150025",
+            "PRI_GLOW": "#c084fc14",
+            "ENERGY": "#f0abfc",   # rosa/fucsia — núcleo del reactor
+            "ENERGY_D": "#9333ea",
+            "ACC": "#fb7185",      # rosa accent
+            "ACC2": "#f43f5e",
+            "PURPLE": "#a855f7",
+            "GREEN": "#86efac",
+            "RED": "#f43f5e",
+            "TEXT": "#e4b0ff",     # lavanda claro
+            "TEXT_DIM": "#4a1870",
+            "TEXT_MED": "#9a5cbf",
+            "RED_BG": "#200010",
+            "GREEN_BG": "#001a0a",
+            "PURPLE_BG": "#150025",
+            "MUTED_C": "#f472b6",
+            "HOLOGRAM": "#c084fc06",
+            "AMBER": "#e879f9",
+            "AMBER_D": "#a21caf",
+            "PURPLE_D": "#7e22ce",
+            "GREEN_D": "#4ade80",
+            "GREEN_GLO": "#86efac10",
+            "RED_D": "#be123c",
         },
         "stealth_red": {
             "name": "Stealth Red",
@@ -393,7 +462,7 @@ class ThemeManager:
         },
     }
 
-    _current = "arc_reactor"
+    _current = "frankenstein"
     _listeners: list = []
 
     @classmethod
@@ -428,6 +497,10 @@ class ThemeManager:
     @classmethod
     def add_listener(cls, cb):
         cls._listeners.append(cb)
+
+
+# Apply the default theme before any widget reads C.* at import/construct time.
+ThemeManager.set_theme("frankenstein")
 
 
 # ---------------------------------------------------------------------------
@@ -489,7 +562,7 @@ class ChatBubbleWidget(QWidget):
         ib_lay.setSpacing(6)
 
         self._input = QLineEdit()
-        self._input.setPlaceholderText("Type a message to JARVIS…")
+        self._input.setPlaceholderText("Type a message to FRANKENSTEIN...")
         self._input.setFont(QFont(UI_FONT, 10))
         self._input.setFixedHeight(32)
         self._input.setStyleSheet(f"""
@@ -649,7 +722,7 @@ class ChatBubbleWidget(QWidget):
             bg_col = C.PRI_GHO
             border_col = C.PRI
             text_col = C.PRI
-            name = "JARVIS"
+            name = "FRANKENSTEIN"
         elif tl.startswith("file:"):
             sender = "file"
             display = text[5:].strip()
@@ -787,7 +860,7 @@ class FocusDialogueWidget(QWidget):
 
         message_row = QHBoxLayout()
         message_row.setSpacing(10)
-        self._speaker_lbl = QLabel("JARVIS")
+        self._speaker_lbl = QLabel("FRANKENSTEIN")
         self._speaker_lbl.setFixedWidth(62)
         self._speaker_lbl.setFont(QFont(DISPLAY_FONT, 8, QFont.Weight.DemiBold))
         message_row.addWidget(self._speaker_lbl, alignment=Qt.AlignmentFlag.AlignTop)
@@ -801,7 +874,7 @@ class FocusDialogueWidget(QWidget):
         input_row = QHBoxLayout()
         input_row.setSpacing(7)
         self._input = QLineEdit()
-        self._input.setPlaceholderText("Give JARVIS a command")
+        self._input.setPlaceholderText("Give FRANKENSTEIN a command")
         self._input.setFont(QFont(UI_FONT, 9))
         self._input.setFixedHeight(30)
         self._input.returnPressed.connect(self._submit)
@@ -830,7 +903,7 @@ class FocusDialogueWidget(QWidget):
         if lower.startswith("you:"):
             speaker, body, color = "YOU", clean[4:].strip(), C.WHITE
         elif lower.startswith("jarvis:"):
-            speaker, body, color = "JARVIS", clean[7:].strip(), C.PRI
+            speaker, body, color = "FRANKENSTEIN", clean[7:].strip(), C.PRI
         elif lower.startswith("err:") or "error" in lower:
             speaker, body, color = "ALERT", clean.replace("ERR:", "").strip(), C.RED
         else:
@@ -1829,6 +1902,9 @@ class _SysMetrics:
         self.net  = 0.0   
         self.gpu  = -1.0  
         self.tmp  = -1.0  
+        self.vram_used  = -1.0   # MiB, only when nvidia-smi reports it
+        self.vram_total = -1.0
+        self.gpu_name   = ""
         self._lock = threading.Lock()
         self._last_net = psutil.net_io_counters()
         self._last_net_t = time.time()
@@ -1861,6 +1937,8 @@ class _SysMetrics:
         self._last_net_t = now
 
         gpu = self._get_gpu()
+        if not self.gpu_name:
+            self.gpu_name = self._get_gpu_name()
 
         tmp = self._get_temp()
 
@@ -1949,6 +2027,31 @@ class _SysMetrics:
 
         return -1.0
 
+    def _get_gpu_name(self) -> str:
+        """Real adapter name (Windows CIM / nvidia-smi); empty when unknown."""
+        try:
+            r = subprocess.run(
+                ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
+                capture_output=True, text=True, timeout=2,
+            )
+            if r.returncode == 0 and r.stdout.strip():
+                return r.stdout.strip().split(chr(10))[0].strip()
+        except Exception:
+            pass
+        if _OS == "Windows":
+            try:
+                r = subprocess.run(
+                    ["powershell", "-NoProfile", "-Command",
+                     "(Get-CimInstance Win32_VideoController | Select-Object -First 1).Name"],
+                    capture_output=True, text=True, timeout=6,
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                )
+                if r.returncode == 0 and r.stdout.strip():
+                    return r.stdout.strip().split(chr(10))[0].strip()
+            except Exception:
+                pass
+        return ""
+
     def _get_temp(self) -> float:
         try:
             temps = psutil.sensors_temperatures()
@@ -1999,8 +2102,12 @@ class _SysMetrics:
                     capture_output=True, text=True, timeout=3
                 )
                 if r.returncode == 0 and r.stdout.strip():
-                    raw = float(r.stdout.strip().split("\n")[0])
-                    return (raw / 10.0) - 273.15
+                    raw = float(r.stdout.strip().split(chr(10))[0])
+                    celsius = (raw / 10.0) - 273.15
+                    # Many ACPI thermal zones report a fixed placeholder (e.g. 2900 = 16.9 C).
+                    # Outside a plausible running range it is not a real CPU reading -> N/A.
+                    if 25.0 <= celsius <= 120.0:
+                        return celsius
             except Exception:
                 pass
 
@@ -2014,6 +2121,9 @@ class _SysMetrics:
                 "net": self.net,
                 "gpu": self.gpu,
                 "tmp": self.tmp,
+                "vram_used": self.vram_used,
+                "vram_total": self.vram_total,
+                "gpu_name": self.gpu_name,
             }
 
 
@@ -3122,6 +3232,393 @@ class HudCanvas(QWidget):
             p.fillRect(QRectF(_nx, _ny, _ns, _ns), qcol(C.PRI, _n_a))
 
 
+class HolographicCoreCanvas(QWidget):
+    """Native PyQt6 holographic 3D cube - the visual core of the assistant.
+
+    Pure QPainter + lightweight perspective projection. Reacts only to real
+    inputs: `state` (set by MainWindow._apply_state), `muted`, `executing`
+    (real tool progress), `error` (real ERR log lines) and smoothed real RMS
+    levels fed through set_input_audio_level / set_output_audio_level.
+    """
+
+    _STATE_LABELS = {
+        "INITIALISING": "INITIALISING", "LISTENING": "LISTENING",
+        "THINKING": "THINKING", "PROCESSING": "THINKING",
+        "SPEAKING": "SPEAKING", "MUTED": "MIC OFF",
+    }
+    _PARTICLES = 70
+    _MAX_FPS_MS = 33
+
+    # lilac / violet / pink base palette, blended per state
+    _LILAC = (183, 148, 255)
+    _VIOLET = (139, 92, 246)
+    _PINK = (255, 95, 208)
+    _ERROR = (255, 59, 107)
+
+    def __init__(self, face_path: str = "", parent=None, config=None):
+        super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent)
+        self.setMinimumSize(300, 300)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.muted = False
+        self.speaking = False
+        self.state = "INITIALISING"
+        self.executing = False
+        self._error_until = 0.0
+        self._eff = "IDLE"
+        self._level = 0.0
+
+        self._in_target = 0.0
+        self._out_target = 0.0
+        self._in_level = 0.0
+        self._out_level = 0.0
+
+        self._yaw = 0.6
+        self._pitch = 0.45
+        self._roll = 0.0
+        self._inner_phase = 0.0
+        self._t = 0.0
+        self._last = time.time()
+        self._ripples: list[float] = []
+        self._next_ripple = 0.0
+        self._pulse_phase = 0.0
+
+        # smoothed state parameters (all lerped each frame)
+        self._speed = 0.25
+        self._glow = 0.55
+        self._mix = 0.0         # 0 lilac -> 0.5 violet -> 1 pink
+        self._err_mix = 0.0
+        self._activity = 0.0
+        self._dim = 1.0
+
+        rnd = random.Random(7)
+        self._particles = []
+        for _ in range(self._PARTICLES):
+            r = rnd.uniform(1.35, 2.6)
+            th = rnd.uniform(0, math.tau)
+            ph = math.acos(rnd.uniform(-1, 1))
+            self._particles.append([r, th, ph, rnd.uniform(0.04, 0.18) * rnd.choice((-1, 1)),
+                                    rnd.uniform(0.6, 1.8), rnd.random()])
+
+        self._outer = [(x, y, z) for x in (-1, 1) for y in (-1, 1) for z in (-1, 1)]
+        self._mid = [(x * .62, y * .62, z * .62) for x, y, z in self._outer]
+        self._core = [(x * .28, y * .28, z * .28) for x, y, z in self._outer]
+        self._edges = [(i, j) for i in range(8) for j in range(i + 1, 8)
+                       if bin(i ^ j).count("1") == 1]
+        # faces as (a, b, d, c) quads so consecutive points are adjacent corners
+        self._faces = [(0, 1, 3, 2), (4, 5, 7, 6), (0, 1, 5, 4), (2, 3, 7, 6), (0, 2, 6, 4), (1, 3, 7, 5)]
+
+        self._tmr = QTimer(self)
+        self._tmr.timeout.connect(self._step)
+        self._frame_ms = self._MAX_FPS_MS
+        self._tmr.start(self._frame_ms)
+
+    # -- public API (real inputs only) -----------------------------------
+    def set_input_audio_level(self, level: float):
+        self._in_target = max(0.0, min(1.0, float(level)))
+
+    def set_output_audio_level(self, level: float):
+        self._out_target = max(0.0, min(1.0, float(level)))
+
+    def set_executing(self, active: bool):
+        self.executing = bool(active)
+
+    def flag_error(self, seconds: float = 6.0):
+        self._error_until = time.time() + seconds
+
+    def set_graphics_quality(self, quality: str):
+        value = _normalize_graphics_quality(quality)
+        ms = max(self._MAX_FPS_MS, int(GRAPHICS_PROFILES[value]["frame_ms"]))
+        self._frame_ms = ms
+        self._tmr.setInterval(ms)
+
+    def showEvent(self, e):
+        self._last = time.time()
+        if not self._tmr.isActive():
+            self._tmr.start(self._frame_ms)
+        super().showEvent(e)
+
+    def hideEvent(self, e):
+        self._tmr.stop()           # no CPU while hidden / minimised
+        super().hideEvent(e)
+
+    # -- simulation ------------------------------------------------------
+    def _effective(self) -> str:
+        if time.time() < self._error_until:
+            return "ERROR"
+        if self.muted or self.state == "MUTED":
+            return "MUTED"
+        if self.state == "SPEAKING":
+            return "SPEAKING"
+        if self.executing:
+            return "EXECUTING"
+        if self.state in ("THINKING", "PROCESSING"):
+            return "THINKING"
+        if self.state == "LISTENING":
+            return "LISTENING"
+        return "IDLE"
+
+    @staticmethod
+    def _lerp(a, b, k):
+        return a + (b - a) * k
+
+    def _step(self):
+        now = time.time()
+        dt = min(0.1, max(0.001, now - self._last))
+        self._last = now
+        self._t += dt
+        eff = self._effective()
+        # (speed, glow, colour mix, activity, dim)
+        tgt = {
+            "IDLE":      (0.22, 0.50, 0.15, 0.10, 1.00),
+            "LISTENING": (0.30, 0.75, 0.05, 0.35, 1.00),
+            "THINKING":  (0.75, 0.90, 0.75, 0.85, 1.00),
+            "EXECUTING": (0.55, 0.95, 0.55, 1.00, 1.00),
+            "SPEAKING":  (0.40, 1.00, 0.95, 0.60, 1.00),
+            "MUTED":     (0.08, 0.25, 0.10, 0.00, 0.55),
+            "ERROR":     (0.12, 0.90, 0.50, 0.30, 1.00),
+        }[eff]
+        k = 1.0 - math.exp(-dt * 3.0)       # frame-rate independent smoothing
+        self._speed = self._lerp(self._speed, tgt[0], k)
+        self._glow = self._lerp(self._glow, tgt[1], k)
+        self._mix = self._lerp(self._mix, tgt[2], k)
+        self._activity = self._lerp(self._activity, tgt[3], k)
+        self._dim = self._lerp(self._dim, tgt[4], k)
+        self._err_mix = self._lerp(self._err_mix, 1.0 if eff == "ERROR" else 0.0, k)
+
+        ka = 1.0 - math.exp(-dt * 12.0)
+        self._in_level = self._lerp(self._in_level, 0.0 if self.muted else self._in_target, ka)
+        self._out_level = self._lerp(self._out_level, self._out_target, ka)
+        # stale targets decay so a stopped audio feed settles back to zero
+        decay = math.exp(-dt * 6.0)
+        self._in_target *= decay
+        self._out_target *= decay
+
+        self._yaw += dt * self._speed * 1.1
+        self._pitch = 0.45 + 0.12 * math.sin(self._t * 0.31)
+        self._roll += dt * self._speed * 0.25
+        self._inner_phase += dt * (0.4 + self._activity * 2.2)
+        self._pulse_phase += dt * (1.0 + self._activity * 3.0)
+        for pt in self._particles:
+            pt[1] += pt[3] * dt * (0.4 + self._speed * 2)
+
+        level = self._out_level if eff == "SPEAKING" else (self._in_level if eff == "LISTENING" else 0.0)
+        if level > 0.12 and now >= self._next_ripple:
+            self._ripples.append(now)
+            self._next_ripple = now + max(0.18, 0.55 - level * 0.4)
+        self._ripples = [t for t in self._ripples if now - t < 1.6]
+        self._eff = eff
+        self._level = level
+        self.update()
+
+    # -- helpers ---------------------------------------------------------
+    def _palette(self, bias: float = 0.0):
+        """Colour on lilac -> violet -> pink by (mix + bias), blended to red on error."""
+        m = max(0.0, min(1.0, self._mix + bias))
+        if m < 0.5:
+            a, b, f = self._LILAC, self._VIOLET, m * 2
+        else:
+            a, b, f = self._VIOLET, self._PINK, (m - 0.5) * 2
+        c = [a[i] + (b[i] - a[i]) * f for i in range(3)]
+        return [c[i] + (self._ERROR[i] - c[i]) * self._err_mix for i in range(3)]
+
+    @staticmethod
+    def _rot(p, yaw, pitch, roll):
+        x, y, z = p
+        cy, sy = math.cos(yaw), math.sin(yaw)
+        x, z = x * cy + z * sy, -x * sy + z * cy
+        cp, sp = math.cos(pitch), math.sin(pitch)
+        y, z = y * cp - z * sp, y * sp + z * cp
+        cr, sr = math.cos(roll), math.sin(roll)
+        x, y = x * cr - y * sr, x * sr + y * cr
+        return x, y, z
+
+    @staticmethod
+    def _proj(p, cx, cy, scale):
+        x, y, z = p
+        f = 8.0 / (8.0 + z)
+        return cx + x * scale * f, cy + y * scale * f, f
+
+    @staticmethod
+    def _rgba(c, a):
+        return QColor(int(c[0]), int(c[1]), int(c[2]), max(0, min(255, int(a))))
+
+    # -- painting --------------------------------------------------------
+    def paintEvent(self, _e):
+        w, h = self.width(), self.height()
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        eff = self._eff
+        p.fillRect(self.rect(), QColor(C.BG))
+
+        cx, cy = w / 2, h * 0.47
+        size = min(w, h)
+        base = size * 0.215
+        c0 = self._palette()
+        c1 = self._palette(0.35)
+        glow = self._glow * self._dim
+
+        bloom = QRadialGradient(cx, cy, size * 0.55)
+        bloom.setColorAt(0.0, self._rgba(c0, 60 * glow))
+        bloom.setColorAt(0.5, self._rgba(c1, 18 * glow))
+        bloom.setColorAt(1.0, QColor(0, 0, 0, 0))
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(bloom)
+        p.drawEllipse(QPointF(cx, cy), size * 0.55, size * 0.55)
+
+        self._paint_backdrop(p, w, h, cx, cy, size, c0)
+
+        # ripples driven by real audio level
+        now = time.time()
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        for born in self._ripples:
+            age = (now - born) / 1.6
+            rad = base * (1.8 + age * 3.2)
+            p.setPen(QPen(self._rgba(c1, 110 * (1 - age) * glow), 1.2))
+            p.drawEllipse(QPointF(cx, cy), rad, rad * 0.55)
+
+        breathe = 1.0 + 0.03 * math.sin(self._t * 1.3)
+        pulse = 1.0 + 0.16 * self._level
+        scale = base * breathe * pulse * (0.75 if eff == "MUTED" else 1.0)
+
+        yaw, pitch, roll = self._yaw, self._pitch, self._roll
+
+        # particles behind the cube first, in front after
+        front, back = [], []
+        for pt in self._particles:
+            r, th, ph = pt[0], pt[1], pt[2]
+            v = (r * math.sin(ph) * math.cos(th), r * math.cos(ph), r * math.sin(ph) * math.sin(th))
+            v = self._rot(v, yaw * 0.6, pitch, 0)
+            sx, sy, f = self._proj(v, cx, cy, scale)
+            (front if v[2] < 0 else back).append((sx, sy, f, pt))
+        self._draw_particles(p, back, glow)
+
+        outer_r = [self._rot(v, yaw, pitch, roll) for v in self._outer]
+        outer = [self._proj(v, cx, cy, scale) for v in outer_r]
+        mid = [self._proj(self._rot(v, -yaw * 1.6 + self._inner_phase * 0.5, pitch * 1.2, roll * -2), cx, cy, scale)
+               for v in self._mid]
+        core = [self._proj(self._rot(v, yaw * 2.3 + self._inner_phase, pitch + 0.6, roll * 3), cx, cy, scale)
+                for v in self._core]
+
+        # translucent faces, back to front, tinted lilac / violet / pink
+        order = sorted(range(6), key=lambda i: -sum(outer_r[j][2] for j in self._faces[i]))
+        tints = [self._palette(b) for b in (-0.25, 0.0, 0.3, 0.5, -0.1, 0.2)]
+        p.setPen(Qt.PenStyle.NoPen)
+        for i in order:
+            quad = self._faces[i]
+            poly = QPolygonF([QPointF(outer[j][0], outer[j][1]) for j in quad])
+            zc = sum(outer_r[j][2] for j in quad) / 4
+            depth = 0.55 + 0.45 * (1 - (zc + 1) / 2)
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(self._rgba(tints[i], (26 + 24 * glow) * depth * self._dim))
+            p.drawPolygon(poly)
+            self._lattice(p, [outer[j] for j in quad], tints[i], 32 * glow * self._dim)
+
+        self._draw_cube(p, mid, c1, 0.55 * glow, False, 1.0)
+        self._draw_cube(p, core, self._palette(0.7), 0.9 * glow, True, 1.0)
+
+        # connections outer -> mid -> core with travelling pulses when active
+        for i in range(8):
+            for a, b, col in ((outer[i], mid[i], c0), (mid[i], core[i], c1)):
+                p.setPen(QPen(self._rgba(col, 50 * glow * self._dim), 0.8))
+                p.drawLine(QPointF(a[0], a[1]), QPointF(b[0], b[1]))
+                if self._activity > 0.2:
+                    ph = (self._pulse_phase * 0.6 + i * 0.125) % 1.0
+                    p.setPen(Qt.PenStyle.NoPen)
+                    p.setBrush(QColor(255, 255, 255, int(190 * self._activity * self._dim)))
+                    p.drawEllipse(QPointF(a[0] + (b[0] - a[0]) * ph, a[1] + (b[1] - a[1]) * ph), 1.8, 1.8)
+
+        self._draw_cube(p, outer, c0, 1.0 * glow, True, 1.6)
+
+        p.setPen(Qt.PenStyle.NoPen)
+        for idx, (pts, col, r) in enumerate(((outer, c0, 3.2), (mid, c1, 2.2), (core, self._palette(0.8), 2.6))):
+            for j, (x, y, f) in enumerate(pts):
+                tw = 0.6 + 0.4 * math.sin(self._pulse_phase * 1.5 + j + idx)
+                p.setBrush(self._rgba(col, 70 * glow * tw * self._dim))
+                p.drawEllipse(QPointF(x, y), r * 2.2 * f, r * 2.2 * f)
+                p.setBrush(QColor(255, 240, 255, int(220 * self._dim)))
+                p.drawEllipse(QPointF(x, y), r * 0.55 * f, r * 0.55 * f)
+
+        self._draw_particles(p, front, glow)
+        self._paint_hud_text(p, w, h, cx, cy, size, eff, c0)
+        p.end()
+
+    def _draw_particles(self, p, items, glow):
+        p.setPen(Qt.PenStyle.NoPen)
+        for sx, sy, f, pt in items:
+            tw = 0.5 + 0.5 * math.sin(self._t * pt[4] + pt[5] * 6)
+            col = self._palette(pt[5] * 0.6 - 0.2)
+            p.setBrush(self._rgba(col, (40 + 120 * tw) * glow * min(1.0, f)))
+            rad = (0.8 + pt[4] * 0.7) * f
+            p.drawEllipse(QPointF(sx, sy), rad, rad)
+
+    def _lattice(self, p, quad, col, alpha):
+        (x0, y0, _), (x1, y1, _), (x2, y2, _), (x3, y3, _) = quad
+        p.setPen(QPen(self._rgba(col, alpha), 0.6))
+        p.drawLine(QPointF((x0 + x1) / 2, (y0 + y1) / 2), QPointF((x2 + x3) / 2, (y2 + y3) / 2))
+        p.drawLine(QPointF((x1 + x2) / 2, (y1 + y2) / 2), QPointF((x3 + x0) / 2, (y3 + y0) / 2))
+
+    def _draw_cube(self, p, pts, col, strength, glow_pass, width):
+        if glow_pass:
+            p.setPen(QPen(self._rgba(col, 46 * strength * self._dim), width * 4.5,
+                          Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+            for i, j in self._edges:
+                p.drawLine(QPointF(pts[i][0], pts[i][1]), QPointF(pts[j][0], pts[j][1]))
+        p.setPen(QPen(self._rgba(col, 220 * strength * self._dim), width,
+                      Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+        for i, j in self._edges:
+            p.drawLine(QPointF(pts[i][0], pts[i][1]), QPointF(pts[j][0], pts[j][1]))
+
+    def _paint_backdrop(self, p, w, h, cx, cy, size, c0):
+        dim = self._dim
+        p.setPen(QPen(self._rgba(c0, 14 * dim), 1))
+        step = max(36, int(size / 14))
+        horizon = cy + size * 0.28
+        for x in range(-w, w * 2, step):
+            p.drawLine(QPointF(cx + (x - cx) * 0.25, horizon), QPointF(x, h))
+        y, k = horizon, 0
+        while y < h:
+            p.drawLine(QPointF(0, y), QPointF(w, y))
+            k += 1
+            y += 6 + k * k * 0.9
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        for i, rr in enumerate((0.42, 0.62, 0.84)):
+            rad = size * rr * 0.62
+            p.setPen(QPen(self._rgba(c0, (16 - i * 3) * dim), 1,
+                          Qt.PenStyle.DashLine if i == 1 else Qt.PenStyle.SolidLine))
+            p.drawEllipse(QPointF(cx, cy), rad, rad)
+        rad = size * 0.38
+        p.setPen(QPen(self._rgba(c0, 40 * dim), 1))
+        for i in range(72):
+            a = math.radians(i * 5 + self._t * 4.0)
+            r1 = rad + (9 if i % 6 == 0 else 4)
+            p.drawLine(QPointF(cx + math.cos(a) * rad, cy + math.sin(a) * rad),
+                       QPointF(cx + math.cos(a) * r1, cy + math.sin(a) * r1))
+        m, L = 18, 26
+        p.setPen(QPen(self._rgba(c0, 90 * dim), 1.4))
+        for x, y, dx, dy in ((m, m, 1, 1), (w - m, m, -1, 1), (m, h - m, 1, -1), (w - m, h - m, -1, -1)):
+            p.drawLine(QPointF(x, y), QPointF(x + dx * L, y))
+            p.drawLine(QPointF(x, y), QPointF(x, y + dy * L))
+
+    def _paint_hud_text(self, p, w, h, cx, cy, size, eff, c0):
+        p.setFont(QFont("Consolas", 8))
+        p.setPen(self._rgba(c0, 120))
+        p.drawText(QPointF(30, 40), f"YAW {math.degrees(self._yaw) % 360:06.2f}")
+        p.drawText(QPointF(30, 54), f"PIT {math.degrees(self._pitch):06.2f}")
+        p.drawText(QPointF(30, 68), "LAYERS 03  NODES 24")
+        p.drawText(QPointF(w - 190, 40), f"MODE  {self._STATE_LABELS.get(self.state, self.state)}")
+        p.drawText(QPointF(w - 190, 54), f"IN    {self._in_level * 100:5.1f}%")
+        p.drawText(QPointF(w - 190, 68), f"OUT   {self._out_level * 100:5.1f}%")
+        label = {"IDLE": "STANDBY", "LISTENING": "LISTENING", "THINKING": "THINKING",
+                 "EXECUTING": "EXECUTING", "SPEAKING": "SPEAKING", "MUTED": "MIC OFF",
+                 "ERROR": "ERROR"}[eff]
+        cap = QFont("Consolas", 11, QFont.Weight.Bold)
+        cap.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 6)
+        p.setFont(cap)
+        p.setPen(self._rgba(self._ERROR if eff == "ERROR" else c0, 230 * self._dim))
+        p.drawText(QRectF(0, min(h - 60, cy + size * 0.45), w, 24), Qt.AlignmentFlag.AlignCenter, label)
+
+
 class MetricBar(QWidget):
 
     def __init__(self, label: str, color: str = C.PRI, parent=None):
@@ -3157,23 +3654,22 @@ class MetricBar(QWidget):
         p.setPen(Qt.PenStyle.NoPen)
         p.drawRoundedRect(QRectF(bar_x, bar_y, bar_w, bar_h), 2, 2)
 
-        if self._value > 85:
-            bar_col = qcol(C.TEXT_MED)
-        elif self._value > 65:
-            bar_col = qcol(C.TEXT_MED)
-        else:
-            bar_col = qcol(self._color)
+        bar_col = qcol(self._color)
 
         if fill_w > 0:
-            p.setBrush(QBrush(bar_col))
+            grad = QLinearGradient(bar_x, 0, bar_x + bar_w, 0)
+            grad.setColorAt(0.0, qcol(C.PRI))
+            grad.setColorAt(0.6, qcol(C.PURPLE))
+            grad.setColorAt(1.0, qcol(C.ENERGY))
+            p.setBrush(QBrush(grad))
             p.drawRoundedRect(QRectF(bar_x, bar_y, fill_w, bar_h), 2, 2)
 
         p.setFont(QFont("Courier New", 7, QFont.Weight.Bold))
         p.setPen(QPen(qcol(C.TEXT_DIM), 1))
-        p.drawText(QRectF(8, 5, 50, 14), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, self._label)
+        p.drawText(QRectF(8, 5, 90, 14), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, self._label)
 
         p.setFont(QFont("Courier New", 9, QFont.Weight.Bold))
-        p.setPen(QPen(bar_col if self._text != "--" else qcol(C.TEXT_DIM), 1))
+        p.setPen(QPen(qcol(C.TEXT_DIM) if self._text in ("--", "N/A") else qcol(C.WHITE), 1))
         p.drawText(QRectF(0, 4, W - 6, 16), Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, self._text)
 
 
@@ -4503,7 +4999,7 @@ class FileDropZone(QWidget):
 
     def _browse(self):
         path, _ = QFileDialog.getOpenFileName(
-            self, "Select a file for JARVIS", str(Path.home()),
+            self, "Select a file for FRANKENSTEIN", str(Path.home()),
             "All Files (*.*);;"
             "Images (*.jpg *.jpeg *.png *.gif *.webp *.bmp *.svg);;"
             "Documents (*.pdf *.docx *.txt *.md *.pptx);;"
@@ -4671,7 +5167,7 @@ class SetupOverlay(QWidget):
             return w
 
         layout.addWidget(_lbl("◈  INITIALISATION REQUIRED", 13, True))
-        layout.addWidget(_lbl("Configure J.A.R.V.I.S. before first boot.", 9, color=C.PRI_DIM))
+        layout.addWidget(_lbl("Configure FRANKENSTEIN before first boot.", 9, color=C.PRI_DIM))
         layout.addSpacing(6)
 
         sep = QFrame(); sep.setFrameShape(QFrame.Shape.HLine)
@@ -5431,7 +5927,7 @@ class NameSignInOverlay(_OverlayBase):
             return w
 
         title_txt = "◈  UPDATE IDENTITY" if existing_name else "◈  IDENTITY PROTOCOL"
-        sub_txt   = f"Currently: {existing_name}" if existing_name else "JARVIS needs to know who it's talking to."
+        sub_txt   = f"Currently: {existing_name}" if existing_name else "FRANKENSTEIN needs to know who it's talking to."
         layout.addWidget(_lbl(title_txt, 13, True))
         layout.addWidget(_lbl(sub_txt, 9, color=C.PRI_DIM))
         layout.addSpacing(4)
@@ -5542,7 +6038,7 @@ class VoiceSelectOverlay(_OverlayBase):
             return w
 
         layout.addWidget(_lbl("◈  VOICE SELECTION", 13, True))
-        layout.addWidget(_lbl("Choose the voice JARVIS will speak with.", 9, color=C.PRI_DIM))
+        layout.addWidget(_lbl("Choose the voice FRANKENSTEIN will speak with.", 9, color=C.PRI_DIM))
         layout.addSpacing(4)
 
         sep = QFrame(); sep.setFrameShape(QFrame.Shape.HLine)
@@ -6307,7 +6803,7 @@ class VisionPreviewWindow(QWidget):
         super().__init__(parent)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setObjectName("visionPreview")
-        self.setAccessibleName("JARVIS live vision preview")
+        self.setAccessibleName("FRANKENSTEIN live vision preview")
         self.setFixedSize(360, 248)
         self._source = "screen"
         self._drag_origin_global = None
@@ -6612,7 +7108,7 @@ class MainWindow(QMainWindow):
     def __init__(self, face_path: str):
         super().__init__()
         _load_bundled_fonts()
-        self.setWindowTitle("J.A.R.V.I.S — MARK XXXIX")
+        self.setWindowTitle("FRANKENSTEIN")
         self.setMinimumSize(_MIN_W, _MIN_H)
 
         # Set dark palette so no white leaks through any unstyled widget
@@ -6693,7 +7189,7 @@ class MainWindow(QMainWindow):
         hud_config = HudConfig()
         ai_config = AIActivityConfig()
 
-        self.hud = HudCanvas(face_path, config=hud_config)
+        self.hud = HolographicCoreCanvas(face_path, config=hud_config)
         self.hud.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         ai_core_lay.addWidget(self.hud, stretch=4)
 
@@ -6767,7 +7263,7 @@ class MainWindow(QMainWindow):
         # expanded Command Center without reading as application status.
         self._maker_signature = self._build_maker_signature()
         root.addWidget(self._maker_signature)
-        self._set_command_center(False, announce=False)
+        self._set_command_center(True, announce=False)  # Start with full Command Center open
 
         self._clock_tmr = QTimer(self)
         self._clock_tmr.timeout.connect(self._tick_clock)
@@ -6902,7 +7398,7 @@ class MainWindow(QMainWindow):
                     self._vision_preview.stop()
                 self.hide()
                 self._tray.showMessage(
-                    "JARVIS", "Running in background. Click tray icon to restore.",
+                    "FRANKENSTEIN", "Running in background. Click tray icon to restore.",
                     QSystemTrayIcon.MessageIcon.Information, 2000
                 )
                 return
@@ -6930,7 +7426,7 @@ class MainWindow(QMainWindow):
         p.drawEllipse(10, 10, 12, 12)
         p.end()
         self._tray.setIcon(QIcon(px))
-        self._tray.setToolTip("J.A.R.V.I.S — MARK XXXIX")
+        self._tray.setToolTip("FRANKENSTEIN")
 
         tray_menu = QMenu()
         tray_menu.setStyleSheet(f"""
@@ -6941,7 +7437,7 @@ class MainWindow(QMainWindow):
             QMenu::item:selected {{ background: {C.PRI_GHO}; color: {C.PRI}; }}
         """)
 
-        show_action = QAction("Show JARVIS", self)
+        show_action = QAction("Show FRANKENSTEIN", self)
         show_action.triggered.connect(self._tray_show)
         tray_menu.addAction(show_action)
 
@@ -6951,7 +7447,7 @@ class MainWindow(QMainWindow):
 
         tray_menu.addSeparator()
 
-        quit_action = QAction("Quit JARVIS", self)
+        quit_action = QAction("Quit FRANKENSTEIN", self)
         quit_action.triggered.connect(self._tray_quit)
         tray_menu.addAction(quit_action)
 
@@ -7214,7 +7710,7 @@ class MainWindow(QMainWindow):
 
     def _handle_ui_command(self, action: str):
         action = str(action or "").strip().lower()
-        if action in {"quit jarvis", "quit_jarvis"}:
+        if action in {"quit jarvis", "quit frankenstein", "quit_jarvis"}:
             self._request_quit()
             return True
         if action == "open_command_center":
@@ -7443,26 +7939,27 @@ class MainWindow(QMainWindow):
         if hasattr(self, '_spark_net'):
             self._spark_net.set_value(net_str, net_pct / 100.0, "")
 
-        # GPU — cache chip/VRAM from system_profiler, simulate load
+        # GPU adapter name / VRAM come only from real sources (nvidia-smi, Windows
+        # CIM). Anything we cannot read stays "N/A" rather than a made-up value.
         if not getattr(self, '_gpu_info_cached', False):
-            try:
-                import subprocess as _sp, re as _re2
-                _r = _sp.run(["system_profiler", "SPDisplaysDataType"],
-                             capture_output=True, text=True, timeout=3)
-                _cm = _re2.search(r"Chipset Model:\s*(.+)", _r.stdout)
-                _vm = _re2.search(r"VRAM.*?:\s*([\d.]+ \w+)", _r.stdout)
-                self._gpu_chip = _cm.group(1).strip() if _cm else "Integrated GPU"
-                self._gpu_chip = self._gpu_chip.replace(" Graphics", "").replace("Intel ", "")
-                self._gpu_vram_str = _vm.group(1) if _vm else "Shared"
+            name = snap.get("gpu_name", "") if hasattr(snap, "get") else ""
+            if name:
+                self._gpu_chip = name
                 self._gpu_info_cached = True
-            except Exception:
-                self._gpu_chip = "Integrated GPU"
-                self._gpu_vram_str = "Shared"
-                self._gpu_info_cached = True
+            else:
+                self._gpu_chip = "N/A"
+        vram_total = float(snap.get("vram_total", -1.0))
+        vram_used = float(snap.get("vram_used", -1.0))
+        if vram_total > 0 and vram_used >= 0:
+            self._gpu_vram_str = "{:.1f} / {:.1f} GB".format(vram_used / 1024, vram_total / 1024)
+            self._bar_vram.set_value(100.0 * vram_used / vram_total, self._gpu_vram_str)
+        else:
+            self._gpu_vram_str = "N/A"
+            self._bar_vram.set_value(0, "N/A")
         if hasattr(self, '_gpu_name_lbl'):
-            self._gpu_name_lbl.setText(getattr(self, '_gpu_chip', 'Integrated GPU'))
+            self._gpu_name_lbl.setText(getattr(self, '_gpu_chip', 'N/A'))
         if hasattr(self, '_gpu_vram_lbl'):
-            self._gpu_vram_lbl.setText(getattr(self, '_gpu_vram_str', 'Shared'))
+            self._gpu_vram_lbl.setText(getattr(self, '_gpu_vram_str', 'N/A'))
         gpu = float(snap.get("gpu", -1.0))
         if hasattr(self, '_gpu_pct_lbl'):
             self._gpu_pct_lbl.setText("{:.0f}%".format(gpu) if gpu >= 0 else "N/A")
@@ -7488,8 +7985,10 @@ class MainWindow(QMainWindow):
             h = int(elapsed // 3600)
             m = int((elapsed % 3600) // 60)
             self._uptime_lbl.setText(f"UP  {h:02d}:{m:02d}")
+            self._bar_up.set_value(0, f"{h:02d}:{m:02d}")
         except Exception:
             self._uptime_lbl.setText("UP  --:--")
+            self._bar_up.set_value(0, "N/A")
 
         try:
             proc_count = len(psutil.pids())
@@ -7506,20 +8005,7 @@ class MainWindow(QMainWindow):
                 ss = int(se % 60)
                 if hasattr(self, "_session_lbl"):
                     self._session_lbl.setText(f"SESSION  {sh:02d}:{sm:02d}:{ss:02d}")
-        except Exception:
-            pass
-
-        # AI Cognition bar — driven by state
-        try:
-            if hasattr(self, "_bar_cog") and hasattr(self, "hud"):
-                state = getattr(self.hud, "state", "LISTENING")
-                cog_pct = {
-                    "THINKING": random.uniform(70, 95),
-                    "PROCESSING": random.uniform(55, 80),
-                    "SPEAKING": random.uniform(30, 50),
-                    "LISTENING": random.uniform(5, 20),
-                }.get(state, random.uniform(2, 10))
-                self._bar_cog.set_value(cog_pct, f"{cog_pct:.0f}%")
+                self._bar_sess.set_value(0, f"{sh:02d}:{sm:02d}:{ss:02d}")
         except Exception:
             pass
 
@@ -7724,14 +8210,14 @@ class MainWindow(QMainWindow):
         left_col = QVBoxLayout(); left_col.setSpacing(1)
         left_col.setAlignment(Qt.AlignmentFlag.AlignVCenter)
 
-        stark = QLabel("JARVIS")
+        stark = QLabel("FRANKENSTEIN")
         self._header_brand_lbl = stark
         stark.setObjectName("headerTitle")
         stark.setFont(QFont("Arial", 15, QFont.Weight.DemiBold))
         stark.setStyleSheet(f"color: {C.WHITE}; background: transparent;")
         left_col.addWidget(stark)
 
-        sub_stark = QLabel("MARK XXXIX")
+        sub_stark = QLabel("HOLOGRAPHIC AI CORE")
         self._header_mark_lbl = sub_stark
         sub_stark.setObjectName("headerMeta")
         sub_stark.setFont(QFont("Arial", 7, QFont.Weight.Medium))
@@ -7860,7 +8346,7 @@ class MainWindow(QMainWindow):
         ml.setSpacing(3)
 
         # Header
-        sys_hdr = QLabel("Live system")
+        sys_hdr = QLabel("TELEMETRY")
         self._system_title_lbl = sys_hdr
         sys_hdr.setFont(QFont("Arial", 9, QFont.Weight.DemiBold))
         sys_hdr.setStyleSheet(f"color: {C.TEXT_MED}; background: transparent;")
@@ -7877,7 +8363,7 @@ class MainWindow(QMainWindow):
         ml.addSpacing(6)
 
         # ── GPU Block (expanded) ────────────────────────────────────────────
-        gpu_super = QLabel("HARDWARE")
+        gpu_super = QLabel("GPU ADAPTER")
         self._hardware_title_lbl = gpu_super
         gpu_super.setFont(QFont("Courier New", 6))
         gpu_super.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent; letter-spacing: 2px;")
@@ -7946,6 +8432,8 @@ class MainWindow(QMainWindow):
         self._gpu_vram_lbl.setStyleSheet(f"color: {C.TEXT_MED}; background: transparent;")
         gpu_vram_row.addWidget(self._gpu_vram_lbl)
         ml.addLayout(gpu_vram_row)
+        vram_lbl.hide()
+        self._gpu_vram_lbl.hide()   # VRAM is shown by the telemetry bar below
 
         ml.addSpacing(6)
 
@@ -7964,13 +8452,17 @@ class MainWindow(QMainWindow):
         cog_hdr.hide()
         # Keep MetricBar references for data compatibility. Cognition is the
         # only visible bar because the other values already use spark rows.
-        self._bar_cpu = MetricBar("CPU", C.TEXT_MED)
-        self._bar_mem = MetricBar("MEM", C.TEXT_MED)
-        self._bar_net = MetricBar("NET", C.TEXT_MED)
-        self._bar_gpu = MetricBar("GPU", C.TEXT_MED)
-        self._bar_tmp = MetricBar("TMP", C.TEXT_MED)
-        self._bar_cog = MetricBar("COG", C.TEXT_MED)
-        for b in [self._bar_cpu, self._bar_mem, self._bar_net, self._bar_gpu, self._bar_tmp, self._bar_cog]:
+        self._bar_cpu = MetricBar("CPU", C.PRI)
+        self._bar_mem = MetricBar("RAM", C.PRI)
+        self._bar_gpu = MetricBar("GPU", C.PRI)
+        self._bar_vram = MetricBar("VRAM", C.PRI)
+        self._bar_net = MetricBar("NETWORK", C.PRI)
+        self._bar_tmp = MetricBar("TEMP", C.PRI)
+        self._bar_up = MetricBar("UPTIME", C.PRI)
+        self._bar_sess = MetricBar("SESSION", C.PRI)
+        # _bar_cog is intentionally gone: it was driven by random numbers.
+        for b in [self._bar_cpu, self._bar_mem, self._bar_gpu, self._bar_vram,
+                  self._bar_net, self._bar_tmp, self._bar_up, self._bar_sess]:
             ml.addWidget(b)
 
         # Info row
@@ -7985,11 +8477,15 @@ class MainWindow(QMainWindow):
         self._session_lbl.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent;")
         info_row.addWidget(self._session_lbl)
         ml.addLayout(info_row)
+        self._uptime_lbl.hide()
+        self._session_lbl.hide()    # UPTIME / SESSION use the telemetry bars
 
         self._proc_lbl = QLabel("PROC  --")
         self._proc_lbl.setFont(QFont("Courier New", 6))
         self._proc_lbl.setStyleSheet(f"color: {C.TEXT_MED}; background: transparent;")
         ml.addWidget(self._proc_lbl)
+        self._proc_lbl.hide()
+        ml.addStretch(1)
 
         self._left_stack = QStackedWidget()
         self._left_stack.setStyleSheet("background: transparent; border: none;")
@@ -8037,9 +8533,9 @@ class MainWindow(QMainWindow):
             QWidget {{
                 background: qlineargradient(
                     x1:1, y1:0, x2:0, y2:0,
-                    stop:0 rgba(0, 4, 8, 240),
-                    stop:0.5 rgba(0, 10, 18, 220),
-                    stop:1 rgba(0, 8, 14, 230)
+                    stop:0 {C.DARK},
+                    stop:0.5 {C.PANEL},
+                    stop:1 {C.PANEL2}
                 );
                 border-left: 1px solid {C.BORDER};
             }}
@@ -8092,7 +8588,7 @@ class MainWindow(QMainWindow):
         w = QWidget()
         self._dock_frame = w
         w.setObjectName("JarvisCommandRail")
-        w.setAccessibleName("JARVIS command rail")
+        w.setAccessibleName("FRANKENSTEIN command rail")
         w.setFixedHeight(72)
         lay = QHBoxLayout(w)
         lay.setContentsMargins(14, 8, 14, 8)
@@ -8111,7 +8607,7 @@ class MainWindow(QMainWindow):
         title_row.setSpacing(7)
         self._rail_status_dot = QLabel("●")
         self._rail_status_dot.setFont(QFont(TECH_FONT, 7, QFont.Weight.Medium))
-        self._rail_status_dot.setAccessibleName("JARVIS status indicator")
+        self._rail_status_dot.setAccessibleName("FRANKENSTEIN status indicator")
         title_row.addWidget(self._rail_status_dot)
         self._command_title_lbl = QLabel("COMMAND RAIL")
         self._command_title_lbl.setFont(QFont(UI_FONT, 9, QFont.Weight.DemiBold))
@@ -8121,7 +8617,7 @@ class MainWindow(QMainWindow):
 
         self._rail_mode_lbl = QLabel("LOCAL  /  LISTENING")
         self._rail_mode_lbl.setFont(QFont(TECH_FONT, 7, QFont.Weight.Medium))
-        self._rail_mode_lbl.setAccessibleName("JARVIS current state")
+        self._rail_mode_lbl.setAccessibleName("FRANKENSTEIN current state")
         anchor_lay.addWidget(self._rail_mode_lbl)
         lay.addWidget(anchor)
 
@@ -8168,8 +8664,8 @@ class MainWindow(QMainWindow):
         track_lay.addWidget(_track_separator())
 
         self._tts_btn = _ctrl_btn("VOICE", 142)
-        self._tts_btn.setToolTip("Change JARVIS voice")
-        self._tts_btn.setAccessibleName("Change JARVIS voice")
+        self._tts_btn.setToolTip("Change FRANKENSTEIN voice")
+        self._tts_btn.setAccessibleName("Change FRANKENSTEIN voice")
         self._tts_btn.clicked.connect(self._show_tts_select)
         self._update_tts_btn()
         track_lay.addWidget(self._tts_btn)
@@ -8185,8 +8681,8 @@ class MainWindow(QMainWindow):
 
         # Theme cycle button
         self._theme_btn = _ctrl_btn("THEME", 176)
-        self._theme_btn.setToolTip("Cycle JARVIS theme")
-        self._theme_btn.setAccessibleName("Cycle JARVIS theme")
+        self._theme_btn.setToolTip("Cycle FRANKENSTEIN theme")
+        self._theme_btn.setAccessibleName("Cycle FRANKENSTEIN theme")
         self._theme_btn.clicked.connect(self._cycle_theme)
         track_lay.addWidget(self._theme_btn)
         lay.addWidget(track)
@@ -8220,8 +8716,8 @@ class MainWindow(QMainWindow):
 
         self._quit_btn = QPushButton("QUIT")
         self._quit_btn.setObjectName("JarvisQuitButton")
-        self._quit_btn.setAccessibleName("Quit JARVIS")
-        self._quit_btn.setToolTip("Quit JARVIS")
+        self._quit_btn.setAccessibleName("Quit FRANKENSTEIN")
+        self._quit_btn.setToolTip("Quit FRANKENSTEIN")
         self._quit_btn.setFixedSize(78, 44)
         self._quit_btn.setFont(QFont(UI_FONT, 8, QFont.Weight.DemiBold))
         self._quit_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -8237,7 +8733,7 @@ class MainWindow(QMainWindow):
         strip = QWidget()
         self._maker_signature = strip
         strip.setObjectName("JarvisMakerSignature")
-        strip.setAccessibleName("JARVIS creator trademark")
+        strip.setAccessibleName("FRANKENSTEIN creator trademark")
         strip.setFixedHeight(20)
 
         lay = QHBoxLayout(strip)
@@ -8251,7 +8747,7 @@ class MainWindow(QMainWindow):
             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
         )
         self._maker_signature_lbl.setAccessibleName("amd.creationz trademark")
-        self._maker_signature_lbl.setToolTip("JARVIS interface by amd.creationz")
+        self._maker_signature_lbl.setToolTip("FRANKENSTEIN interface by amd.creationz")
         lay.addWidget(self._maker_signature_lbl)
 
         self._style_maker_signature()
@@ -8332,7 +8828,7 @@ class MainWindow(QMainWindow):
         cat  = _file_category(p)
         icon, _ = _FILE_ICONS.get(cat, _FILE_ICONS["unknown"])
         size = _fmt_size(p.stat().st_size)
-        self._file_hint.setText(f"{icon}  {p.name}  ·  {size}  ·  Tell JARVIS what to do with it")
+        self._file_hint.setText(f"{icon}  {p.name}  ·  {size}  ·  Tell FRANKENSTEIN what to do with it")
         self._log.append_log(f"FILE: {p.name} ({size}) loaded")
         if self.on_text_command:
             msg = (
@@ -8504,7 +9000,7 @@ class MainWindow(QMainWindow):
 
         # Show toast for state transitions
         if state == "THINKING":
-            self._show_toast("JARVIS is thinking...", "info")
+            self._show_toast("FRANKENSTEIN is thinking...", "info")
         elif state == "PROCESSING":
             self._show_toast("Processing request...", "info")
 
@@ -8694,7 +9190,7 @@ class MainWindow(QMainWindow):
         self._log.append_log("SYS: PARALLAX UI COMPLETE   [OK]")
         self._log.append_log("SYS: VOICE SYNTHESIS READY  [OK]")
         self._log.append_log(f"SYS: PLATFORM {os_name.upper()} DETECTED")
-        self._log.append_log("SYS: JARVIS MARK XXXIX - ALL SYSTEMS NOMINAL")
+        self._log.append_log("SYS: FRANKENSTEIN online.")
         # After setup: show voice popup first, then name popup
         self._show_voice_select_then_name()
 
@@ -9105,7 +9601,17 @@ class JarvisUI:
     def set_state(self, state: str):
         self._win._state_sig.emit(state)
 
+    def set_input_audio_level(self, level: float):
+        """Real microphone RMS (0..1) for the core visual; display only."""
+        self._win.hud.set_input_audio_level(level)
+
+    def set_output_audio_level(self, level: float):
+        """Real voice-output RMS (0..1) for the core visual; display only."""
+        self._win.hud.set_output_audio_level(level)
+
     def write_log(self, text: str):
+        if str(text or "").lstrip().upper().startswith("ERR"):
+            self._win.hud.flag_error()
         self._win._log_sig.emit(text)
         self._win._parse_log_for_context(text)
 
@@ -9240,6 +9746,7 @@ class JarvisUI:
     def show_tool_progress(self, tool_name: str):
         """Show tool execution progress indicator."""
         try:
+            self._win.hud.set_executing(True)
             self._win._tool_progress.show_tool(tool_name)
         except Exception:
             pass
@@ -9247,6 +9754,7 @@ class JarvisUI:
     def hide_tool_progress(self):
         """Hide tool execution progress indicator."""
         try:
+            self._win.hud.set_executing(False)
             self._win._tool_progress.hide_tool()
         except Exception:
             pass
