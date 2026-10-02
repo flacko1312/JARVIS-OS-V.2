@@ -267,7 +267,7 @@ class ThemeManager:
 
     _THEMES = {
         "frankenstein": {
-            "name": "Frankenstein",
+            "name": "AURORA",
             "BG": "#07060a",
             "PANEL": "#0d0b12",
             "PANEL2": "#110e18",
@@ -562,7 +562,7 @@ class ChatBubbleWidget(QWidget):
         ib_lay.setSpacing(6)
 
         self._input = QLineEdit()
-        self._input.setPlaceholderText("Type a message to FRANKENSTEIN...")
+        self._input.setPlaceholderText("Type a message to AURORA...")
         self._input.setFont(QFont(UI_FONT, 10))
         self._input.setFixedHeight(32)
         self._input.setStyleSheet(f"""
@@ -722,7 +722,7 @@ class ChatBubbleWidget(QWidget):
             bg_col = C.PRI_GHO
             border_col = C.PRI
             text_col = C.PRI
-            name = "FRANKENSTEIN"
+            name = "AURORA"
         elif tl.startswith("file:"):
             sender = "file"
             display = text[5:].strip()
@@ -860,7 +860,7 @@ class FocusDialogueWidget(QWidget):
 
         message_row = QHBoxLayout()
         message_row.setSpacing(10)
-        self._speaker_lbl = QLabel("FRANKENSTEIN")
+        self._speaker_lbl = QLabel("AURORA")
         self._speaker_lbl.setFixedWidth(62)
         self._speaker_lbl.setFont(QFont(DISPLAY_FONT, 8, QFont.Weight.DemiBold))
         message_row.addWidget(self._speaker_lbl, alignment=Qt.AlignmentFlag.AlignTop)
@@ -874,7 +874,7 @@ class FocusDialogueWidget(QWidget):
         input_row = QHBoxLayout()
         input_row.setSpacing(7)
         self._input = QLineEdit()
-        self._input.setPlaceholderText("Give FRANKENSTEIN a command")
+        self._input.setPlaceholderText("Give AURORA a command")
         self._input.setFont(QFont(UI_FONT, 9))
         self._input.setFixedHeight(30)
         self._input.returnPressed.connect(self._submit)
@@ -903,7 +903,7 @@ class FocusDialogueWidget(QWidget):
         if lower.startswith("you:"):
             speaker, body, color = "YOU", clean[4:].strip(), C.WHITE
         elif lower.startswith("jarvis:"):
-            speaker, body, color = "FRANKENSTEIN", clean[7:].strip(), C.PRI
+            speaker, body, color = "AURORA", clean[7:].strip(), C.PRI
         elif lower.startswith("err:") or "error" in lower:
             speaker, body, color = "ALERT", clean.replace("ERR:", "").strip(), C.RED
         else:
@@ -4999,7 +4999,7 @@ class FileDropZone(QWidget):
 
     def _browse(self):
         path, _ = QFileDialog.getOpenFileName(
-            self, "Select a file for FRANKENSTEIN", str(Path.home()),
+            self, "Select a file for AURORA", str(Path.home()),
             "All Files (*.*);;"
             "Images (*.jpg *.jpeg *.png *.gif *.webp *.bmp *.svg);;"
             "Documents (*.pdf *.docx *.txt *.md *.pptx);;"
@@ -5167,7 +5167,7 @@ class SetupOverlay(QWidget):
             return w
 
         layout.addWidget(_lbl("◈  INITIALISATION REQUIRED", 13, True))
-        layout.addWidget(_lbl("Configure FRANKENSTEIN before first boot.", 9, color=C.PRI_DIM))
+        layout.addWidget(_lbl("Configure AURORA before first boot.", 9, color=C.PRI_DIM))
         layout.addSpacing(6)
 
         sep = QFrame(); sep.setFrameShape(QFrame.Shape.HLine)
@@ -5927,7 +5927,7 @@ class NameSignInOverlay(_OverlayBase):
             return w
 
         title_txt = "◈  UPDATE IDENTITY" if existing_name else "◈  IDENTITY PROTOCOL"
-        sub_txt   = f"Currently: {existing_name}" if existing_name else "FRANKENSTEIN needs to know who it's talking to."
+        sub_txt   = f"Currently: {existing_name}" if existing_name else "AURORA needs to know who it's talking to."
         layout.addWidget(_lbl(title_txt, 13, True))
         layout.addWidget(_lbl(sub_txt, 9, color=C.PRI_DIM))
         layout.addSpacing(4)
@@ -6038,7 +6038,7 @@ class VoiceSelectOverlay(_OverlayBase):
             return w
 
         layout.addWidget(_lbl("◈  VOICE SELECTION", 13, True))
-        layout.addWidget(_lbl("Choose the voice FRANKENSTEIN will speak with.", 9, color=C.PRI_DIM))
+        layout.addWidget(_lbl("Choose the voice AURORA will speak with.", 9, color=C.PRI_DIM))
         layout.addSpacing(4)
 
         sep = QFrame(); sep.setFrameShape(QFrame.Shape.HLine)
@@ -6803,7 +6803,7 @@ class VisionPreviewWindow(QWidget):
         super().__init__(parent)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setObjectName("visionPreview")
-        self.setAccessibleName("FRANKENSTEIN live vision preview")
+        self.setAccessibleName("AURORA live vision preview")
         self.setFixedSize(360, 248)
         self._source = "screen"
         self._drag_origin_global = None
@@ -7108,7 +7108,7 @@ class MainWindow(QMainWindow):
     def __init__(self, face_path: str):
         super().__init__()
         _load_bundled_fonts()
-        self.setWindowTitle("FRANKENSTEIN")
+        self.setWindowTitle("AURORA")
         self.setMinimumSize(_MIN_W, _MIN_H)
 
         # Set dark palette so no white leaks through any unstyled widget
@@ -7398,7 +7398,7 @@ class MainWindow(QMainWindow):
                     self._vision_preview.stop()
                 self.hide()
                 self._tray.showMessage(
-                    "FRANKENSTEIN", "Running in background. Click tray icon to restore.",
+                    "AURORA", "Running in background. Click tray icon to restore.",
                     QSystemTrayIcon.MessageIcon.Information, 2000
                 )
                 return
@@ -7426,7 +7426,7 @@ class MainWindow(QMainWindow):
         p.drawEllipse(10, 10, 12, 12)
         p.end()
         self._tray.setIcon(QIcon(px))
-        self._tray.setToolTip("FRANKENSTEIN")
+        self._tray.setToolTip("AURORA")
 
         tray_menu = QMenu()
         tray_menu.setStyleSheet(f"""
@@ -7437,7 +7437,7 @@ class MainWindow(QMainWindow):
             QMenu::item:selected {{ background: {C.PRI_GHO}; color: {C.PRI}; }}
         """)
 
-        show_action = QAction("Show FRANKENSTEIN", self)
+        show_action = QAction("Show AURORA", self)
         show_action.triggered.connect(self._tray_show)
         tray_menu.addAction(show_action)
 
@@ -7447,7 +7447,7 @@ class MainWindow(QMainWindow):
 
         tray_menu.addSeparator()
 
-        quit_action = QAction("Quit FRANKENSTEIN", self)
+        quit_action = QAction("Quit AURORA", self)
         quit_action.triggered.connect(self._tray_quit)
         tray_menu.addAction(quit_action)
 
@@ -7710,7 +7710,7 @@ class MainWindow(QMainWindow):
 
     def _handle_ui_command(self, action: str):
         action = str(action or "").strip().lower()
-        if action in {"quit jarvis", "quit frankenstein", "quit_jarvis"}:
+        if action in {"quit jarvis", "quit frankenstein", "quit aurora", "quit_jarvis"}:
             self._request_quit()
             return True
         if action == "open_command_center":
@@ -8210,7 +8210,7 @@ class MainWindow(QMainWindow):
         left_col = QVBoxLayout(); left_col.setSpacing(1)
         left_col.setAlignment(Qt.AlignmentFlag.AlignVCenter)
 
-        stark = QLabel("FRANKENSTEIN")
+        stark = QLabel("AURORA")
         self._header_brand_lbl = stark
         stark.setObjectName("headerTitle")
         stark.setFont(QFont("Arial", 15, QFont.Weight.DemiBold))
@@ -8588,7 +8588,7 @@ class MainWindow(QMainWindow):
         w = QWidget()
         self._dock_frame = w
         w.setObjectName("JarvisCommandRail")
-        w.setAccessibleName("FRANKENSTEIN command rail")
+        w.setAccessibleName("AURORA command rail")
         w.setFixedHeight(72)
         lay = QHBoxLayout(w)
         lay.setContentsMargins(14, 8, 14, 8)
@@ -8607,7 +8607,7 @@ class MainWindow(QMainWindow):
         title_row.setSpacing(7)
         self._rail_status_dot = QLabel("●")
         self._rail_status_dot.setFont(QFont(TECH_FONT, 7, QFont.Weight.Medium))
-        self._rail_status_dot.setAccessibleName("FRANKENSTEIN status indicator")
+        self._rail_status_dot.setAccessibleName("AURORA status indicator")
         title_row.addWidget(self._rail_status_dot)
         self._command_title_lbl = QLabel("COMMAND RAIL")
         self._command_title_lbl.setFont(QFont(UI_FONT, 9, QFont.Weight.DemiBold))
@@ -8617,7 +8617,7 @@ class MainWindow(QMainWindow):
 
         self._rail_mode_lbl = QLabel("LOCAL  /  LISTENING")
         self._rail_mode_lbl.setFont(QFont(TECH_FONT, 7, QFont.Weight.Medium))
-        self._rail_mode_lbl.setAccessibleName("FRANKENSTEIN current state")
+        self._rail_mode_lbl.setAccessibleName("AURORA current state")
         anchor_lay.addWidget(self._rail_mode_lbl)
         lay.addWidget(anchor)
 
@@ -8664,8 +8664,8 @@ class MainWindow(QMainWindow):
         track_lay.addWidget(_track_separator())
 
         self._tts_btn = _ctrl_btn("VOICE", 142)
-        self._tts_btn.setToolTip("Change FRANKENSTEIN voice")
-        self._tts_btn.setAccessibleName("Change FRANKENSTEIN voice")
+        self._tts_btn.setToolTip("Change AURORA voice")
+        self._tts_btn.setAccessibleName("Change AURORA voice")
         self._tts_btn.clicked.connect(self._show_tts_select)
         self._update_tts_btn()
         track_lay.addWidget(self._tts_btn)
@@ -8681,8 +8681,8 @@ class MainWindow(QMainWindow):
 
         # Theme cycle button
         self._theme_btn = _ctrl_btn("THEME", 176)
-        self._theme_btn.setToolTip("Cycle FRANKENSTEIN theme")
-        self._theme_btn.setAccessibleName("Cycle FRANKENSTEIN theme")
+        self._theme_btn.setToolTip("Cycle AURORA theme")
+        self._theme_btn.setAccessibleName("Cycle AURORA theme")
         self._theme_btn.clicked.connect(self._cycle_theme)
         track_lay.addWidget(self._theme_btn)
         lay.addWidget(track)
@@ -8716,8 +8716,8 @@ class MainWindow(QMainWindow):
 
         self._quit_btn = QPushButton("QUIT")
         self._quit_btn.setObjectName("JarvisQuitButton")
-        self._quit_btn.setAccessibleName("Quit FRANKENSTEIN")
-        self._quit_btn.setToolTip("Quit FRANKENSTEIN")
+        self._quit_btn.setAccessibleName("Quit AURORA")
+        self._quit_btn.setToolTip("Quit AURORA")
         self._quit_btn.setFixedSize(78, 44)
         self._quit_btn.setFont(QFont(UI_FONT, 8, QFont.Weight.DemiBold))
         self._quit_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -8733,7 +8733,7 @@ class MainWindow(QMainWindow):
         strip = QWidget()
         self._maker_signature = strip
         strip.setObjectName("JarvisMakerSignature")
-        strip.setAccessibleName("FRANKENSTEIN creator trademark")
+        strip.setAccessibleName("AURORA creator trademark")
         strip.setFixedHeight(20)
 
         lay = QHBoxLayout(strip)
@@ -8747,7 +8747,7 @@ class MainWindow(QMainWindow):
             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
         )
         self._maker_signature_lbl.setAccessibleName("amd.creationz trademark")
-        self._maker_signature_lbl.setToolTip("FRANKENSTEIN interface by amd.creationz")
+        self._maker_signature_lbl.setToolTip("AURORA interface by amd.creationz")
         lay.addWidget(self._maker_signature_lbl)
 
         self._style_maker_signature()
@@ -8828,7 +8828,7 @@ class MainWindow(QMainWindow):
         cat  = _file_category(p)
         icon, _ = _FILE_ICONS.get(cat, _FILE_ICONS["unknown"])
         size = _fmt_size(p.stat().st_size)
-        self._file_hint.setText(f"{icon}  {p.name}  ·  {size}  ·  Tell FRANKENSTEIN what to do with it")
+        self._file_hint.setText(f"{icon}  {p.name}  ·  {size}  ·  Tell AURORA what to do with it")
         self._log.append_log(f"FILE: {p.name} ({size}) loaded")
         if self.on_text_command:
             msg = (
@@ -9000,7 +9000,7 @@ class MainWindow(QMainWindow):
 
         # Show toast for state transitions
         if state == "THINKING":
-            self._show_toast("FRANKENSTEIN is thinking...", "info")
+            self._show_toast("AURORA is thinking...", "info")
         elif state == "PROCESSING":
             self._show_toast("Processing request...", "info")
 
@@ -9190,7 +9190,7 @@ class MainWindow(QMainWindow):
         self._log.append_log("SYS: PARALLAX UI COMPLETE   [OK]")
         self._log.append_log("SYS: VOICE SYNTHESIS READY  [OK]")
         self._log.append_log(f"SYS: PLATFORM {os_name.upper()} DETECTED")
-        self._log.append_log("SYS: FRANKENSTEIN online.")
+        self._log.append_log("SYS: AURORA online.")
         # After setup: show voice popup first, then name popup
         self._show_voice_select_then_name()
 

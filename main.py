@@ -138,8 +138,16 @@ STARTUP_CLAPS_REQUIRED = 2
 STARTUP_CLAP_MAX_GAP_SECONDS = 4.0
 STARTUP_CLAP_COOLDOWN_SECONDS = 0.22
 SELF_QUIT_GOODBYE = (
-    "Certainly, sir. It has been a privilege. JARVIS is going offline now. "
-    "Until next time."
+    "Por supuesto, flako. Ha sido un placer. AURORA se desconecta ahora. "
+    "Hasta la próxima."
+)
+
+# Always first in the system instruction: the model must answer in Spanish whatever the
+# language of the user, tool results or internal prompts.
+LANGUAGE_RULE = (
+    "Instrucción de idioma (no la menciones ni la repitas): responde SIEMPRE en español (castellano), en cada respuesta, aunque el usuario "
+    "hable en inglés o los mensajes del sistema, resultados de herramientas y avisos internos estén en inglés: "
+    "tradúcelos y contesta en español. Nunca respondas en inglés. Nunca pronuncies etiquetas entre corchetes."
 )
 
 _SELF_QUIT_PATTERNS = tuple(re.compile(pattern, re.IGNORECASE) for pattern in (
@@ -391,14 +399,14 @@ def _load_system_prompt() -> str:
         prompt = PROMPT_PATH.read_text(encoding="utf-8").strip()
         return (
             prompt
-            + "\n\nAlways address the user respectfully as 'Sir' or 'Madam' where appropriate, while remaining efficient and direct."
+            + "\n\nDirígete al usuario por su nombre (flako) con respeto, de forma eficiente y directa, siempre en español."
         )
     except Exception:
         return (
-            "You are FRANKENSTEIN, a personal AI assistant. "
-            "Be concise, direct, and always use the provided tools to complete tasks. "
-            "Never simulate or guess results — always call the appropriate tool. "
-            "Always address the user respectfully as 'Sir' or 'Madam' where appropriate, while remaining efficient and direct."
+            "Eres AURORA, un asistente personal de IA. Responde siempre en español. "
+            "Sé conciso y directo, y usa siempre las herramientas disponibles para completar tareas. "
+            "Nunca simules ni adivines resultados: llama a la herramienta adecuada. "
+            "Dirígete al usuario por su nombre (flako) con respeto, de forma eficiente y directa, siempre en español."
         )
 
 _CTRL_RE = re.compile(r"<ctrl\d+>", re.IGNORECASE)
@@ -1347,8 +1355,8 @@ class JarvisLive:
         ):
             self._queue_self_quit_after_farewell()
             outgoing_text = (
-                "[VERIFIED LOCAL SELF-SHUTDOWN] The user explicitly asked JARVIS to quit. "
-                f'Say exactly: "{SELF_QUIT_GOODBYE}" Do not call a tool and say nothing else.'
+                "[VERIFIED LOCAL SELF-SHUTDOWN] El usuario pidió explícitamente que te cierres. "
+                f'Di exactamente (en español): "{SELF_QUIT_GOODBYE}" No llames a ninguna herramienta y no digas nada más.'
             )
         # JL-W003: offer ordinary typed text to LILITH first. Only when LILITH actually
         # executed it is Gemini skipped; every other case continues unchanged below.
@@ -1413,8 +1421,8 @@ class JarvisLive:
         if not result:
             return False
         directive = (
-            "[INTERNAL VISION OUTPUT] Read the following vision result to the user "
-            "verbatim. Do not add an introduction, commentary, or a tool call. "
+            "[INTERNAL VISION OUTPUT] Lee al usuario, en español, el siguiente resultado de visión "
+            "(tradúcelo si está en inglés). No añadas introducción, comentarios ni llames a herramientas. "
             f"Vision result: {json.dumps(result, ensure_ascii=False)}"
         )
         return self.speak(directive)
@@ -1422,7 +1430,7 @@ class JarvisLive:
     def speak_error(self, tool_name: str, error: str):
         short = str(error)[:120]
         self.ui.write_log(f"ERR: {tool_name} — {short}")
-        self.speak(f"Sir, {tool_name} encountered an error. {short}")
+        self.speak(f"Perdona, {tool_name} ha dado un error. {short}")
 
     @staticmethod
     def _is_explicit_self_quit_transcript(text: str) -> bool:
@@ -1446,7 +1454,7 @@ class JarvisLive:
         self._pending_self_quit = True
         self._pending_self_quit_farewell_received = False
         try:
-            self.ui.write_log("SYS: Shutdown queued; waiting for FRANKENSTEIN's farewell.")
+            self.ui.write_log("SYS: Shutdown queued; waiting for AURORA's farewell.")
         except Exception:
             pass
         # A voice model can occasionally omit audio/turn_complete. Do not
@@ -1576,9 +1584,9 @@ class JarvisLive:
             elif isinstance(name_entry, str):
                 name = name_entry
             if name:
-                greeting = f"Jarvis. At your service, {name}. What would you like to accomplish today?"
+                greeting = f"Hola, soy {name}. Salúdame brevemente."
             else:
-                greeting = "Jarvis. At your service, Sir or Madam. What would you like to accomplish today?"
+                greeting = "Hola. Salúdame brevemente."
             await self.session.send_client_content(
                 turns={"parts": [{"text": greeting}]},
                 turn_complete=True,
@@ -1601,10 +1609,11 @@ class JarvisLive:
             f"Use this to calculate exact times for reminders.\n\n"
         )
 
-        parts = [time_ctx]
+        parts = [LANGUAGE_RULE, time_ctx]
         if mem_str:
             parts.append(mem_str)
         parts.append(sys_prompt)
+        parts.append(LANGUAGE_RULE)  # repeated last: recency keeps the rule in force
 
         return types.LiveConnectConfig(
             response_modalities=["AUDIO"],
@@ -2294,7 +2303,7 @@ class JarvisLive:
 
                     print("[JARVIS] ✅ Connected.")
                     self.ui.set_state("LISTENING")
-                    self.ui.write_log("SYS: FRANKENSTEIN online.")
+                    self.ui.write_log("SYS: AURORA online.")
                     if not self.cloud_safe:
                         try:
                             jarvis_status.write_status({
