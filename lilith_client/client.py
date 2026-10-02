@@ -177,6 +177,15 @@ class LilithClient:
             logger.warning("LILITH context fetch failed: %s", exc)
             return {"categories": {}, "total_facts": 0}
 
+    # ── 2c. Memory Delete (JL-M004) ──────────────────────────────────
+
+    async def delete_memory(self, key: str, *, reason: str = "user_request") -> dict:
+        """Soft-delete a JARVIS-owned fact by key."""
+        return await self._request(
+            "POST", f"{_INTEGRATION}/memory/delete",
+            json={"key": key, "reason": reason},
+        )
+
     # ── 3. Memory Store ─────────────────────────────────────────────────
 
     async def store_memory(

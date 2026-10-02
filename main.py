@@ -1215,6 +1215,23 @@ TOOL_DECLARATIONS = [
         }
     },
     {
+        "name": "lilith_memory_delete",
+        "description": (
+            "Delete a fact from LILITH's persistent memory. Use when the user "
+            "explicitly asks to forget something or says a stored fact is wrong "
+            "and should be removed (not corrected). Provide the key exactly as "
+            "it was stored. LILITH only allows deleting facts JARVIS created."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "key": {"type": "STRING", "description": "The memory key to delete (as returned by store)"},
+                "reason": {"type": "STRING", "description": "Why the fact is being deleted, e.g. 'user corrected' or 'no longer true'"},
+            },
+            "required": ["key"]
+        }
+    },
+    {
         "name": "lilith_home_action",
         "description": (
             "Control a smart home device through LILITH and Home Assistant. "
@@ -1981,6 +1998,24 @@ class JarvisLive:
                     except Exception as exc:
                         result = f"LILITH memory store failed: {exc}"
 
+            elif name == "lilith_memory_delete":
+                bridge = getattr(self, "_lilith", None)
+                if bridge is None or not bridge.is_running:
+                    result = "LILITH is not available. Cannot delete memory."
+                else:
+                    client = bridge._runtime.client
+                    key = str(args.get("key", ""))
+                    reason = str(args.get("reason", "user_request"))
+                    if not key:
+                        result = "No memory key provided."
+                    else:
+                        try:
+                            data = await client.delete_memory(key, reason=reason)
+                            action_done = data.get("action", "deleted")
+                            result = f"Memory {action_done}: {key}"
+                        except Exception as exc:
+                            result = f"LILITH memory delete failed: {exc}"
+
             elif name == "lilith_home_action":
                 bridge = getattr(self, "_lilith", None)
                 if bridge is None or not bridge.is_running:
@@ -2065,7 +2100,7 @@ class JarvisLive:
             "computer_settings", "computer_control", "desktop_control", "file_controller",
             "file_processor", "code_helper", "dev_agent", "game_updater",
             "create_presentation", "save_memory", "jarvis_ui_control", "graphics_quality",
-            "lilith_memory_store", "lilith_home_action",
+            "lilith_memory_store", "lilith_memory_delete", "lilith_home_action",
         }
         call_list = list(calls or [])
         # Real tool activity -> UI (drives the EXECUTING state of the core visual).

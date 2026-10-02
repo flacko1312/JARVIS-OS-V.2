@@ -92,13 +92,13 @@ class TestToolDeclarations(unittest.TestCase):
     def test_lilith_tools_registered(self):
         names = {t["name"] for t in TOOL_DECLARATIONS}
         for tool in ("lilith_memory_search", "lilith_memory_store",
-                     "lilith_home_action", "lilith_health"):
+                     "lilith_memory_delete", "lilith_home_action", "lilith_health"):
             self.assertIn(tool, names)
 
     def test_lilith_tools_excluded_from_cloud_safe(self):
         cloud_tools = {t["name"] for t in get_tool_declarations(cloud_safe=True)}
         for tool in ("lilith_memory_search", "lilith_memory_store",
-                     "lilith_home_action", "lilith_health"):
+                     "lilith_memory_delete", "lilith_home_action", "lilith_health"):
             self.assertNotIn(tool, cloud_tools)
 
     def test_existing_tools_preserved(self):
@@ -212,6 +212,49 @@ class TestLilithMemoryStore(unittest.TestCase):
         _run(jarvis._execute_tool(_fake_fc("lilith_memory_store", {"content": "algo"})))
         _, kwargs = mock.store_memory.call_args
         self.assertEqual(kwargs.get("category"), "jarvis_fact")
+
+
+# ── 4b. lilith_memory_delete (JL-M004) ─────────────────────────────────
+
+class TestLilithMemoryDelete(unittest.TestCase):
+
+    def test_delete_ok(self):
+        mock = AsyncMock()
+        mock.delete_memory.return_value = {"key": "jarvis:café", "action": "deleted"}
+        jarvis = _make_jarvis(lilith_client=mock)
+        resp = _run(jarvis._execute_tool(_fake_fc("lilith_memory_delete", {"key": "café"})))
+        self.assertIn("deleted", resp.response["result"])
+        mock.delete_memory.assert_awaited_once_with("café", reason="user_request")
+
+    def test_delete_with_reason(self):
+        mock = AsyncMock()
+        mock.delete_memory.return_value = {"key": "jarvis:old", "action": "deleted"}
+        jarvis = _make_jarvis(lilith_client=mock)
+        _run(jarvis._execute_tool(_fake_fc("lilith_memory_delete", {
+            "key": "old", "reason": "no longer true",
+        })))
+        mock.delete_memory.assert_awaited_once_with("old", reason="no longer true")
+
+    def test_delete_no_bridge(self):
+        jarvis = _make_jarvis()
+        resp = _run(jarvis._execute_tool(_fake_fc("lilith_memory_delete", {"key": "x"})))
+        self.assertIn("not available", resp.response["result"])
+
+    def test_delete_empty_key(self):
+        jarvis = _make_jarvis(lilith_client=AsyncMock())
+        resp = _run(jarvis._execute_tool(_fake_fc("lilith_memory_delete", {"key": ""})))
+        self.assertIn("No memory key", resp.response["result"])
+
+    def test_delete_exception(self):
+        mock = AsyncMock()
+        mock.delete_memory.side_effect = RuntimeError("not found")
+        jarvis = _make_jarvis(lilith_client=mock)
+        resp = _run(jarvis._execute_tool(_fake_fc("lilith_memory_delete", {"key": "x"})))
+        self.assertIn("failed", resp.response["result"])
+
+    def test_delete_in_mutating_set(self):
+        src = open(os.path.join(os.path.dirname(__file__), "..", "main.py")).read()
+        self.assertIn('"lilith_memory_delete"', src)
 
 
 # ── 5. lilith_home_action — happy path ───────────────────────────────────
