@@ -1146,11 +1146,11 @@ TOOL_DECLARATIONS = [
     {
         "name": "save_memory",
         "description": (
-            "Save an important personal fact about the user to long-term memory. "
-            "Call this silently whenever the user reveals something worth remembering: "
-            "name, age, city, job, preferences, hobbies, relationships, projects, or future plans. "
-            "Do NOT call for: weather, reminders, searches, or one-time commands. "
-            "Do NOT announce that you are saving — just call it silently. "
+            "Save a LOCAL operational note (runtime hints, session context, temporary flags). "
+            "For persistent personal facts about the user (name, age, preferences, relationships, "
+            "projects, wishes), use lilith_memory_store instead — LILITH is the canonical memory. "
+            "Do NOT use this tool to store identity, preferences, relationships, or any personal "
+            "knowledge. Those categories are restricted to LILITH. "
             "Values must be in English regardless of the conversation language."
         ),
         "parameters": {
@@ -1159,16 +1159,12 @@ TOOL_DECLARATIONS = [
                 "category": {
                     "type": "STRING",
                     "description": (
-                        "identity — name, age, birthday, city, job, language, nationality | "
-                        "preferences — favorite food/color/music/film/game/sport, hobbies | "
-                        "projects — active projects, goals, things being built | "
-                        "relationships — friends, family, partner, colleagues | "
-                        "wishes — future plans, things to buy, travel dreams | "
-                        "notes — habits, schedule, anything else worth remembering"
+                        "notes — runtime hints, session flags, operational context | "
+                        "projects — ONLY active coding/task context, not user profile data"
                     )
                 },
-                "key":   {"type": "STRING", "description": "Short snake_case key (e.g. name, favorite_food, sister_name)"},
-                "value": {"type": "STRING", "description": "Concise value in English (e.g. Fatih, pizza, older sister)"},
+                "key":   {"type": "STRING", "description": "Short snake_case key (e.g. current_task, session_mode)"},
+                "value": {"type": "STRING", "description": "Concise value in English"},
             },
             "required": ["category", "key", "value"]
         }
@@ -1708,10 +1704,16 @@ class JarvisLive:
         )
 
         parts = [LANGUAGE_RULE, time_ctx]
+        lilith_is_authoritative = False
         if lilith_context:
             lilith_str = self._format_lilith_context(lilith_context)
             if lilith_str:
                 parts.append(lilith_str)
+                lilith_is_authoritative = True
+        if lilith_is_authoritative:
+            _LOCAL_PERSONAL_CATEGORIES = {"identity", "preferences", "relationships", "wishes"}
+            stripped = {k: v for k, v in memory.items() if k not in _LOCAL_PERSONAL_CATEGORIES}
+            mem_str = format_memory_for_prompt(stripped)
         if mem_str:
             parts.append(mem_str)
         parts.append(sys_prompt)
@@ -1790,9 +1792,25 @@ class JarvisLive:
             )
 
         if name == "save_memory":
+            _SAVE_MEMORY_BLOCKED_CATEGORIES = frozenset({
+                "identity", "preferences", "relationships", "wishes",
+            })
             category = args.get("category", "notes")
             key      = args.get("key", "")
             value    = args.get("value", "")
+            if category in _SAVE_MEMORY_BLOCKED_CATEGORIES:
+                print(f"[Memory] 🚫 save_memory BLOCKED: {category}/{key} — use lilith_memory_store")
+                if not self.ui.muted:
+                    self.ui.set_state("LISTENING")
+                return types.FunctionResponse(
+                    id=fc.id, name=name,
+                    response={
+                        "result": (
+                            f"Category '{category}' is restricted to LILITH persistent memory. "
+                            f"Use lilith_memory_store instead to save personal facts."
+                        )
+                    }
+                )
             if key and value:
                 update_memory({category: {key: {"value": value}}})
                 print(f"[Memory] 💾 save_memory: {category}/{key} = {value}")

@@ -489,7 +489,100 @@ class TestLilithContextInjection(unittest.TestCase):
         self.assertLess(idx_preferences, idx_habits)
 
 
-# ── 10. Approval tools (JL-S003) ──────────────────────────────────────
+# ── 10. Memory canonicalization ────────────────────────────────────────
+
+class TestMemoryCanonicalization(unittest.TestCase):
+
+    def test_save_memory_blocks_identity(self):
+        jarvis = _make_jarvis()
+        resp = _run(jarvis._execute_tool(_fake_fc("save_memory", {
+            "category": "identity", "key": "name", "value": "Test",
+        })))
+        self.assertIn("restricted", resp.response["result"])
+        self.assertIn("lilith_memory_store", resp.response["result"])
+
+    def test_save_memory_blocks_preferences(self):
+        jarvis = _make_jarvis()
+        resp = _run(jarvis._execute_tool(_fake_fc("save_memory", {
+            "category": "preferences", "key": "color", "value": "blue",
+        })))
+        self.assertIn("restricted", resp.response["result"])
+
+    def test_save_memory_blocks_relationships(self):
+        jarvis = _make_jarvis()
+        resp = _run(jarvis._execute_tool(_fake_fc("save_memory", {
+            "category": "relationships", "key": "friend", "value": "Alex",
+        })))
+        self.assertIn("restricted", resp.response["result"])
+
+    def test_save_memory_blocks_wishes(self):
+        jarvis = _make_jarvis()
+        resp = _run(jarvis._execute_tool(_fake_fc("save_memory", {
+            "category": "wishes", "key": "travel", "value": "Japan",
+        })))
+        self.assertIn("restricted", resp.response["result"])
+
+    def test_save_memory_allows_notes(self):
+        jarvis = _make_jarvis()
+        with patch("main.update_memory") as mock_update:
+            resp = _run(jarvis._execute_tool(_fake_fc("save_memory", {
+                "category": "notes", "key": "session_flag", "value": "debug",
+            })))
+        self.assertEqual(resp.response["result"], "ok")
+        mock_update.assert_called_once()
+
+    def test_save_memory_allows_projects(self):
+        jarvis = _make_jarvis()
+        with patch("main.update_memory") as mock_update:
+            resp = _run(jarvis._execute_tool(_fake_fc("save_memory", {
+                "category": "projects", "key": "current", "value": "JARVIS",
+            })))
+        self.assertEqual(resp.response["result"], "ok")
+        mock_update.assert_called_once()
+
+    def test_save_memory_declaration_warns_about_lilith(self):
+        src = open(os.path.join(os.path.dirname(__file__), "..", "main.py")).read()
+        self.assertIn("lilith_memory_store instead", src)
+        self.assertIn("restricted to LILITH", src)
+
+    def test_build_config_strips_local_personal_when_lilith_present(self):
+        mock_client = AsyncMock()
+        jarvis = _make_jarvis(lilith_client=mock_client)
+        memory = {
+            "identity": {"name": {"value": "LOCAL_NAME", "updated": "2026-01-01"}},
+            "preferences": {"color": {"value": "LOCAL_BLUE", "updated": "2026-01-01"}},
+            "notes": {"flag": {"value": "keep_this", "updated": "2026-01-01"}},
+        }
+        lilith_ctx = {
+            "categories": {
+                "identity": [{"key": "nombre", "value": "LILITH_NAME", "confidence": 1.0, "source": "s"}],
+            },
+            "total_facts": 1,
+        }
+        with patch("main.load_memory", return_value=memory), \
+             patch("main._load_system_prompt", return_value="SYS"):
+            config = jarvis._build_config(lilith_context=lilith_ctx)
+        prompt = config.system_instruction
+        self.assertIn("LILITH_NAME", prompt)
+        self.assertNotIn("LOCAL_NAME", prompt)
+        self.assertNotIn("LOCAL_BLUE", prompt)
+        self.assertIn("keep_this", prompt)
+
+    def test_build_config_keeps_local_when_lilith_absent(self):
+        jarvis = _make_jarvis()
+        memory = {
+            "identity": {"name": {"value": "LOCAL_NAME", "updated": "2026-01-01"}},
+            "notes": {"flag": {"value": "keep_this", "updated": "2026-01-01"}},
+        }
+        with patch("main.load_memory", return_value=memory), \
+             patch("main._load_system_prompt", return_value="SYS"):
+            config = jarvis._build_config(lilith_context=None)
+        prompt = config.system_instruction
+        self.assertIn("LOCAL_NAME", prompt)
+        self.assertIn("keep_this", prompt)
+
+
+# ── 11. Approval tools (JL-S003) ──────────────────────────────────────
 
 class TestLilithRequestApproval(unittest.TestCase):
 
