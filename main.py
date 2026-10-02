@@ -12,6 +12,7 @@ from google import genai
 from google.genai import types
 from api import status as jarvis_status
 from core.jarvis_client import JarvisClient
+from core.lilith_gateway import LilithBridge
 from memory.memory_manager import (
     load_memory, update_memory, format_memory_for_prompt,
 )
@@ -1245,6 +1246,8 @@ class JarvisLive:
         self._self_quit_timer = None
         self._shutdown_requested = threading.Event()
         self._tour_active = False
+        # JL-W003: optional LILITH bridge for typed input (None when not configured).
+        self._lilith: LilithBridge | None = None
 
     def _on_text_command(self, text: str):
         if not self._loop or not self.session:
@@ -1270,10 +1273,27 @@ class JarvisLive:
                 "[VERIFIED LOCAL SELF-SHUTDOWN] The user explicitly asked JARVIS to quit. "
                 f'Say exactly: "{SELF_QUIT_GOODBYE}" Do not call a tool and say nothing else.'
             )
+        # JL-W003: offer ordinary typed text to LILITH first. Only when LILITH actually
+        # executed it is Gemini skipped; every other case continues unchanged below.
+        if outgoing_text == self._current_input_transcript and await self._offer_typed_to_lilith(outgoing_text):
+            return True
         await self.session.send_client_content(
             turns={"parts": [{"text": outgoing_text}]},
             turn_complete=True,
         )
+        return True
+
+    async def _offer_typed_to_lilith(self, text: str) -> bool:
+        """True if LILITH executed the typed text (do not also send it to Gemini)."""
+        bridge = getattr(self, "_lilith", None)
+        if bridge is None:
+            return False
+        outcome = await bridge.route_typed(text)
+        if outcome.notice:
+            self.ui.write_log(f"SYS: {outcome.notice}")
+        if not outcome.handled:
+            return False
+        self.ui.write_log(f"LILITH: {outcome.message}")
         return True
 
     async def send_audio_chunk(
@@ -2013,6 +2033,26 @@ class JarvisLive:
                 stream.close()
 
     async def run(self):
+        # JL-W003: one LILITH runtime inside this asyncio loop (same loop as send_text).
+        # Disabled in cloud_safe/hosted mode: a remote web client must not use this
+        # machine's LILITH credential.
+        if not self.cloud_safe:
+            self._lilith = LilithBridge.from_env()
+            if self._lilith is not None:
+                started = await self._lilith.start()
+                state = "online" if self._lilith.lilith_available else "offline (will reconnect)"
+                self.ui.write_log(
+                    f"SYS: LILITH integration {state}." if started
+                    else "SYS: LILITH integration unavailable."
+                )
+        try:
+            await self._run_live()
+        finally:
+            bridge, self._lilith = self._lilith, None
+            if bridge is not None:
+                await bridge.stop()
+
+    async def _run_live(self):
         api_key = self._api_key or _get_api_key()
         client = genai.Client(
             api_key=api_key,
