@@ -196,6 +196,7 @@ class LilithClient:
         category: str = "jarvis_fact",
         confidence: float = 0.8,
         metadata: dict | None = None,
+        description: str | None = None,
     ) -> dict:
         payload: dict[str, Any] = {
             "key": key,
@@ -205,6 +206,8 @@ class LilithClient:
         }
         if metadata:
             payload["metadata"] = metadata
+        if description:
+            payload["description"] = description
         return await self._request("POST", f"{_INTEGRATION}/memory/store", json=payload)
 
     # ── 4. Home Entity ──────────────────────────────────────────────────

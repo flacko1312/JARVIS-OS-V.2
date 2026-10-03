@@ -1218,6 +1218,15 @@ TOOL_DECLARATIONS = [
                     )
                 },
                 "confidence": {"type": "NUMBER", "description": "0.0-1.0. Default: 1.0 for explicit user statements"},
+                "description": {
+                    "type": "STRING",
+                    "description": (
+                        "Natural-language phrase describing this fact in the user's language. "
+                        "LILITH uses this to make the fact searchable. "
+                        "Examples: 'color favorito', 'nombre del perro', 'ciudad donde vive'. "
+                        "Always provide this when storing a fact."
+                    )
+                },
             },
             "required": ["key", "value"]
         }
@@ -2068,13 +2077,15 @@ class JarvisLive:
                     value = str(args.get("value", ""))
                     category = str(args.get("category", "preferences"))
                     confidence = float(args.get("confidence", 1.0))
+                    desc = args.get("description") or None
                     if not key or not value:
                         result = "Missing key or value for memory store."
                     else:
                         semantic_key = f"{category}/{key}"
                         try:
                             data = await client.store_memory(
-                                semantic_key, value, category=category, confidence=confidence,
+                                semantic_key, value, category=category,
+                                confidence=confidence, description=desc,
                             )
                             action_done = data.get("action", "stored")
                             if action_done == "updated":

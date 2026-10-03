@@ -818,5 +818,27 @@ class TestLilithResolveApproval(unittest.TestCase):
         self.assertIn('"lilith_resolve_approval"', src)
 
 
+class TestSearchTextDescription(unittest.TestCase):
+    """Verify description field is declared in lilith_memory_store tool."""
+
+    def test_store_tool_has_description_property(self):
+        src = open(os.path.join(os.path.dirname(__file__), "..", "main.py"), encoding="utf-8").read()
+        self.assertIn('"description"', src)
+        self.assertIn("LILITH uses this to make the fact searchable", src)
+
+    def test_store_passes_description_to_client(self):
+        jarvis = _jarvis_with_lilith()
+        jarvis._lilith._runtime.client.store_memory = AsyncMock(return_value={
+            "key": "jarvis:pets/dog_name", "action": "created", "superseded": [],
+        })
+        resp = _run(jarvis._execute_tool(_fake_fc("lilith_memory_store", {
+            "key": "dog_name", "value": "Caín", "category": "pets",
+            "description": "nombre del perro",
+        })))
+        call_kwargs = jarvis._lilith._runtime.client.store_memory.call_args
+        self.assertEqual(call_kwargs.kwargs.get("description"), "nombre del perro")
+        self.assertIn("Caín", resp.response["result"])
+
+
 if __name__ == "__main__":
     unittest.main()
