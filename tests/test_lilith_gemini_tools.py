@@ -185,35 +185,93 @@ class TestLilithMemorySearch(unittest.TestCase):
 
 class TestLilithMemoryStore(unittest.TestCase):
 
-    def test_store_ok(self):
+    def test_store_create(self):
         mock = AsyncMock()
-        mock.store_memory.return_value = {"key": "jarvis:test", "action": "created"}
+        mock.store_memory.return_value = {"key": "jarvis:preferences/favorite_color", "action": "created"}
         jarvis = _make_jarvis(lilith_client=mock)
         resp = _run(jarvis._execute_tool(_fake_fc("lilith_memory_store", {
-            "content": "Me gusta el café con leche",
-            "category": "preferences",
+            "key": "favorite_color", "value": "lila", "category": "preferences",
         })))
         self.assertIn("created", resp.response["result"])
+        mock.store_memory.assert_called_once_with(
+            "preferences/favorite_color", "lila", category="preferences", confidence=1.0,
+        )
+
+    def test_store_update_disregard_hint(self):
+        mock = AsyncMock()
+        mock.store_memory.return_value = {"key": "jarvis:preferences/favorite_color", "action": "updated"}
+        jarvis = _make_jarvis(lilith_client=mock)
+        resp = _run(jarvis._execute_tool(_fake_fc("lilith_memory_store", {
+            "key": "favorite_color", "value": "lila", "category": "preferences",
+        })))
+        self.assertIn("updated", resp.response["result"])
+        self.assertIn("Disregard", resp.response["result"])
+
+    def test_store_semantic_key_format(self):
+        mock = AsyncMock()
+        mock.store_memory.return_value = {"key": "k", "action": "created"}
+        jarvis = _make_jarvis(lilith_client=mock)
+        _run(jarvis._execute_tool(_fake_fc("lilith_memory_store", {
+            "key": "birthday", "value": "15 de marzo", "category": "family",
+        })))
+        call_args = mock.store_memory.call_args
+        self.assertEqual(call_args[0][0], "family/birthday")
 
     def test_store_no_bridge(self):
         jarvis = _make_jarvis()
-        resp = _run(jarvis._execute_tool(_fake_fc("lilith_memory_store", {"content": "test"})))
+        resp = _run(jarvis._execute_tool(_fake_fc("lilith_memory_store", {
+            "key": "x", "value": "y",
+        })))
         self.assertIn("not available", resp.response["result"])
+
+    def test_store_missing_key(self):
+        mock = AsyncMock()
+        jarvis = _make_jarvis(lilith_client=mock)
+        resp = _run(jarvis._execute_tool(_fake_fc("lilith_memory_store", {
+            "key": "", "value": "test",
+        })))
+        self.assertIn("Missing", resp.response["result"])
+
+    def test_store_missing_value(self):
+        mock = AsyncMock()
+        jarvis = _make_jarvis(lilith_client=mock)
+        resp = _run(jarvis._execute_tool(_fake_fc("lilith_memory_store", {
+            "key": "x", "value": "",
+        })))
+        self.assertIn("Missing", resp.response["result"])
 
     def test_store_exception(self):
         mock = AsyncMock()
         mock.store_memory.side_effect = RuntimeError("forbidden")
         jarvis = _make_jarvis(lilith_client=mock)
-        resp = _run(jarvis._execute_tool(_fake_fc("lilith_memory_store", {"content": "test"})))
+        resp = _run(jarvis._execute_tool(_fake_fc("lilith_memory_store", {
+            "key": "x", "value": "y",
+        })))
         self.assertIn("failed", resp.response["result"])
 
     def test_store_default_category(self):
         mock = AsyncMock()
         mock.store_memory.return_value = {"key": "k", "action": "created"}
         jarvis = _make_jarvis(lilith_client=mock)
-        _run(jarvis._execute_tool(_fake_fc("lilith_memory_store", {"content": "algo"})))
+        _run(jarvis._execute_tool(_fake_fc("lilith_memory_store", {
+            "key": "test_key", "value": "algo",
+        })))
         _, kwargs = mock.store_memory.call_args
-        self.assertEqual(kwargs.get("category"), "jarvis_fact")
+        self.assertEqual(kwargs.get("category"), "preferences")
+
+    def test_store_idempotent_same_key(self):
+        mock = AsyncMock()
+        mock.store_memory.return_value = {"key": "k", "action": "updated"}
+        jarvis = _make_jarvis(lilith_client=mock)
+        _run(jarvis._execute_tool(_fake_fc("lilith_memory_store", {
+            "key": "favorite_color", "value": "lila", "category": "preferences",
+        })))
+        _run(jarvis._execute_tool(_fake_fc("lilith_memory_store", {
+            "key": "favorite_color", "value": "lila", "category": "preferences",
+        })))
+        self.assertEqual(mock.store_memory.call_count, 2)
+        for call in mock.store_memory.call_args_list:
+            self.assertEqual(call[0][0], "preferences/favorite_color")
 
 
 # ── 4b. lilith_memory_delete (JL-M004) ─────────────────────────────────

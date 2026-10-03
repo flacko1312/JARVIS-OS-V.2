@@ -1189,15 +1189,27 @@ TOOL_DECLARATIONS = [
     {
         "name": "lilith_memory_store",
         "description": (
-            "Store a fact in LILITH's persistent memory. Use when the user explicitly "
-            "asks LILITH to remember something. LILITH enforces restricted categories "
-            "(identity, housing, beliefs, economy, psychology). "
-            "Content should be in the user's language."
+            "Store or update a personal fact in LILITH's persistent memory. "
+            "LILITH is the canonical source for personal knowledge about the user. "
+            "Use a stable semantic key for each fact (e.g. favorite_color, birthday, pet_name). "
+            "To CORRECT a fact, call this again with the SAME key and the new value — "
+            "this upserts, replacing the old value. Do NOT delete-then-recreate. "
+            "Do NOT use lilith_memory_delete to correct a fact — only to forget one. "
+            "LILITH enforces restricted categories (identity, housing, beliefs, economy, psychology). "
+            "Value should be in the user's language."
         ),
         "parameters": {
             "type": "OBJECT",
             "properties": {
-                "content": {"type": "STRING", "description": "The fact to remember, in the user's language"},
+                "key": {
+                    "type": "STRING",
+                    "description": (
+                        "Stable snake_case semantic identifier for this fact. "
+                        "Use the SAME key when updating (e.g. favorite_color, birthday, city, pet_name, "
+                        "sister_name). The key identifies WHAT attribute this is — the value is the current answer."
+                    )
+                },
+                "value": {"type": "STRING", "description": "The fact value in the user's language (e.g. 'lila', 'Madrid', 'Luna')"},
                 "category": {
                     "type": "STRING",
                     "description": (
@@ -1207,22 +1219,23 @@ TOOL_DECLARATIONS = [
                 },
                 "confidence": {"type": "NUMBER", "description": "0.0-1.0. Default: 1.0 for explicit user statements"},
             },
-            "required": ["content"]
+            "required": ["key", "value"]
         }
     },
     {
         "name": "lilith_memory_delete",
         "description": (
-            "Delete a fact from LILITH's persistent memory. Use when the user "
-            "explicitly asks to forget something or says a stored fact is wrong "
-            "and should be removed (not corrected). Provide the key exactly as "
-            "it was stored. LILITH only allows deleting facts JARVIS created."
+            "Delete a fact from LILITH's persistent memory. Use ONLY when the user "
+            "explicitly asks to FORGET something entirely (e.g. 'forget my favorite color'). "
+            "Do NOT use this to correct a fact — use lilith_memory_store with the same key instead. "
+            "Key format: category/attribute (e.g. preferences/favorite_color). "
+            "LILITH only allows deleting facts JARVIS created."
         ),
         "parameters": {
             "type": "OBJECT",
             "properties": {
-                "key": {"type": "STRING", "description": "The memory key to delete (as returned by store)"},
-                "reason": {"type": "STRING", "description": "Why the fact is being deleted, e.g. 'user corrected' or 'no longer true'"},
+                "key": {"type": "STRING", "description": "The semantic key to delete (category/attribute, e.g. preferences/favorite_color)"},
+                "reason": {"type": "STRING", "description": "Why: 'user_request' (explicit forget) or 'obsolete'"},
             },
             "required": ["key"]
         }
@@ -2035,18 +2048,28 @@ class JarvisLive:
                     result = "LILITH is not available. Cannot store memory."
                 else:
                     client = bridge._runtime.client
-                    content = str(args.get("content", ""))
-                    category = str(args.get("category", "jarvis_fact"))
+                    key = str(args.get("key", ""))
+                    value = str(args.get("value", ""))
+                    category = str(args.get("category", "preferences"))
                     confidence = float(args.get("confidence", 1.0))
-                    key = content[:60].lower().replace(" ", "_")
-                    try:
-                        data = await client.store_memory(
-                            key, content, category=category, confidence=confidence,
-                        )
-                        action_done = data.get("action", "stored")
-                        result = f"Memory {action_done} in LILITH: {content[:80]}"
-                    except Exception as exc:
-                        result = f"LILITH memory store failed: {exc}"
+                    if not key or not value:
+                        result = "Missing key or value for memory store."
+                    else:
+                        semantic_key = f"{category}/{key}"
+                        try:
+                            data = await client.store_memory(
+                                semantic_key, value, category=category, confidence=confidence,
+                            )
+                            action_done = data.get("action", "stored")
+                            if action_done == "updated":
+                                result = (
+                                    f"Memory updated: {key} is now '{value[:80]}'. "
+                                    f"Disregard any previous value for {key} in your context."
+                                )
+                            else:
+                                result = f"Memory created: {key} = {value[:80]}"
+                        except Exception as exc:
+                            result = f"LILITH memory store failed: {exc}"
 
             elif name == "lilith_memory_delete":
                 bridge = getattr(self, "_lilith", None)
@@ -2062,7 +2085,10 @@ class JarvisLive:
                         try:
                             data = await client.delete_memory(key, reason=reason)
                             action_done = data.get("action", "deleted")
-                            result = f"Memory {action_done}: {key}"
+                            result = (
+                                f"Memory {action_done}: {key}. "
+                                f"This fact no longer exists — disregard it in your context."
+                            )
                         except Exception as exc:
                             result = f"LILITH memory delete failed: {exc}"
 
