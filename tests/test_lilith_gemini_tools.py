@@ -442,6 +442,81 @@ class TestLilithHomeActionSafety(unittest.TestCase):
         self.assertIn("failed", resp.response["result"])
 
 
+# ── 6b. lilith_home_action — parameters ────────────────────────────────
+
+class TestLilithHomeActionParameters(unittest.TestCase):
+
+    def _resolved_mock(self, state="on", brightness=None):
+        mock = AsyncMock()
+        mock.home_resolve.return_value = {
+            "status": "resolved", "entity_id": "light.bombilla_mueble",
+            "friendly_name": "Bombilla habitación",
+        }
+        mock.home_action.return_value = {}
+        attrs = {}
+        if brightness is not None:
+            attrs["brightness"] = brightness
+        mock.home_entity.return_value = {
+            "state": state, "attributes": attrs,
+        }
+        return mock
+
+    def test_turn_on_without_brightness_unchanged(self):
+        mock = self._resolved_mock(state="on")
+        jarvis = _make_jarvis(lilith_client=mock)
+        resp = _run(jarvis._execute_tool(_fake_fc("lilith_home_action", {
+            "target": "bombilla habitación", "action": "turn_on",
+        })))
+        mock.home_action.assert_awaited_once_with(
+            "light.bombilla_mueble", "turn_on", parameters=None,
+        )
+        self.assertIn("on", resp.response["result"])
+
+    def test_brightness_pct_100(self):
+        mock = self._resolved_mock(state="on", brightness=255)
+        jarvis = _make_jarvis(lilith_client=mock)
+        resp = _run(jarvis._execute_tool(_fake_fc("lilith_home_action", {
+            "target": "bombilla habitación", "action": "turn_on",
+            "parameters": {"brightness_pct": 100},
+        })))
+        mock.home_action.assert_awaited_once_with(
+            "light.bombilla_mueble", "turn_on",
+            parameters={"brightness_pct": 100},
+        )
+        self.assertIn("100%", resp.response["result"])
+
+    def test_brightness_pct_50(self):
+        mock = self._resolved_mock(state="on", brightness=128)
+        jarvis = _make_jarvis(lilith_client=mock)
+        resp = _run(jarvis._execute_tool(_fake_fc("lilith_home_action", {
+            "target": "bombilla habitación", "action": "turn_on",
+            "parameters": {"brightness_pct": 50},
+        })))
+        mock.home_action.assert_awaited_once_with(
+            "light.bombilla_mueble", "turn_on",
+            parameters={"brightness_pct": 50},
+        )
+        self.assertIn("50%", resp.response["result"])
+
+    def test_unknown_device_with_parameters_still_rejected(self):
+        mock = AsyncMock()
+        mock.home_resolve.return_value = {"status": "unknown"}
+        jarvis = _make_jarvis(lilith_client=mock)
+        resp = _run(jarvis._execute_tool(_fake_fc("lilith_home_action", {
+            "target": "luz inexistente", "action": "turn_on",
+            "parameters": {"brightness_pct": 100},
+        })))
+        self.assertIn("Unknown", resp.response["result"])
+        mock.home_action.assert_not_awaited()
+
+    def test_target_must_not_contain_brightness_phrases(self):
+        """Verify the tool declaration instructs Gemini to keep target clean."""
+        src = open(os.path.join(os.path.dirname(__file__), "..", "main.py"), encoding="utf-8").read()
+        self.assertIn("Device name only", src)
+        self.assertIn("brightness_pct", src)
+        self.assertIn("parameters", src)
+
+
 # ── 7. Mutating set ─────────────────────────────────────────────────────
 
 class TestMutatingSet(unittest.TestCase):

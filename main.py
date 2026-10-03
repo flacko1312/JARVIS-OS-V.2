@@ -1246,19 +1246,35 @@ TOOL_DECLARATIONS = [
             "Control a smart home device through LILITH and Home Assistant. "
             "Describe the device in natural language — LILITH resolves the real entity. "
             "Never invent entity IDs. Only turn_on and turn_off are supported. "
-            "LILITH enforces safety rules and will reject prohibited actions."
+            "LILITH enforces safety rules and will reject prohibited actions. "
+            "IMPORTANT: 'target' must contain ONLY the device name (e.g. 'bombilla habitación'), "
+            "never brightness levels, percentages, or action words. "
+            "To set brightness, pass brightness_pct in 'parameters'."
         ),
         "parameters": {
             "type": "OBJECT",
             "properties": {
                 "target": {
                     "type": "STRING",
-                    "description": "Natural language device reference (e.g. 'luz del mueble', 'bombilla del salón')"
+                    "description": (
+                        "Device name only — no brightness, percentages, or action words. "
+                        "Examples: 'bombilla habitación', 'luz del mueble', 'bombilla del salón'"
+                    ),
                 },
                 "action": {
                     "type": "STRING",
                     "enum": ["turn_on", "turn_off"],
                     "description": "The action to perform"
+                },
+                "parameters": {
+                    "type": "OBJECT",
+                    "description": (
+                        "Optional action parameters. "
+                        "For turn_on: brightness (0-255), brightness_pct (0-100), "
+                        "color_temp, color_temp_kelvin, rgb_color, transition. "
+                        "For turn_off: transition. "
+                        "LILITH validates allowed parameters."
+                    ),
                 },
             },
             "required": ["target", "action"]
@@ -2100,6 +2116,11 @@ class JarvisLive:
                     client = bridge._runtime.client
                     target = str(args.get("target", ""))
                     action_name = str(args.get("action", ""))
+                    ha_params = args.get("parameters") or None
+                    if isinstance(ha_params, dict):
+                        ha_params = {k: v for k, v in ha_params.items() if v is not None} or None
+                    else:
+                        ha_params = None
                     if action_name not in ("turn_on", "turn_off"):
                         result = f"Only turn_on and turn_off are supported, not '{action_name}'."
                     elif not target:
@@ -2121,12 +2142,17 @@ class JarvisLive:
                             elif status == "resolved" and res.get("entity_id"):
                                 entity_id = res["entity_id"]
                                 friendly = res.get("friendly_name") or target
-                                await client.home_action(entity_id, action_name)
+                                await client.home_action(entity_id, action_name, parameters=ha_params)
                                 # readback
                                 try:
                                     state_data = await client.home_entity(entity_id)
                                     current = state_data.get("state", "unknown")
-                                    result = f"{action_name} on '{friendly}' ({entity_id}). Current state: {current}."
+                                    attrs = ""
+                                    if ha_params and state_data.get("attributes"):
+                                        brightness = state_data["attributes"].get("brightness")
+                                        if brightness is not None:
+                                            attrs = f" Brightness: {round(brightness/255*100)}%."
+                                    result = f"{action_name} on '{friendly}' ({entity_id}). Current state: {current}.{attrs}"
                                 except Exception:
                                     result = f"{action_name} sent to '{friendly}' ({entity_id}). Could not confirm state."
                             else:
