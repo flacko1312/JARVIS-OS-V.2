@@ -431,5 +431,70 @@ class RunLifecycleTests(unittest.TestCase):
         self.assertFalse(bridge.started)
 
 
+# ── JL-R002: Gemini passthrough domains ────────────────────────────────
+
+class GeminiPassthroughTests(unittest.TestCase):
+    """R002: WINDOWS/FILES/VISION/DEVELOPMENT/KNOWLEDGE/WEB → pass_to_conversation."""
+
+    def test_all_gemini_domains_pass_to_conversation(self):
+        bridge, fake = _real_runtime_bridge()
+        cases = [
+            ("abre chrome", "windows"),
+            ("busca archivo readme", "files"),
+            ("qué ves en pantalla", "vision"),
+            ("con codex arregla el bug", "development"),
+            ("investiga con claude", "knowledge"),
+            ("busca en google el tiempo", "web"),
+        ]
+        for text, expected_domain in cases:
+            result = asyncio.run(bridge.route_typed(text))
+            self.assertFalse(result.handled, f"{text} should not be handled")
+            self.assertEqual(result.domain, expected_domain, text)
+
+    def test_gemini_domains_dont_touch_lilith(self):
+        bridge, fake = _real_runtime_bridge()
+        asyncio.run(bridge.route_typed("abre chrome"))
+        asyncio.run(bridge.route_typed("busca en google el tiempo"))
+        self.assertEqual(fake.stored, [])
+        self.assertEqual(fake.searched, [])
+
+    def test_local_ai_still_not_implemented(self):
+        """LOCAL_AI requires LILITH; it's not a Gemini domain."""
+        from router.classifier import classify
+        result = classify("usa ollama para resumir")
+        self.assertEqual(result.domain.value, "local_ai")
+
+
+# ── JL-R005: Ambiguity and low confidence ─────────────────────────────
+
+class AmbiguityDetectionTests(unittest.TestCase):
+    """R005: classifier flags ambiguity; runtime carries low_confidence."""
+
+    def test_unrecognized_text_is_fallback_conversation(self):
+        from router.classifier import classify
+        result = classify("asdfghjkl")
+        self.assertEqual(result.domain.value, "conversation")
+        self.assertAlmostEqual(result.confidence, 0.3)
+        self.assertTrue(result.params.get("fallback"))
+
+    def test_clear_intent_no_ambiguity(self):
+        from router.classifier import classify
+        result = classify("recuerda que mi color favorito es lila")
+        self.assertEqual(result.domain.value, "memory")
+        self.assertNotIn("ambiguous", result.params)
+
+    def test_low_confidence_flag_in_runtime(self):
+        bridge, fake = _real_runtime_bridge()
+        out = asyncio.run(bridge.route_typed("asdfghjkl"))
+        self.assertFalse(out.handled)
+
+    def test_high_confidence_home_no_ambiguity(self):
+        from router.classifier import classify
+        result = classify("enciende la luz del salón")
+        self.assertEqual(result.domain.value, "home")
+        self.assertGreaterEqual(result.confidence, 0.85)
+        self.assertNotIn("ambiguous", result.params)
+
+
 if __name__ == "__main__":
     unittest.main()

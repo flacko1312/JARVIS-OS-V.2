@@ -69,26 +69,45 @@ _RULES: list[tuple[re.Pattern[str], Domain, str, float]] = [
 ]
 
 
+_AMBIGUITY_GAP = 0.1
+
+
 def classify(text: str) -> RouteResult:
-    """Clasifica la intención del usuario en un dominio."""
-    best: RouteResult | None = None
+    """Clasifica la intención del usuario en un dominio.
+
+    JL-R005: when two or more distinct domains match within
+    ``_AMBIGUITY_GAP`` of the winner, ``params["ambiguous"]`` is set
+    so the runtime can choose to ask for clarification.
+    """
+    matches: list[RouteResult] = []
 
     for pattern, domain, handler, confidence in _RULES:
         if pattern.search(text):
-            if best is None or confidence > best.confidence:
-                best = RouteResult(
-                    domain=domain,
-                    handler=handler,
-                    confidence=confidence,
-                    params={"raw_input": text},
-                )
+            matches.append(RouteResult(
+                domain=domain,
+                handler=handler,
+                confidence=confidence,
+                params={"raw_input": text},
+            ))
 
-    if best is not None:
-        return best
+    if not matches:
+        return RouteResult(
+            domain=Domain.CONVERSATION,
+            handler="conversation",
+            confidence=0.3,
+            params={"raw_input": text, "fallback": True},
+        )
 
-    return RouteResult(
-        domain=Domain.CONVERSATION,
-        handler="conversation",
-        confidence=0.3,
-        params={"raw_input": text, "fallback": True},
-    )
+    matches.sort(key=lambda r: r.confidence, reverse=True)
+    best = matches[0]
+
+    rival_domains = [
+        m for m in matches[1:]
+        if m.domain != best.domain
+        and best.confidence - m.confidence <= _AMBIGUITY_GAP
+    ]
+    if rival_domains:
+        best.params["ambiguous"] = True
+        best.params["rival_domains"] = [m.domain.value for m in rival_domains]
+
+    return best

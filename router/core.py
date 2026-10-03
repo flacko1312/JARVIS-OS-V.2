@@ -213,6 +213,14 @@ class JarvisRouter:
             "message": "Conversación local — pendiente de implementar respuesta LLM.",
         }
 
+    async def _handle_gemini_passthrough(self, result: RouteResult) -> dict[str, Any]:
+        """JL-R002: domains resolved by Gemini's own tools on Windows."""
+        return {
+            "ok": True,
+            "action": "passthrough",
+            "pass_to_conversation": True,
+        }
+
     async def _handle_not_implemented(self, result: RouteResult) -> dict[str, Any]:
         return {
             "ok": False,
@@ -224,11 +232,11 @@ _HANDLERS: dict[Domain, Any] = {
     Domain.MEMORY: JarvisRouter._handle_memory,
     Domain.HOME: JarvisRouter._handle_home,
     Domain.CONVERSATION: JarvisRouter._handle_conversation,
-    Domain.WINDOWS: JarvisRouter._handle_not_implemented,
-    Domain.FILES: JarvisRouter._handle_not_implemented,
-    Domain.VISION: JarvisRouter._handle_not_implemented,
-    Domain.DEVELOPMENT: JarvisRouter._handle_not_implemented,
-    Domain.KNOWLEDGE: JarvisRouter._handle_not_implemented,
+    Domain.WINDOWS: JarvisRouter._handle_gemini_passthrough,
+    Domain.FILES: JarvisRouter._handle_gemini_passthrough,
+    Domain.VISION: JarvisRouter._handle_gemini_passthrough,
+    Domain.DEVELOPMENT: JarvisRouter._handle_gemini_passthrough,
+    Domain.KNOWLEDGE: JarvisRouter._handle_gemini_passthrough,
     Domain.LOCAL_AI: JarvisRouter._handle_not_implemented,
-    Domain.WEB: JarvisRouter._handle_not_implemented,
+    Domain.WEB: JarvisRouter._handle_gemini_passthrough,
 }

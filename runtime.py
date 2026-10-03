@@ -37,10 +37,18 @@ logger = logging.getLogger("jarvis.runtime")
 
 _CONVERSATION_DOMAINS = frozenset({Domain.CONVERSATION})
 
-_NOT_IMPLEMENTED_DOMAINS = frozenset({
+# JL-R002: these domains are handled by Gemini's own tools (vision, file
+# browser, web search, etc.). The router classifies them so LILITH can log
+# the intent, but execution stays on the Windows side.
+_GEMINI_DOMAINS = frozenset({
     Domain.WINDOWS, Domain.FILES, Domain.VISION,
     Domain.DEVELOPMENT, Domain.KNOWLEDGE, Domain.WEB,
 })
+
+# JL-R005: below this threshold the classification is "low confidence" —
+# the result still passes to conversation but carries a flag so the caller
+# can decide to ask for clarification.
+_LOW_CONFIDENCE_THRESHOLD = 0.5
 
 
 class JarvisRuntime:
@@ -118,9 +126,10 @@ class JarvisRuntime:
                 "message": None,
                 "data": None,
                 "pass_to_conversation": True,
+                "low_confidence": classification.confidence < _LOW_CONFIDENCE_THRESHOLD,
             }
 
-        if classification.domain in _NOT_IMPLEMENTED_DOMAINS:
+        if classification.domain in _GEMINI_DOMAINS:
             return {
                 "handled": False,
                 "domain": classification.domain.value,
@@ -128,6 +137,7 @@ class JarvisRuntime:
                 "message": None,
                 "data": None,
                 "pass_to_conversation": True,
+                "low_confidence": classification.confidence < _LOW_CONFIDENCE_THRESHOLD,
             }
 
         try:
@@ -141,6 +151,7 @@ class JarvisRuntime:
                 "message": f"Error interno: {exc}",
                 "data": None,
                 "pass_to_conversation": True,
+                "low_confidence": False,
             }
 
         if result.get("offline"):
@@ -151,6 +162,7 @@ class JarvisRuntime:
                 "message": result.get("message", "LILITH no disponible"),
                 "data": result,
                 "pass_to_conversation": False,
+                "low_confidence": False,
             }
 
         if result.get("needs_clarification"):
@@ -161,6 +173,7 @@ class JarvisRuntime:
                 "message": result.get("message"),
                 "data": result,
                 "pass_to_conversation": False,
+                "low_confidence": False,
             }
 
         handled = result.get("ok", False)
@@ -171,4 +184,5 @@ class JarvisRuntime:
             "message": result.get("message"),
             "data": result.get("data"),
             "pass_to_conversation": not handled,
+            "low_confidence": classification.confidence < _LOW_CONFIDENCE_THRESHOLD,
         }
