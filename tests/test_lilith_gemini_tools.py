@@ -313,7 +313,7 @@ class TestLilithMemoryDelete(unittest.TestCase):
         self.assertIn("failed", resp.response["result"])
 
     def test_delete_in_mutating_set(self):
-        src = open(os.path.join(os.path.dirname(__file__), "..", "main.py")).read()
+        src = open(os.path.join(os.path.dirname(__file__), "..", "main.py"), encoding="utf-8").read()
         self.assertIn('"lilith_memory_delete"', src)
 
 
@@ -447,7 +447,7 @@ class TestLilithHomeActionSafety(unittest.TestCase):
 class TestMutatingSet(unittest.TestCase):
 
     def test_lilith_mutating_tools_in_set(self):
-        src = open(os.path.join(os.path.dirname(__file__), "..", "main.py")).read()
+        src = open(os.path.join(os.path.dirname(__file__), "..", "main.py"), encoding="utf-8").read()
         self.assertIn('"lilith_memory_store"', src)
         self.assertIn('"lilith_home_action"', src)
         self.assertIn('"lilith_resolve_approval"', src)
@@ -599,7 +599,7 @@ class TestMemoryCanonicalization(unittest.TestCase):
         mock_update.assert_called_once()
 
     def test_save_memory_declaration_warns_about_lilith(self):
-        src = open(os.path.join(os.path.dirname(__file__), "..", "main.py")).read()
+        src = open(os.path.join(os.path.dirname(__file__), "..", "main.py"), encoding="utf-8").read()
         self.assertIn("lilith_memory_store instead", src)
         self.assertIn("restricted to LILITH", src)
 
@@ -738,7 +738,7 @@ class TestLilithResolveApproval(unittest.TestCase):
         self.assertIn("failed", resp.response["result"])
 
     def test_resolve_approval_tool_in_declarations(self):
-        src = open(os.path.join(os.path.dirname(__file__), "..", "main.py")).read()
+        src = open(os.path.join(os.path.dirname(__file__), "..", "main.py"), encoding="utf-8").read()
         self.assertIn('"lilith_request_approval"', src)
         self.assertIn('"lilith_resolve_approval"', src)
 
