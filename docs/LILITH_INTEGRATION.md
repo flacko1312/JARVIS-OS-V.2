@@ -1,7 +1,7 @@
-# LILITH integration (typed input) — JL-W001 → JL-W004
+# LILITH integration — JL-W001 → JL-W006
 
-Status: **typed input integrated and verified (2026-10-02).** Voice is NOT routed (see "Not done").
-Branch: `feat/lilith-runtime-integration` (not merged to `main`).
+Status: **typed input + voice tool calling integrated and verified (2026-10-02).** Merged to `main`.
+Branch: `main` (merged from `feat/lilith-gemini-tools` via fast-forward, 2026-10-04).
 
 ## What it does
 
@@ -62,8 +62,23 @@ itself (the HUD then shows `SYS: LILITH is configured but the integration could 
   Side effects: one stored memory, a brief low-brightness change on one light (restored), one short Gemini turn.
   Run with `PYTHONUTF8=1`.
 
+## Done since initial doc
+
+* **JL-H005**: HOME by typed name resolves through LILITH (`/home/resolve`). Verified E2E.
+* **JL-W005/W006**: Gemini Live tool calling → LILITH. 4 tools: `lilith_memory_search`, `lilith_memory_store`,
+  `lilith_home_action`, `lilith_health`. Verified offline (30 tests). Voice E2E pending (requires Windows + mic).
+* **JL-M003**: Memory context injection into Gemini system prompt.
+* **JL-S003**: Approval flow for CONSULTATIVE/SENSITIVE actions.
+* **JL-M004**: Deterministic semantic fact identity + context freshness.
+
+## Canonical workflow (2026-10-04)
+
+* **Development**: `/home/flako1312/JARVIS-OS-V2` (Ubuntu, `main` branch)
+* **Remote**: `origin` = `flacko1312/JARVIS-OS-V.2` (canonical)
+* **Windows runtime**: `C:\JARVIS` — deployment only, pull from `origin/main`
+* **upstream**: `MAL19INDUSTRIES/JARVIS-OS-V.2` — reference only, never push
+
 ## Not done / next
 
-* Voice: Gemini transcripts arrive at `turn_complete`, too late to route. Direction: Gemini tool/function
-  calling -> LILITH (JL-W005, JL-W006).
-* HOME by typed name needs name -> `entity_id` resolution (JL-H005).
+* Voice E2E: requires Windows PC with microphone + Gemini Live real session.
+* JL-EA001-012: External agents (Claude/Codex) — not started.
