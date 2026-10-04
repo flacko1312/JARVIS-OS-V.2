@@ -78,6 +78,67 @@ itself (the HUD then shows `SYS: LILITH is configured but the integration could 
 * **Windows runtime**: `C:\JARVIS` — deployment only, pull from `origin/main`
 * **upstream**: `MAL19INDUSTRIES/JARVIS-OS-V.2` — reference only, never push
 
+## Backup: Windows → Ubuntu (2026-10-04)
+
+Script: `scripts/jarvis_backup.sh`. Pulls runtime data from `C:\JARVIS` via SCP into
+`/mnt/lilith_data/backups/jarvis/`.
+
+### What is backed up
+
+| Category | Files | Schedule | Retention |
+|---|---|---|---|
+| Runtime data | `memory/long_term.json`, `memory/task_history.json`, `config/ui_settings.json`, `config/layout_settings.json` | Daily 04:00 | 14 days |
+| Secrets | `.env`, `config/api_keys.json` | Weekly Sun 04:30 (`--secrets`) | 3 days |
+
+Secrets are stored with mode 600/700 in a separate `secrets/` directory.
+
+### Configuration (env vars)
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `JARVIS_BACKUP_USER` | `flako1312` | SSH user on Windows |
+| `JARVIS_BACKUP_HOST` | `192.168.1.100` | Windows IP |
+| `JARVIS_BACKUP_PATH` | `/c/JARVIS` | SCP path to JARVIS on Windows |
+| `JARVIS_BACKUP_KEY` | `~/.ssh/id_ed25519` | SSH private key |
+
+### Recovery procedure
+
+To restore runtime data from a backup to Windows:
+
+```bash
+# 1. List available backups (newest first)
+ls -lt /mnt/lilith_data/backups/jarvis/data/
+
+# 2. Verify checksums of the backup you want
+cd /mnt/lilith_data/backups/jarvis/data/<STAMP>
+sha256sum -c SHA256SUMS.txt
+
+# 3. Copy files back to Windows
+scp -i ~/.ssh/id_ed25519 memory/long_term.json \
+  flako1312@192.168.1.100:/c/JARVIS/memory/long_term.json
+scp -i ~/.ssh/id_ed25519 memory/task_history.json \
+  flako1312@192.168.1.100:/c/JARVIS/memory/task_history.json
+scp -i ~/.ssh/id_ed25519 config/ui_settings.json \
+  flako1312@192.168.1.100:/c/JARVIS/config/ui_settings.json
+scp -i ~/.ssh/id_ed25519 config/layout_settings.json \
+  flako1312@192.168.1.100:/c/JARVIS/config/layout_settings.json
+```
+
+To restore secrets (from Ubuntu, with appropriate permissions):
+
+```bash
+cd /mnt/lilith_data/backups/jarvis/secrets/<STAMP>
+scp -i ~/.ssh/id_ed25519 .env flako1312@192.168.1.100:/c/JARVIS/.env
+scp -i ~/.ssh/id_ed25519 config/api_keys.json \
+  flako1312@192.168.1.100:/c/JARVIS/config/api_keys.json
+```
+
+### Invariants
+
+- Retention is **never** applied if the current backup failed.
+- Secret file contents are **never** printed to stdout/logs.
+- Concurrent runs are prevented via `flock`.
+
 ## Not done / next
 
 * Voice E2E: requires Windows PC with microphone + Gemini Live real session.
