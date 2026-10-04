@@ -80,64 +80,65 @@ itself (the HUD then shows `SYS: LILITH is configured but the integration could 
 
 ## Backup: Windows → Ubuntu (2026-10-04)
 
-Script: `scripts/jarvis_backup.sh`. Pulls runtime data from `C:\JARVIS` via SCP into
-`/mnt/lilith_data/backups/jarvis/`.
+Architecture: **Windows pushes outbound** to Ubuntu via SCP. Ubuntu validates and promotes.
+
+| Component | Location | Purpose |
+|---|---|---|
+| `scripts/jarvis_backup.ps1` | Windows (`C:\JARVIS`) | PowerShell sender — SCP files to Ubuntu |
+| `scripts/jarvis_backup_receive.sh` | Ubuntu | Validates JSON, checksums, promotes snapshot |
 
 ### What is backed up
 
-| Category | Files | Schedule | Retention |
-|---|---|---|---|
-| Runtime data | `memory/long_term.json`, `memory/task_history.json`, `config/ui_settings.json`, `config/layout_settings.json` | Daily 04:00 | 14 days |
-| Secrets | `.env`, `config/api_keys.json` | Weekly Sun 04:30 (`--secrets`) | 3 days |
+| Files | Retention |
+|---|---|
+| `memory\long_term.json`, `memory\task_history.json`, `config\ui_settings.json`, `config\layout_settings.json` | 14 days |
 
-Secrets are stored with mode 600/700 in a separate `secrets/` directory.
+**Not backed up (by design)**: `.env`, `config/api_keys.json`, tokens, passwords. Automated
+plaintext secret backup is disabled. Encrypted secret backup is a future task.
 
-### Configuration (env vars)
+### Directory structure (Ubuntu)
 
-| Variable | Default | Purpose |
-|---|---|---|
-| `JARVIS_BACKUP_USER` | `flako1312` | SSH user on Windows |
-| `JARVIS_BACKUP_HOST` | `192.168.1.100` | Windows IP |
-| `JARVIS_BACKUP_PATH` | `/c/JARVIS` | SCP path to JARVIS on Windows |
-| `JARVIS_BACKUP_KEY` | `~/.ssh/id_ed25519` | SSH private key |
+```
+/mnt/lilith_data/backups/jarvis/
+  incoming/     ← files land here during transfer (transient)
+  snapshots/    ← promoted validated backups (timestamped)
+  latest/       ← symlink to most recent good snapshot
+  logs/         ← per-run receiver logs
+```
+
+### Configuration
+
+On first run, the PowerShell sender requires `-UbuntuUser` and `-UbuntuHost`. These are
+cached in `C:\JARVIS\config\backup_target.json` for subsequent runs. The SSH key defaults
+to `$HOME\.ssh\id_ed25519`.
 
 ### Recovery procedure
 
-To restore runtime data from a backup to Windows:
+From Ubuntu, copy files back to Windows:
 
-```bash
-# 1. List available backups (newest first)
-ls -lt /mnt/lilith_data/backups/jarvis/data/
-
-# 2. Verify checksums of the backup you want
-cd /mnt/lilith_data/backups/jarvis/data/<STAMP>
-sha256sum -c SHA256SUMS.txt
-
-# 3. Copy files back to Windows
-scp -i ~/.ssh/id_ed25519 memory/long_term.json \
-  flako1312@192.168.1.100:/c/JARVIS/memory/long_term.json
-scp -i ~/.ssh/id_ed25519 memory/task_history.json \
-  flako1312@192.168.1.100:/c/JARVIS/memory/task_history.json
-scp -i ~/.ssh/id_ed25519 config/ui_settings.json \
-  flako1312@192.168.1.100:/c/JARVIS/config/ui_settings.json
-scp -i ~/.ssh/id_ed25519 config/layout_settings.json \
-  flako1312@192.168.1.100:/c/JARVIS/config/layout_settings.json
+```powershell
+# On Windows — pull from the latest snapshot
+scp -i $HOME\.ssh\id_ed25519 USER@UBUNTU:/mnt/lilith_data/backups/jarvis/latest/memory/long_term.json C:\JARVIS\memory\long_term.json
+scp -i $HOME\.ssh\id_ed25519 USER@UBUNTU:/mnt/lilith_data/backups/jarvis/latest/memory/task_history.json C:\JARVIS\memory\task_history.json
+scp -i $HOME\.ssh\id_ed25519 USER@UBUNTU:/mnt/lilith_data/backups/jarvis/latest/config/ui_settings.json C:\JARVIS\config\ui_settings.json
+scp -i $HOME\.ssh\id_ed25519 USER@UBUNTU:/mnt/lilith_data/backups/jarvis/latest/config/layout_settings.json C:\JARVIS\config\layout_settings.json
 ```
 
-To restore secrets (from Ubuntu, with appropriate permissions):
+Or verify a specific snapshot first:
 
 ```bash
-cd /mnt/lilith_data/backups/jarvis/secrets/<STAMP>
-scp -i ~/.ssh/id_ed25519 .env flako1312@192.168.1.100:/c/JARVIS/.env
-scp -i ~/.ssh/id_ed25519 config/api_keys.json \
-  flako1312@192.168.1.100:/c/JARVIS/config/api_keys.json
+# On Ubuntu
+cd /mnt/lilith_data/backups/jarvis/snapshots/<STAMP>
+sha256sum -c SHA256SUMS.txt
+cat MANIFEST.json
 ```
 
 ### Invariants
 
 - Retention is **never** applied if the current backup failed.
-- Secret file contents are **never** printed to stdout/logs.
-- Concurrent runs are prevented via `flock`.
+- Secret values are **never** backed up or printed.
+- Failed incoming snapshots are preserved for debugging, not deleted.
+- `latest/` symlink is only updated after successful validation.
 
 ## Not done / next
 

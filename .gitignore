@@ -91,3 +91,6 @@ outputs/
 *.codex_*_working
 tutorial_overlay.py.before_remove
 *.before_tutorial_overlay
+
+# Backup config (host-specific, generated on first run)
+config/backup_target.json
