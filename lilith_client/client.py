@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from typing import Any
+from urllib.parse import urlencode
 
 import httpx
 
@@ -142,6 +143,37 @@ class LilithClient:
     async def runtime_status(self) -> dict:
         """Read-only runtime/autonomy/status snapshot for JARVIS."""
         return await self._request("GET", f"{_INTEGRATION}/runtime/status")
+
+    async def docs_list(self, *, prefix: str | None = None) -> dict:
+        """List allowlisted canonical LILITH documentation."""
+        path = f"{_INTEGRATION}/docs/list"
+        if prefix:
+            path = f"{path}?{urlencode({'prefix': prefix})}"
+        return await self._request("GET", path)
+
+    async def docs_read(self, path: str, *, max_bytes: int = 80000) -> dict:
+        """Read one allowlisted LILITH documentation file."""
+        return await self._request(
+            "POST", f"{_INTEGRATION}/docs/read",
+            json={"path": path, "max_bytes": max_bytes},
+        )
+
+    async def docs_search(
+        self,
+        query: str,
+        *,
+        limit: int = 10,
+        max_matches_per_file: int = 3,
+    ) -> dict:
+        """Search allowlisted LILITH documentation with server-side matching."""
+        return await self._request(
+            "POST", f"{_INTEGRATION}/docs/search",
+            json={
+                "query": query,
+                "limit": limit,
+                "max_matches_per_file": max_matches_per_file,
+            },
+        )
 
     async def is_available(self) -> bool:
         """Comprueba si LILITH responde. Nunca lanza excepción."""

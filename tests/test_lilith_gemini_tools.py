@@ -94,7 +94,8 @@ class TestToolDeclarations(unittest.TestCase):
         for tool in ("lilith_memory_search", "lilith_memory_store",
                      "lilith_memory_delete", "lilith_home_action", "lilith_health",
                      "lilith_runtime_status", "lilith_request_approval",
-                     "lilith_resolve_approval"):
+                     "lilith_resolve_approval", "lilith_docs_list",
+                     "lilith_docs_read", "lilith_docs_search"):
             self.assertIn(tool, names)
 
     def test_lilith_tools_excluded_from_cloud_safe(self):
@@ -102,7 +103,8 @@ class TestToolDeclarations(unittest.TestCase):
         for tool in ("lilith_memory_search", "lilith_memory_store",
                      "lilith_memory_delete", "lilith_home_action", "lilith_health",
                      "lilith_runtime_status", "lilith_request_approval",
-                     "lilith_resolve_approval"):
+                     "lilith_resolve_approval", "lilith_docs_list",
+                     "lilith_docs_read", "lilith_docs_search"):
             self.assertNotIn(tool, cloud_tools)
 
     def test_existing_tools_preserved(self):
@@ -199,6 +201,64 @@ class TestLilithRuntimeStatus(unittest.TestCase):
         jarvis = _make_jarvis(lilith_client=mock)
         resp = _run(jarvis._execute_tool(_fake_fc("lilith_runtime_status")))
         self.assertIn("failed", resp.response["result"])
+
+
+class TestLilithDocsTools(unittest.TestCase):
+
+    def test_docs_list(self):
+        mock = AsyncMock()
+        mock.docs_list.return_value = {
+            "documents": [
+                {"path": "ARCHITECTURE.md"},
+                {"path": "AI_MEMORY/CURRENT.md"},
+            ],
+        }
+        jarvis = _make_jarvis(lilith_client=mock)
+        resp = _run(jarvis._execute_tool(_fake_fc("lilith_docs_list", {"prefix": "AI_MEMORY"})))
+        result = resp.response["result"]
+        self.assertIn("ARCHITECTURE.md", result)
+        self.assertIn("AI_MEMORY/CURRENT.md", result)
+        mock.docs_list.assert_awaited_once_with(prefix="AI_MEMORY")
+
+    def test_docs_read(self):
+        mock = AsyncMock()
+        mock.docs_read.return_value = {
+            "path": "TASKS.md",
+            "content": "# Tasks\nJL-A3 document access",
+            "truncated": False,
+        }
+        jarvis = _make_jarvis(lilith_client=mock)
+        resp = _run(jarvis._execute_tool(_fake_fc("lilith_docs_read", {
+            "path": "TASKS.md", "max_bytes": 1000,
+        })))
+        self.assertIn("JL-A3", resp.response["result"])
+        mock.docs_read.assert_awaited_once_with("TASKS.md", max_bytes=1000)
+
+    def test_docs_search(self):
+        mock = AsyncMock()
+        mock.docs_search.return_value = {
+            "results": [{
+                "path": "ARCHITECTURE.md",
+                "matches": [{"line": 4, "text": "ResistanceEngine boundary"}],
+            }],
+        }
+        jarvis = _make_jarvis(lilith_client=mock)
+        resp = _run(jarvis._execute_tool(_fake_fc("lilith_docs_search", {
+            "query": "ResistanceEngine", "limit": 5,
+        })))
+        self.assertIn("ARCHITECTURE.md", resp.response["result"])
+        self.assertIn("L4", resp.response["result"])
+        mock.docs_search.assert_awaited_once_with("ResistanceEngine", limit=5)
+
+    def test_docs_tools_offline(self):
+        jarvis = _make_jarvis()
+        for name, args in (
+            ("lilith_docs_list", {}),
+            ("lilith_docs_read", {"path": "TASKS.md"}),
+            ("lilith_docs_search", {"query": "AUT-7"}),
+        ):
+            resp = _run(jarvis._execute_tool(_fake_fc(name, args)))
+            self.assertIn("not configured", resp.response["result"])
 
 
 # ── 3. lilith_memory_search ─────────────────────────────────────────────

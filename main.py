@@ -1346,6 +1346,52 @@ TOOL_DECLARATIONS = [
             "required": []
         }
     },
+    {
+        "name": "lilith_docs_list",
+        "description": (
+            "List real canonical LILITH documentation available through the safe "
+            "read-only integration API. Use before reading if the exact path is unclear."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "prefix": {"type": "STRING", "description": "Optional path prefix such as AI_MEMORY or docs/work_blocks"},
+            },
+            "required": []
+        }
+    },
+    {
+        "name": "lilith_docs_read",
+        "description": (
+            "Read one real canonical LILITH documentation file by path. Read-only. "
+            "Allowed examples: ARCHITECTURE.md, PROJECT_STATE.md, TASKS.md, ROADMAP.md, "
+            "CHANGELOG.md, AI_MEMORY/CURRENT.md, docs/work_blocks/WB-08_motor_de_decision.md."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "path": {"type": "STRING", "description": "Allowlisted documentation path to read"},
+                "max_bytes": {"type": "INTEGER", "description": "Maximum bytes to return, default 80000"},
+            },
+            "required": ["path"]
+        }
+    },
+    {
+        "name": "lilith_docs_search",
+        "description": (
+            "Search real canonical LILITH documentation through the safe read-only "
+            "integration API. Use for questions about roadmap, state, architecture, tasks, "
+            "AI_MEMORY, or work-block docs."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "query": {"type": "STRING", "description": "Text to search for"},
+                "limit": {"type": "INTEGER", "description": "Maximum files to return, 1-50"},
+            },
+            "required": ["query"]
+        }
+    },
 ]
 
 # Tool names exposed by hosted clients. The names here are Gemini function
@@ -2278,6 +2324,70 @@ class JarvisLive:
                         )
                     except Exception as exc:
                         result = f"LILITH runtime status failed: {exc}"
+
+            elif name == "lilith_docs_list":
+                bridge = getattr(self, "_lilith", None)
+                if bridge is None or not bridge.is_running:
+                    result = "LILITH integration is not configured or not running."
+                else:
+                    try:
+                        data = await bridge._runtime.client.docs_list(
+                            prefix=(args.get("prefix") or None))
+                        docs = data.get("documents") or []
+                        if not docs:
+                            result = "No LILITH documents found for that prefix."
+                        else:
+                            lines = [d.get("path", "") for d in docs[:30]]
+                            more = len(docs) - len(lines)
+                            result = "LILITH documents:\n" + "\n".join(f"- {p}" for p in lines)
+                            if more > 0:
+                                result += f"\n...and {more} more."
+                    except Exception as exc:
+                        result = f"LILITH document list failed: {exc}"
+
+            elif name == "lilith_docs_read":
+                bridge = getattr(self, "_lilith", None)
+                if bridge is None or not bridge.is_running:
+                    result = "LILITH integration is not configured or not running."
+                else:
+                    path = str(args.get("path", "")).strip()
+                    max_bytes = int(args.get("max_bytes", 80000))
+                    if not path:
+                        result = "Missing LILITH document path."
+                    else:
+                        try:
+                            data = await bridge._runtime.client.docs_read(
+                                path, max_bytes=max_bytes)
+                            content = str(data.get("content") or "")
+                            truncated = " (truncated)" if data.get("truncated") else ""
+                            result = f"{data.get('path', path)}{truncated}:\n{content}"
+                        except Exception as exc:
+                            result = f"LILITH document read failed: {exc}"
+
+            elif name == "lilith_docs_search":
+                bridge = getattr(self, "_lilith", None)
+                if bridge is None or not bridge.is_running:
+                    result = "LILITH integration is not configured or not running."
+                else:
+                    query = str(args.get("query", "")).strip()
+                    limit = int(args.get("limit", 10))
+                    if not query:
+                        result = "Missing LILITH document search query."
+                    else:
+                        try:
+                            data = await bridge._runtime.client.docs_search(query, limit=limit)
+                            hits = data.get("results") or []
+                            if not hits:
+                                result = f"No LILITH documentation matches: {query}"
+                            else:
+                                lines = []
+                                for hit in hits[:10]:
+                                    lines.append(f"- {hit.get('path')}")
+                                    for match in (hit.get("matches") or [])[:3]:
+                                        lines.append(f"  L{match.get('line')}: {match.get('text')}")
+                                result = "\n".join(lines)
+                        except Exception as exc:
+                            result = f"LILITH document search failed: {exc}"
 
             else:
                 result = f"Unknown tool: {name}"

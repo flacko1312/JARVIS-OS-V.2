@@ -288,6 +288,28 @@ class ClientErrorCodeTests(unittest.TestCase):
             "json": None,
         })
 
+    def test_docs_methods_use_integration_endpoints(self):
+        seen = []
+
+        class C(LilithClient):
+            async def _request(self, method, path, *, json=None):
+                seen.append((method, path, json))
+                return {"ok": True}
+
+        cfg = LilithConfig(base_url="http://127.0.0.1:9", api_key="test-key")
+        client = C(cfg)
+        asyncio.run(client.docs_list(prefix="AI_MEMORY"))
+        asyncio.run(client.docs_read("TASKS.md", max_bytes=1234))
+        asyncio.run(client.docs_search("AUT-7", limit=4, max_matches_per_file=2))
+
+        self.assertEqual(seen, [
+            ("GET", "/api/v1/integration/docs/list?prefix=AI_MEMORY", None),
+            ("POST", "/api/v1/integration/docs/read", {"path": "TASKS.md", "max_bytes": 1234}),
+            ("POST", "/api/v1/integration/docs/search", {
+                "query": "AUT-7", "limit": 4, "max_matches_per_file": 2,
+            }),
+        ])
+
 
 if __name__ == "__main__":
     unittest.main()
