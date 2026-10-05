@@ -139,6 +139,10 @@ class LilithClient:
         """Estado de LILITH. No requiere autenticación."""
         return await self._request("GET", f"{_INTEGRATION}/health")
 
+    async def runtime_status(self) -> dict:
+        """Read-only runtime/autonomy/status snapshot for JARVIS."""
+        return await self._request("GET", f"{_INTEGRATION}/runtime/status")
+
     async def is_available(self) -> bool:
         """Comprueba si LILITH responde. Nunca lanza excepción."""
         try:

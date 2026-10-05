@@ -1333,6 +1333,19 @@ TOOL_DECLARATIONS = [
             "required": []
         }
     },
+    {
+        "name": "lilith_runtime_status",
+        "description": (
+            "Read LILITH's real runtime status: health, autonomy, queue, AUT-6 "
+            "motivation/satisfaction, goals, recent decisions/events, monitor, memory, "
+            "Home Assistant and routine availability. Read-only; never executes actions."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {},
+            "required": []
+        }
+    },
 ]
 
 # Tool names exposed by hosted clients. The names here are Gemini function
@@ -2234,6 +2247,37 @@ class JarvisLive:
                         result = f"LILITH {version} is {status}. Services: {svc_str}."
                     except Exception as exc:
                         result = f"LILITH health check failed: {exc}"
+
+            elif name == "lilith_runtime_status":
+                bridge = getattr(self, "_lilith", None)
+                if bridge is None or not bridge.is_running:
+                    result = "LILITH integration is not configured or not running."
+                else:
+                    try:
+                        status = await bridge._runtime.client.runtime_status()
+                        health = status.get("health") or {}
+                        services = health.get("services") or {}
+                        down = sorted(k for k, ok in services.items() if not ok)
+                        autonomy = status.get("autonomy") or {}
+                        queue = autonomy.get("queue") or {}
+                        aut6 = status.get("aut6") or {}
+                        satisfaction = (aut6.get("satisfaction") or {}).get("score")
+                        goals = status.get("goals") or {}
+                        monitor = status.get("monitor") or {}
+                        routines = status.get("routines") or {}
+                        result = (
+                            f"LILITH runtime: {health.get('status', 'unknown')}; "
+                            f"services down: {', '.join(down) if down else 'none'}; "
+                            f"autonomy: {'running' if autonomy.get('running') else 'stopped'} "
+                            f"({autonomy.get('state', 'unknown')}); "
+                            f"queue: {queue}; "
+                            f"satisfaction: {satisfaction if satisfaction is not None else 'unknown'}; "
+                            f"goals: {goals.get('total', 'unknown')}; "
+                            f"recent log errors: {monitor.get('recent_errors', 'unknown')}; "
+                            f"routines: {'available' if routines.get('available') else routines.get('reason', 'unavailable')}."
+                        )
+                    except Exception as exc:
+                        result = f"LILITH runtime status failed: {exc}"
 
             else:
                 result = f"Unknown tool: {name}"

@@ -93,14 +93,16 @@ class TestToolDeclarations(unittest.TestCase):
         names = {t["name"] for t in TOOL_DECLARATIONS}
         for tool in ("lilith_memory_search", "lilith_memory_store",
                      "lilith_memory_delete", "lilith_home_action", "lilith_health",
-                     "lilith_request_approval", "lilith_resolve_approval"):
+                     "lilith_runtime_status", "lilith_request_approval",
+                     "lilith_resolve_approval"):
             self.assertIn(tool, names)
 
     def test_lilith_tools_excluded_from_cloud_safe(self):
         cloud_tools = {t["name"] for t in get_tool_declarations(cloud_safe=True)}
         for tool in ("lilith_memory_search", "lilith_memory_store",
                      "lilith_memory_delete", "lilith_home_action", "lilith_health",
-                     "lilith_request_approval", "lilith_resolve_approval"):
+                     "lilith_runtime_status", "lilith_request_approval",
+                     "lilith_resolve_approval"):
             self.assertNotIn(tool, cloud_tools)
 
     def test_existing_tools_preserved(self):
@@ -135,6 +137,67 @@ class TestLilithHealth(unittest.TestCase):
         mock.health.side_effect = ConnectionError("unreachable")
         jarvis = _make_jarvis(lilith_client=mock)
         resp = _run(jarvis._execute_tool(_fake_fc("lilith_health")))
+        self.assertIn("failed", resp.response["result"])
+
+
+class TestLilithRuntimeStatus(unittest.TestCase):
+
+    def test_runtime_status_ok(self):
+        mock = AsyncMock()
+        mock.runtime_status.return_value = {
+            "health": {
+                "status": "online",
+                "services": {"database": True, "mqtt": True, "kernel": True},
+            },
+            "autonomy": {
+                "running": True,
+                "state": "OBSERVATION",
+                "queue": {"queued": 0, "succeeded": 3},
+            },
+            "aut6": {"satisfaction": {"score": 91}},
+            "goals": {"total": 2},
+            "monitor": {"recent_errors": 0},
+            "routines": {"available": False, "reason": "not_implemented"},
+        }
+        jarvis = _make_jarvis(lilith_client=mock)
+        resp = _run(jarvis._execute_tool(_fake_fc("lilith_runtime_status")))
+        result = resp.response["result"]
+        self.assertIn("online", result)
+        self.assertIn("autonomy: running", result)
+        self.assertIn("satisfaction: 91", result)
+        self.assertIn("routines: not_implemented", result)
+        mock.runtime_status.assert_awaited_once()
+
+    def test_runtime_status_reports_degraded_services(self):
+        mock = AsyncMock()
+        mock.runtime_status.return_value = {
+            "health": {
+                "status": "degraded",
+                "services": {"database": True, "mqtt": False, "kernel": True},
+            },
+            "autonomy": {"running": False, "state": "OBSERVATION", "queue": {}},
+            "aut6": {},
+            "goals": {},
+            "monitor": {},
+            "routines": {"available": False, "reason": "not_implemented"},
+        }
+        jarvis = _make_jarvis(lilith_client=mock)
+        resp = _run(jarvis._execute_tool(_fake_fc("lilith_runtime_status")))
+        result = resp.response["result"]
+        self.assertIn("degraded", result)
+        self.assertIn("services down: mqtt", result)
+        self.assertIn("autonomy: stopped", result)
+
+    def test_runtime_status_offline(self):
+        jarvis = _make_jarvis()
+        resp = _run(jarvis._execute_tool(_fake_fc("lilith_runtime_status")))
+        self.assertIn("not configured", resp.response["result"])
+
+    def test_runtime_status_exception(self):
+        mock = AsyncMock()
+        mock.runtime_status.side_effect = TimeoutError("timeout")
+        jarvis = _make_jarvis(lilith_client=mock)
+        resp = _run(jarvis._execute_tool(_fake_fc("lilith_runtime_status")))
         self.assertIn("failed", resp.response["result"])
 
 

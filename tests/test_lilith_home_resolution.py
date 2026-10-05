@@ -13,6 +13,7 @@ import httpx
 import router.core as router_core
 from core.lilith_gateway import LilithBridge
 from lilith_client.client import LilithClient
+from lilith_client.config import LilithConfig
 from lilith_client.errors import (
     LilithConnectionError, LilithError, LilithForbiddenError, LilithServerError,
 )
@@ -265,9 +266,27 @@ class ClientErrorCodeTests(unittest.TestCase):
             async def _request(self, method, path, *, json=None):
                 seen.update(method=method, path=path, json=json)
                 return {"status": "unknown"}
-        asyncio.run(C().home_resolve("luz del mueble"))
+        cfg = LilithConfig(base_url="http://127.0.0.1:9", api_key="test-key")
+        asyncio.run(C(cfg).home_resolve("luz del mueble"))
         self.assertEqual(seen, {"method": "POST", "path": "/api/v1/integration/home/resolve",
                                 "json": {"query": "luz del mueble"}})
+
+    def test_runtime_status_gets_integration_endpoint(self):
+        seen = {}
+
+        class C(LilithClient):
+            async def _request(self, method, path, *, json=None):
+                seen.update(method=method, path=path, json=json)
+                return {"health": {"status": "online"}}
+
+        cfg = LilithConfig(base_url="http://127.0.0.1:9", api_key="test-key")
+        out = asyncio.run(C(cfg).runtime_status())
+        self.assertEqual(out["health"]["status"], "online")
+        self.assertEqual(seen, {
+            "method": "GET",
+            "path": "/api/v1/integration/runtime/status",
+            "json": None,
+        })
 
 
 if __name__ == "__main__":
