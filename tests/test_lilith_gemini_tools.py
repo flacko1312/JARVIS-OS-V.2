@@ -95,7 +95,9 @@ class TestToolDeclarations(unittest.TestCase):
                      "lilith_memory_delete", "lilith_home_action", "lilith_health",
                      "lilith_runtime_status", "lilith_request_approval",
                      "lilith_resolve_approval", "lilith_docs_list",
-                     "lilith_docs_read", "lilith_docs_search"):
+                     "lilith_docs_read", "lilith_docs_search",
+                     "lilith_source_list", "lilith_source_read",
+                     "lilith_source_search"):
             self.assertIn(tool, names)
 
     def test_lilith_tools_excluded_from_cloud_safe(self):
@@ -104,7 +106,9 @@ class TestToolDeclarations(unittest.TestCase):
                      "lilith_memory_delete", "lilith_home_action", "lilith_health",
                      "lilith_runtime_status", "lilith_request_approval",
                      "lilith_resolve_approval", "lilith_docs_list",
-                     "lilith_docs_read", "lilith_docs_search"):
+                     "lilith_docs_read", "lilith_docs_search",
+                     "lilith_source_list", "lilith_source_read",
+                     "lilith_source_search"):
             self.assertNotIn(tool, cloud_tools)
 
     def test_existing_tools_preserved(self):
@@ -256,6 +260,65 @@ class TestLilithDocsTools(unittest.TestCase):
             ("lilith_docs_list", {}),
             ("lilith_docs_read", {"path": "TASKS.md"}),
             ("lilith_docs_search", {"query": "AUT-7"}),
+        ):
+            resp = _run(jarvis._execute_tool(_fake_fc(name, args)))
+            self.assertIn("not configured", resp.response["result"])
+
+
+class TestLilithSourceTools(unittest.TestCase):
+
+    def test_source_list(self):
+        mock = AsyncMock()
+        mock.source_list.return_value = {
+            "files": [
+                {"path": "core/routers/integration.py"},
+                {"path": "core/tests/test_jarvis_integration.py"},
+            ],
+        }
+        jarvis = _make_jarvis(lilith_client=mock)
+        resp = _run(jarvis._execute_tool(_fake_fc("lilith_source_list", {"prefix": "core"})))
+        result = resp.response["result"]
+        self.assertIn("core/routers/integration.py", result)
+        self.assertIn("core/tests/test_jarvis_integration.py", result)
+        mock.source_list.assert_awaited_once_with(prefix="core")
+
+    def test_source_read(self):
+        mock = AsyncMock()
+        mock.source_read.return_value = {
+            "path": "core/routers/integration.py",
+            "content": "def integration_source_read():\n    pass",
+            "truncated": False,
+        }
+        jarvis = _make_jarvis(lilith_client=mock)
+        resp = _run(jarvis._execute_tool(_fake_fc("lilith_source_read", {
+            "path": "core/routers/integration.py", "max_bytes": 1000,
+        })))
+        self.assertIn("integration_source_read", resp.response["result"])
+        mock.source_read.assert_awaited_once_with(
+            "core/routers/integration.py", max_bytes=1000)
+
+    def test_source_search(self):
+        mock = AsyncMock()
+        mock.source_search.return_value = {
+            "results": [{
+                "path": "core/routers/integration.py",
+                "matches": [{"line": 4, "text": "DecisionLevel boundary"}],
+            }],
+        }
+        jarvis = _make_jarvis(lilith_client=mock)
+        resp = _run(jarvis._execute_tool(_fake_fc("lilith_source_search", {
+            "query": "DecisionLevel", "limit": 5,
+        })))
+        self.assertIn("core/routers/integration.py", resp.response["result"])
+        self.assertIn("L4", resp.response["result"])
+        mock.source_search.assert_awaited_once_with("DecisionLevel", limit=5)
+
+    def test_source_tools_offline(self):
+        jarvis = _make_jarvis()
+        for name, args in (
+            ("lilith_source_list", {}),
+            ("lilith_source_read", {"path": "core/routers/integration.py"}),
+            ("lilith_source_search", {"query": "DecisionLevel"}),
         ):
             resp = _run(jarvis._execute_tool(_fake_fc(name, args)))
             self.assertIn("not configured", resp.response["result"])

@@ -1392,6 +1392,52 @@ TOOL_DECLARATIONS = [
             "required": ["query"]
         }
     },
+    {
+        "name": "lilith_source_list",
+        "description": (
+            "List allowlisted real LILITH source, tests, scripts, migrations, docker-control "
+            "and non-secret config files through the safe read-only integration API. "
+            "Use before reading if the exact path is unclear."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "prefix": {"type": "STRING", "description": "Optional path prefix such as core/routers, core/tests, scripts, migrations or docker-control"},
+            },
+            "required": []
+        }
+    },
+    {
+        "name": "lilith_source_read",
+        "description": (
+            "Read one allowlisted real LILITH source/tests/config file by path. Read-only. "
+            "Allowed examples: core/routers/integration.py, core/tests/test_jarvis_integration.py, "
+            "scripts/soak_aut5.py, core/database/migrations/0018_aut5_approval_id.sql, docker-compose.yml."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "path": {"type": "STRING", "description": "Allowlisted source/config path to read"},
+                "max_bytes": {"type": "INTEGER", "description": "Maximum bytes to return, default 100000"},
+            },
+            "required": ["path"]
+        }
+    },
+    {
+        "name": "lilith_source_search",
+        "description": (
+            "Search allowlisted real LILITH source/tests/scripts/migrations/config through "
+            "the safe read-only integration API. Does not run shell or inspect Git."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "query": {"type": "STRING", "description": "Text to search for"},
+                "limit": {"type": "INTEGER", "description": "Maximum files to return, 1-50"},
+            },
+            "required": ["query"]
+        }
+    },
 ]
 
 # Tool names exposed by hosted clients. The names here are Gemini function
@@ -2388,6 +2434,70 @@ class JarvisLive:
                                 result = "\n".join(lines)
                         except Exception as exc:
                             result = f"LILITH document search failed: {exc}"
+
+            elif name == "lilith_source_list":
+                bridge = getattr(self, "_lilith", None)
+                if bridge is None or not bridge.is_running:
+                    result = "LILITH integration is not configured or not running."
+                else:
+                    try:
+                        data = await bridge._runtime.client.source_list(
+                            prefix=(args.get("prefix") or None))
+                        files = data.get("files") or []
+                        if not files:
+                            result = "No LILITH source files found for that prefix."
+                        else:
+                            lines = [f.get("path", "") for f in files[:40]]
+                            more = len(files) - len(lines)
+                            result = "LILITH source files:\n" + "\n".join(f"- {p}" for p in lines)
+                            if more > 0:
+                                result += f"\n...and {more} more."
+                    except Exception as exc:
+                        result = f"LILITH source list failed: {exc}"
+
+            elif name == "lilith_source_read":
+                bridge = getattr(self, "_lilith", None)
+                if bridge is None or not bridge.is_running:
+                    result = "LILITH integration is not configured or not running."
+                else:
+                    path = str(args.get("path", "")).strip()
+                    max_bytes = int(args.get("max_bytes", 100000))
+                    if not path:
+                        result = "Missing LILITH source path."
+                    else:
+                        try:
+                            data = await bridge._runtime.client.source_read(
+                                path, max_bytes=max_bytes)
+                            content = str(data.get("content") or "")
+                            truncated = " (truncated)" if data.get("truncated") else ""
+                            result = f"{data.get('path', path)}{truncated}:\n{content}"
+                        except Exception as exc:
+                            result = f"LILITH source read failed: {exc}"
+
+            elif name == "lilith_source_search":
+                bridge = getattr(self, "_lilith", None)
+                if bridge is None or not bridge.is_running:
+                    result = "LILITH integration is not configured or not running."
+                else:
+                    query = str(args.get("query", "")).strip()
+                    limit = int(args.get("limit", 10))
+                    if not query:
+                        result = "Missing LILITH source search query."
+                    else:
+                        try:
+                            data = await bridge._runtime.client.source_search(query, limit=limit)
+                            hits = data.get("results") or []
+                            if not hits:
+                                result = f"No LILITH source matches: {query}"
+                            else:
+                                lines = []
+                                for hit in hits[:10]:
+                                    lines.append(f"- {hit.get('path')}")
+                                    for match in (hit.get("matches") or [])[:3]:
+                                        lines.append(f"  L{match.get('line')}: {match.get('text')}")
+                                result = "\n".join(lines)
+                        except Exception as exc:
+                            result = f"LILITH source search failed: {exc}"
 
             else:
                 result = f"Unknown tool: {name}"

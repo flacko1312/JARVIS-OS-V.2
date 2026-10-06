@@ -175,6 +175,37 @@ class LilithClient:
             },
         )
 
+    async def source_list(self, *, prefix: str | None = None) -> dict:
+        """List allowlisted LILITH source/tests/config files."""
+        path = f"{_INTEGRATION}/source/list"
+        if prefix:
+            path = f"{path}?{urlencode({'prefix': prefix})}"
+        return await self._request("GET", path)
+
+    async def source_read(self, path: str, *, max_bytes: int = 100000) -> dict:
+        """Read one allowlisted LILITH source/tests/config file."""
+        return await self._request(
+            "POST", f"{_INTEGRATION}/source/read",
+            json={"path": path, "max_bytes": max_bytes},
+        )
+
+    async def source_search(
+        self,
+        query: str,
+        *,
+        limit: int = 10,
+        max_matches_per_file: int = 3,
+    ) -> dict:
+        """Search allowlisted LILITH source/tests/config files."""
+        return await self._request(
+            "POST", f"{_INTEGRATION}/source/search",
+            json={
+                "query": query,
+                "limit": limit,
+                "max_matches_per_file": max_matches_per_file,
+            },
+        )
+
     async def is_available(self) -> bool:
         """Comprueba si LILITH responde. Nunca lanza excepción."""
         try:

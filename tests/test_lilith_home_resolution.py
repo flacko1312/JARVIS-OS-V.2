@@ -310,6 +310,30 @@ class ClientErrorCodeTests(unittest.TestCase):
             }),
         ])
 
+    def test_source_methods_use_integration_endpoints(self):
+        seen = []
+
+        class C(LilithClient):
+            async def _request(self, method, path, *, json=None):
+                seen.append((method, path, json))
+                return {"ok": True}
+
+        cfg = LilithConfig(base_url="http://127.0.0.1:9", api_key="test-key")
+        client = C(cfg)
+        asyncio.run(client.source_list(prefix="core/routers"))
+        asyncio.run(client.source_read("core/routers/integration.py", max_bytes=4321))
+        asyncio.run(client.source_search("DecisionLevel", limit=6, max_matches_per_file=2))
+
+        self.assertEqual(seen, [
+            ("GET", "/api/v1/integration/source/list?prefix=core%2Frouters", None),
+            ("POST", "/api/v1/integration/source/read", {
+                "path": "core/routers/integration.py", "max_bytes": 4321,
+            }),
+            ("POST", "/api/v1/integration/source/search", {
+                "query": "DecisionLevel", "limit": 6, "max_matches_per_file": 2,
+            }),
+        ])
+
 
 if __name__ == "__main__":
     unittest.main()
