@@ -852,20 +852,32 @@ class TestJlA9ScheduleExecutionGuard(unittest.TestCase):
         self.assertEqual(client.command_submit.await_count, 1)
         self.assertIn("duplicate", responses[1].response["result"])
 
+    def test_y_guard_failure_is_attributed_to_jarvis_not_lilith(self):
+        client = self._home_client()
+        jarvis = _make_jarvis(lilith_client=client)
+        jarvis._begin_schedule_turn("Hazlo ahora.", "voice")
+        response = _run(jarvis._execute_tool_batch([_fake_fc(
+            "lilith_routine", {"operation": "create"}
+        )]))[0].response["result"]
+        self.assertIn("JARVIS validation/routing failure", response)
+        self.assertIn("LILITH was not called", response)
+        client.command_submit.assert_not_awaited()
+
 
 class TestGeminiLiveSchedulePath(unittest.TestCase):
     """Exercise the actual receive -> FunctionCall -> tool-response path."""
 
     class LiveSession:
-        def __init__(self, jarvis, call):
+        def __init__(self, jarvis, call, transcript=None):
             self.jarvis = jarvis
             self.call = call
+            self.transcript = transcript or (
+                "Todos los días a las nueve de la noche enciende la bombilla del mueble."
+            )
             self.responses = []
 
         async def receive(self):
-            transcript = SimpleNamespace(
-                text="Todos los días a las nueve de la noche enciende la bombilla del mueble."
-            )
+            transcript = SimpleNamespace(text=self.transcript)
             server_content = SimpleNamespace(
                 output_transcription=None, input_transcription=transcript,
                 turn_complete=False,
@@ -902,6 +914,77 @@ class TestGeminiLiveSchedulePath(unittest.TestCase):
         reminder_action.assert_not_called()
         self.assertEqual(client.command_submit.await_count, 1)
         self.assertEqual(len(session.responses), 1)
+
+    def test_exact_real_voice_transcript_reaches_create_through_live_guard(self):
+        exact = (
+            "Crea una rutina para encender todos los días la bombilla del mueble "
+            "a las nueve de la noche."
+        )
+        args = {
+            "operation": "create",
+            "name": "Bombilla del mueble diaria",
+            "schedule_type": "daily",
+            "schedule": {"hour": 21, "minute": 0},
+            "timezone": "Europe/Madrid",
+            "action_intent": "home.action",
+            "action_parameters": {
+                "target": "bombilla del mueble",
+                "action": "turn_on",
+            },
+        }
+        client = TestJlA9ScheduleExecutionGuard._home_client()
+        jarvis = _make_jarvis(lilith_client=client)
+        session = self.LiveSession(jarvis, _fake_fc("lilith_routine", args), exact)
+        jarvis.session = session
+
+        with patch("main.reminder") as reminder_action, self.assertLogs(
+            "jarvis.main", level="INFO"
+        ) as captured:
+            _run(jarvis._receive_audio())
+
+        log = "\n".join(captured.output)
+        self.assertIn(f"raw_transcript='{exact}'", log)
+        self.assertIn("classification=recurring", log)
+        self.assertIn("operation=create", log)
+        self.assertIn("decision=allowed", log)
+        self.assertIn("TOOL_CALL  lilith_routine", log)
+        self.assertNotIn("blocked_wrong_tool", log)
+        self.assertNotIn("TOOL_CALL  lilith_home_action", log)
+        self.assertNotIn("TOOL_CALL  reminder", log)
+        self.assertEqual(client.command_submit.await_count, 1)
+        client.home_action.assert_not_awaited()
+        reminder_action.assert_not_called()
+
+    def test_live_leading_transcript_fragment_uses_create_contract_state(self):
+        args = {
+            "operation": "create",
+            "name": "Bombilla del mueble diaria",
+            "schedule_type": "daily",
+            "schedule": {"hour": 21, "minute": 0},
+            "timezone": "Europe/Madrid",
+            "action_intent": "home.action",
+            "action_parameters": {
+                "target": "bombilla del mueble",
+                "action": "turn_on",
+            },
+        }
+        client = TestJlA9ScheduleExecutionGuard._home_client()
+        jarvis = _make_jarvis(lilith_client=client)
+        session = self.LiveSession(
+            jarvis,
+            _fake_fc("lilith_routine", args),
+            "Crea una rutina para encender",
+        )
+        jarvis.session = session
+
+        with self.assertLogs("jarvis.main", level="INFO") as captured:
+            _run(jarvis._receive_audio())
+
+        log = "\n".join(captured.output)
+        self.assertIn("classification=recurring", log)
+        self.assertIn("decision=allowed", log)
+        self.assertNotIn("blocked_wrong_tool", log)
+        self.assertEqual(client.command_submit.await_count, 1)
 
 
 # ── 3. lilith_memory_search ─────────────────────────────────────────────

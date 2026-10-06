@@ -3022,10 +3022,27 @@ class JarvisLive:
         self, *, fc_id: str, tool: str, classification: str, decision: str,
         operation: str = "",
     ) -> None:
+        raw = self._schedule_guard_text()
+        pending = self._active_pending_routine()
+        pending_snapshot = None if pending is None else {
+            "session": pending.session_id,
+            "origin_turn": pending.origin_turn,
+            "last_turn": pending.last_turn,
+            "operation": pending.operation,
+            "target": pending.target,
+            "recurrence": pending.recurrence,
+            "time": None if pending.hour is None else f"{pending.hour:02d}:{pending.minute or 0:02d}",
+            "timezone": pending.timezone,
+            "action": pending.action,
+            "pending_clarification": sorted(pending.pending_clarification),
+            "consumed_call_ids": sorted(pending.consumed_call_ids),
+        }
         logger.info(
-            "SCHEDULE_GUARD session=%s turn=%s source=%s classification=%s tool=%s operation=%s decision=%s function_call_id=%s",
+            "SCHEDULE_GUARD session=%s turn=%s source=%s raw_transcript=%r normalized_transcript=%r "
+            "pending_before=%s classification=%s tool=%s operation=%s decision=%s function_call_id=%s",
             self._schedule_session_id, self._schedule_turn_id or "none",
-            self._schedule_turn_source or "none", classification, tool,
+            self._schedule_turn_source or "none", raw, _normalized_turn_text(raw),
+            json.dumps(pending_snapshot, ensure_ascii=False, sort_keys=True), classification, tool,
             operation or "none", decision,
             fc_id or "missing",
         )
@@ -3045,7 +3062,10 @@ class JarvisLive:
             )
             return types.FunctionResponse(
                 id=getattr(fc, "id", None), name=name,
-                response={"result": "Scheduled side effect blocked: no safe association with the current turn."},
+                response={"result": (
+                    "JARVIS validation/routing failure: scheduled side effect blocked because there is "
+                    "no safe association with the current turn. LILITH was not called."
+                )},
             )
         associated_turn = self._schedule_call_turns.get(fc_id)
         if associated_turn is not None and associated_turn != self._schedule_turn_id:
@@ -3055,10 +3075,32 @@ class JarvisLive:
             )
             return types.FunctionResponse(
                 id=fc.id, name=name,
-                response={"result": "Scheduled side effect blocked: FunctionCall.id was already associated with another turn."},
+                response={"result": (
+                    "JARVIS validation/routing failure: FunctionCall.id was already associated with "
+                    "another turn; scheduled side effect blocked. LILITH was not called."
+                )},
             )
         self._schedule_call_turns[fc_id] = self._schedule_turn_id
         semantics = _schedule_semantics(turn_text)
+
+        # Gemini Live can emit a FunctionCall while input transcription is still a
+        # leading fragment.  Merge the structured create contract into the same
+        # session/turn state before classifying; never authorize from the fragment
+        # alone, and never carry state across a missing/stale turn association.
+        if name == "lilith_routine" and operation == "create":
+            pending = self._active_pending_routine()
+            if pending is None:
+                pending = PendingRoutineState(
+                    session_id=self._schedule_session_id,
+                    origin_turn=self._schedule_turn_sequence,
+                    last_turn=self._schedule_turn_sequence,
+                    timezone=os.getenv("JARVIS_TIMEZONE", "Europe/Madrid"),
+                )
+                self._pending_routine = pending
+                pending.observe_text(turn_text, self._schedule_turn_sequence)
+            pending.absorb_call(args)
+            if pending.recurrence in {"daily", "weekly", "interval"}:
+                semantics = "recurring"
 
         if name == "lilith_routine" and operation in _ROUTINE_READ_OPERATIONS:
             if self._schedule_guard_routed:
@@ -3068,7 +3110,10 @@ class JarvisLive:
                 )
                 return types.FunctionResponse(
                     id=fc.id, name=name,
-                    response={"result": "This turn already produced a routine call; duplicate blocked."},
+                    response={"result": (
+                        "JARVIS validation/routing failure: this turn already produced a routine call; "
+                        "duplicate blocked before dispatch. LILITH was not called again."
+                    )},
                 )
             self._schedule_guard_routed = True
             self._schedule_log(
@@ -3085,7 +3130,10 @@ class JarvisLive:
                 )
                 return types.FunctionResponse(
                     id=fc.id, name=name,
-                    response={"result": "This turn already produced a routine mutation; duplicate blocked."},
+                    response={"result": (
+                        "JARVIS validation/routing failure: this turn already produced a routine mutation; "
+                        "duplicate blocked before dispatch. LILITH was not called again."
+                    )},
                 )
             self._schedule_guard_routed = True
             self._schedule_log(
@@ -3101,12 +3149,15 @@ class JarvisLive:
             and not pending.pending_clarification
         )
 
-        if name == "lilith_routine" and operation == "create" and (semantics == "recurring" or pending is not None):
+        if name == "lilith_routine" and operation == "create" and semantics == "recurring":
             if self._schedule_guard_routed:
                 self._schedule_log(fc_id=fc_id, tool=name, operation=operation, classification="recurring", decision="blocked_duplicate")
                 return types.FunctionResponse(
                     id=fc.id, name=name,
-                    response={"result": "The recurring request was already routed once; duplicate side effect blocked."},
+                    response={"result": (
+                        "JARVIS validation/routing failure: the recurring request was already routed once; "
+                        "duplicate side effect blocked before dispatch. LILITH was not called again."
+                    )},
                 )
             if pending is None:
                 self._capture_pending_recurring(turn_text)
@@ -3118,11 +3169,14 @@ class JarvisLive:
                 self._schedule_log(fc_id=fc_id, tool=name, operation=operation, classification="recurring", decision="blocked_incomplete")
                 return types.FunctionResponse(
                     id=fc.id, name=name,
-                    response={"result": f"Recurring request is incomplete or ambiguous: missing {missing}. Ask only for those fields; no action was taken."},
+                    response={"result": (
+                        f"JARVIS validation/routing failure: recurring request is incomplete or ambiguous; "
+                        f"missing {missing}. Ask only for those fields. LILITH was not called."
+                    )},
                 )
-            pending.consumed_call_ids.add(fc_id)
             routed = SimpleNamespace(id=fc.id, name=name, args=routine_args)
             self._schedule_log(fc_id=fc_id, tool=name, operation=operation, classification="recurring", decision="allowed")
+            pending.consumed_call_ids.add(fc_id)
             response = await self._execute_tool(routed)
             self._pending_routine = None
             return response
@@ -3132,7 +3186,10 @@ class JarvisLive:
                 self._schedule_log(fc_id=fc_id, tool=name, operation=operation, classification=semantics, decision="blocked_duplicate")
                 return types.FunctionResponse(
                     id=fc.id, name=name,
-                    response={"result": "The recurring request was already routed once; duplicate side effect blocked."},
+                    response={"result": (
+                        "JARVIS validation/routing failure: the recurring request was already routed once; "
+                        "duplicate side effect blocked before dispatch. LILITH was not called again."
+                    )},
                 )
             if pending is not None:
                 pending.absorb_call(args)
@@ -3144,7 +3201,10 @@ class JarvisLive:
                 self._schedule_log(fc_id=fc_id, tool=name, operation=operation, classification=semantics, decision="blocked_incomplete")
                 return types.FunctionResponse(
                     id=fc.id, name=name,
-                    response={"result": "Recurring request is incomplete. Ask for the missing recurrence time, action, or target; no action was taken."},
+                    response={"result": (
+                        "JARVIS validation/routing failure: recurring request is incomplete. Ask for the "
+                        "missing recurrence time, action, or target. LILITH was not called."
+                    )},
                 )
             self._schedule_guard_routed = True
             routed = SimpleNamespace(id=fc.id, name="lilith_routine", args=routine_args)
@@ -3159,19 +3219,28 @@ class JarvisLive:
             self._schedule_log(fc_id=fc_id, tool=name, operation=operation, classification=semantics, decision="blocked_wrong_tool")
             return types.FunctionResponse(
                 id=fc.id, name=name,
-                response={"result": "This is a one-time future request; non-reminder side effect blocked."},
+                response={"result": (
+                    "JARVIS validation/routing failure: this is a one-time future request; non-reminder "
+                    "side effect blocked before dispatch. LILITH was not called."
+                )},
             )
         if semantics == "immediate" and name in {"reminder", "lilith_routine"}:
             self._schedule_log(fc_id=fc_id, tool=name, operation=operation, classification=semantics, decision="blocked_wrong_tool")
             return types.FunctionResponse(
                 id=fc.id, name=name,
-                response={"result": "This is an immediate request; scheduled side effect blocked."},
+                response={"result": (
+                    "JARVIS validation/routing failure: the current turn did not establish a valid "
+                    "scheduled request, so JARVIS blocked the tool before dispatch. LILITH was not called."
+                )},
             )
         if self._schedule_guard_routed:
             self._schedule_log(fc_id=fc_id, tool=name, operation=operation, classification=semantics, decision="blocked_duplicate")
             return types.FunctionResponse(
                 id=fc.id, name=name,
-                response={"result": "This turn already produced a scheduled side effect; duplicate blocked."},
+                response={"result": (
+                    "JARVIS validation/routing failure: this turn already produced a scheduled side effect; "
+                    "duplicate blocked before dispatch. LILITH was not called again."
+                )},
             )
         self._schedule_guard_routed = True
         self._schedule_log(fc_id=fc_id, tool=name, operation=operation, classification=semantics, decision="allowed")
