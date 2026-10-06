@@ -206,6 +206,10 @@ class LilithClient:
             },
         )
 
+    async def git_status(self) -> dict:
+        """Read-only LILITH Git status snapshot."""
+        return await self._request("GET", f"{_INTEGRATION}/git/status")
+
     async def is_available(self) -> bool:
         """Comprueba si LILITH responde. Nunca lanza excepción."""
         try:

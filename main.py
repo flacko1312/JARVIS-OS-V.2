@@ -1438,6 +1438,19 @@ TOOL_DECLARATIONS = [
             "required": ["query"]
         }
     },
+    {
+        "name": "lilith_git_status",
+        "description": (
+            "Read LILITH's local Git snapshot: branch, HEAD, origin/main, ahead/behind, "
+            "dirty/untracked file names, diff stat and recent commits. Read-only; no fetch, "
+            "push, checkout, patch contents or shell."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {},
+            "required": []
+        }
+    },
 ]
 
 # Tool names exposed by hosted clients. The names here are Gemini function
@@ -2498,6 +2511,38 @@ class JarvisLive:
                                 result = "\n".join(lines)
                         except Exception as exc:
                             result = f"LILITH source search failed: {exc}"
+
+            elif name == "lilith_git_status":
+                bridge = getattr(self, "_lilith", None)
+                if bridge is None or not bridge.is_running:
+                    result = "LILITH integration is not configured or not running."
+                else:
+                    try:
+                        data = await bridge._runtime.client.git_status()
+                        head = str(data.get("head") or "")[:12] or "unknown"
+                        origin = str(data.get("origin_main") or "")[:12] or "unknown"
+                        status = "clean" if not data.get("dirty") else "dirty"
+                        sync = "matches origin/main" if data.get("head_equals_origin_main") else (
+                            f"ahead {data.get('ahead', '?')} / behind {data.get('behind', '?')}"
+                        )
+                        lines = [
+                            f"LILITH git: {data.get('branch') or 'unknown'} @ {head} ({status}); origin/main {origin}; {sync}.",
+                        ]
+                        dirty = data.get("dirty_files") or []
+                        untracked = data.get("untracked_files") or []
+                        diff_stat = data.get("diff_stat") or []
+                        recent = data.get("recent") or []
+                        if dirty:
+                            lines.append("Dirty files: " + ", ".join(dirty[:12]))
+                        if untracked:
+                            lines.append("Untracked: " + ", ".join(untracked[:12]))
+                        if diff_stat:
+                            lines.append("Diff stat:\n" + "\n".join(diff_stat[:12]))
+                        if recent:
+                            lines.append("Recent commits:\n" + "\n".join(f"- {c}" for c in recent[:5]))
+                        result = "\n".join(lines)
+                    except Exception as exc:
+                        result = f"LILITH git status failed: {exc}"
 
             else:
                 result = f"Unknown tool: {name}"

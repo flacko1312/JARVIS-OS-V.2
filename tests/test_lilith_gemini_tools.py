@@ -97,7 +97,7 @@ class TestToolDeclarations(unittest.TestCase):
                      "lilith_resolve_approval", "lilith_docs_list",
                      "lilith_docs_read", "lilith_docs_search",
                      "lilith_source_list", "lilith_source_read",
-                     "lilith_source_search"):
+                     "lilith_source_search", "lilith_git_status"):
             self.assertIn(tool, names)
 
     def test_lilith_tools_excluded_from_cloud_safe(self):
@@ -108,7 +108,7 @@ class TestToolDeclarations(unittest.TestCase):
                      "lilith_resolve_approval", "lilith_docs_list",
                      "lilith_docs_read", "lilith_docs_search",
                      "lilith_source_list", "lilith_source_read",
-                     "lilith_source_search"):
+                     "lilith_source_search", "lilith_git_status"):
             self.assertNotIn(tool, cloud_tools)
 
     def test_existing_tools_preserved(self):
@@ -322,6 +322,36 @@ class TestLilithSourceTools(unittest.TestCase):
         ):
             resp = _run(jarvis._execute_tool(_fake_fc(name, args)))
             self.assertIn("not configured", resp.response["result"])
+
+
+class TestLilithGitStatusTool(unittest.TestCase):
+
+    def test_git_status(self):
+        mock = AsyncMock()
+        mock.git_status.return_value = {
+            "branch": "main",
+            "head": "abcdef1234567890",
+            "origin_main": "abcdef1234567890",
+            "head_equals_origin_main": True,
+            "dirty": True,
+            "dirty_files": ["core/voice/wakeword.py"],
+            "untracked_files": [".claude/"],
+            "diff_stat": [" core/voice/wakeword.py | 2 +-"],
+            "recent": ["abcdef1 docs: smoke"],
+        }
+        jarvis = _make_jarvis(lilith_client=mock)
+        resp = _run(jarvis._execute_tool(_fake_fc("lilith_git_status")))
+        result = resp.response["result"]
+        self.assertIn("main", result)
+        self.assertIn("dirty", result)
+        self.assertIn("core/voice/wakeword.py", result)
+        self.assertIn("abcdef1 docs: smoke", result)
+        mock.git_status.assert_awaited_once()
+
+    def test_git_status_offline(self):
+        jarvis = _make_jarvis()
+        resp = _run(jarvis._execute_tool(_fake_fc("lilith_git_status")))
+        self.assertIn("not configured", resp.response["result"])
 
 
 # ── 3. lilith_memory_search ─────────────────────────────────────────────

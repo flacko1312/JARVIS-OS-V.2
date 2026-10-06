@@ -334,6 +334,23 @@ class ClientErrorCodeTests(unittest.TestCase):
             }),
         ])
 
+    def test_git_status_gets_integration_endpoint(self):
+        seen = {}
+
+        class C(LilithClient):
+            async def _request(self, method, path, *, json=None):
+                seen.update(method=method, path=path, json=json)
+                return {"branch": "main", "head": "abc123"}
+
+        cfg = LilithConfig(base_url="http://127.0.0.1:9", api_key="test-key")
+        out = asyncio.run(C(cfg).git_status())
+        self.assertEqual(out["branch"], "main")
+        self.assertEqual(seen, {
+            "method": "GET",
+            "path": "/api/v1/integration/git/status",
+            "json": None,
+        })
+
 
 if __name__ == "__main__":
     unittest.main()
