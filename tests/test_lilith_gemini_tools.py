@@ -987,6 +987,144 @@ class TestGeminiLiveSchedulePath(unittest.TestCase):
         self.assertEqual(client.command_submit.await_count, 1)
 
 
+class TestPersistentMemoryFlow(unittest.TestCase):
+    """Persistent facts share one LILITH path and one exactly-once guard."""
+
+    @staticmethod
+    def _client():
+        client = AsyncMock()
+        facts = {}
+
+        def store(key, value, **kwargs):
+            action = "updated" if key in facts else "created"
+            facts[key] = value
+            return {"key": f"jarvis:{key}", "action": action, "superseded": []}
+
+        def search(query, **kwargs):
+            return [
+                {"key": f"jarvis:{key}", "text": value, "score": 1.0}
+                for key, value in facts.items()
+                if "codigo" in query.lower() or "código" in query.lower()
+            ]
+
+        def delete(key, **kwargs):
+            facts.pop(key)
+            return {"key": f"jarvis:{key}", "action": "deleted"}
+
+        client.store_memory.side_effect = store
+        client.search_memory.side_effect = search
+        client.delete_memory.side_effect = delete
+        client._facts = facts
+        return client
+
+    def test_explicit_save_search_delete_lifecycle_uses_lilith_only(self):
+        transcript = "Guarda en tu memoria que mi código temporal de prueba es 7319."
+        client = self._client()
+        jarvis = _make_jarvis(lilith_client=client)
+        call = _fake_fc("save_memory", {
+            "category": "projects", "key": "temporary_test_code", "value": "7319",
+        })
+        session = TestGeminiLiveSchedulePath.LiveSession(jarvis, call, transcript)
+        jarvis.session = session
+
+        with patch("main.update_memory") as local_store, \
+             patch("main.reminder") as reminder_action:
+            _run(jarvis._receive_audio())
+
+        client.store_memory.assert_awaited_once()
+        self.assertEqual(client.store_memory.await_args.args[:2], (
+            "projects/temporary_test_code", "7319",
+        ))
+        local_store.assert_not_called()
+        client.home_action.assert_not_awaited()
+        client.command_submit.assert_not_awaited()
+        reminder_action.assert_not_called()
+
+        jarvis._shutdown_requested.clear()
+        jarvis._begin_schedule_turn("¿Cuál es mi código temporal de prueba?", "voice")
+        found = _run(jarvis._execute_tool_batch([_fake_fc(
+            "lilith_memory_search", {"query": "código temporal de prueba"}
+        )]))[0]
+        self.assertIn("projects/temporary_test_code", found.response["result"])
+        self.assertIn("7319", found.response["result"])
+
+        jarvis._begin_schedule_turn("Elimina de tu memoria mi código temporal de prueba.", "voice")
+        deleted = _run(jarvis._execute_tool_batch([_fake_fc(
+            "lilith_memory_delete", {
+                "key": "jarvis:projects/temporary_test_code", "reason": "user_request",
+            }
+        )]))[0]
+        client.delete_memory.assert_awaited_once_with(
+            "projects/temporary_test_code", reason="user_request"
+        )
+        self.assertIn("projects/temporary_test_code", deleted.response["result"])
+
+        jarvis._begin_schedule_turn("¿Cuál es mi código temporal de prueba?", "voice")
+        missing = _run(jarvis._execute_tool_batch([_fake_fc(
+            "lilith_memory_search", {"query": "código temporal de prueba"}
+        )]))[0]
+        self.assertIn("No results", missing.response["result"])
+
+    def test_duplicate_function_call_id_writes_once(self):
+        client = self._client()
+        jarvis = _make_jarvis(lilith_client=client)
+        jarvis._begin_schedule_turn(
+            "Guarda en tu memoria que mi código temporal de prueba es 7319.", "voice"
+        )
+        call = _fake_fc("lilith_memory_store", {
+            "category": "projects", "key": "temporary_test_code", "value": "7319",
+        })
+        responses = _run(jarvis._execute_tool_batch([call, call]))
+        self.assertEqual(client.store_memory.await_count, 1)
+        self.assertIn("duplicate", responses[1].response["result"])
+
+    def test_two_call_ids_same_turn_same_fact_write_once(self):
+        client = self._client()
+        jarvis = _make_jarvis(lilith_client=client)
+        jarvis._begin_schedule_turn(
+            "Guarda en tu memoria que mi código temporal de prueba es 7319.", "voice"
+        )
+        first = _fake_fc("lilith_memory_store", {
+            "category": "projects", "key": "temporary_test_code", "value": "7319",
+        })
+        second = _fake_fc("lilith_memory_store", {
+            "category": "projects", "key": "projects/temporary_test_code", "value": "7319",
+        })
+        second.id = "different-memory-call-id"
+        responses = _run(jarvis._execute_tool_batch([first, second]))
+        self.assertEqual(client.store_memory.await_count, 1)
+        self.assertIn("duplicate", responses[1].response["result"])
+
+    def test_local_and_lilith_store_calls_same_turn_share_one_effect(self):
+        client = self._client()
+        jarvis = _make_jarvis(lilith_client=client)
+        jarvis._begin_schedule_turn(
+            "Guarda en tu memoria que mi código temporal de prueba es 7319.", "voice"
+        )
+        local = _fake_fc("save_memory", {
+            "category": "projects", "key": "temporary_test_code", "value": "7319",
+        })
+        canonical = _fake_fc("lilith_memory_store", {
+            "category": "projects", "key": "projects/temporary_test_code", "value": "7319",
+        })
+        canonical.id = "canonical-memory-call-id"
+        with patch("main.update_memory") as local_store:
+            responses = _run(jarvis._execute_tool_batch([local, canonical]))
+        self.assertEqual(client.store_memory.await_count, 1)
+        local_store.assert_not_called()
+        self.assertIn("duplicate", responses[1].response["result"])
+
+    def test_operational_local_note_remains_local(self):
+        jarvis = _make_jarvis()
+        jarvis._begin_schedule_turn("Anota el modo de esta sesión.", "voice")
+        with patch("main.update_memory") as local_store:
+            response = _run(jarvis._execute_tool_batch([_fake_fc("save_memory", {
+                "category": "notes", "key": "session_mode", "value": "diagnostic",
+            })]))[0]
+        self.assertEqual(response.response["result"], "ok")
+        local_store.assert_called_once()
+
+
 # ── 3. lilith_memory_search ─────────────────────────────────────────────
 
 class TestLilithMemorySearch(unittest.TestCase):

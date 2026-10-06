@@ -185,6 +185,36 @@ Examples:
 _SCHEDULED_TOOL_NAMES = frozenset({"lilith_home_action", "reminder", "lilith_routine"})
 _ROUTINE_READ_OPERATIONS = frozenset({"list", "get", "history"})
 _ROUTINE_WRITE_OPERATIONS = frozenset({"create", "update", "enable", "disable", "delete"})
+_MEMORY_MUTATING_TOOL_NAMES = frozenset({"save_memory", "lilith_memory_store", "lilith_memory_delete"})
+
+
+def _canonical_memory_key(key: str, category: str | None = None) -> str:
+    """Return LILITH's public semantic key (without its internal ``jarvis:`` prefix)."""
+    value = str(key or "").strip()
+    if value.startswith("jarvis:"):
+        value = value[len("jarvis:"):]
+    value = value.strip(" /")
+    category_value = str(category or "").strip().strip(" /")
+    if not value:
+        return ""
+    if "/" in value or not category_value:
+        return value
+    return f"{category_value}/{value}"
+
+
+def _memory_category_from_key(key: str, fallback: str = "jarvis_fact") -> str:
+    canonical = _canonical_memory_key(key)
+    return canonical.split("/", 1)[0] if "/" in canonical else fallback
+
+
+def _is_explicit_persistent_memory_request(text: str) -> bool:
+    """Recognize an explicit request to persist user knowledge, not an operational note."""
+    value = _normalized_turn_text(text)
+    return bool(re.search(
+        r"\b(?:guarda|guardalo|guardar|almacena|memoriza|recuerda)\b.{0,32}\bmemoria\b|"
+        r"\b(?:save|store|remember)\b.{0,32}\b(?:memory|about me)\b",
+        value,
+    ))
 
 
 @dataclass
@@ -1325,7 +1355,8 @@ TOOL_DECLARATIONS = [
             "For persistent personal facts about the user (name, age, preferences, relationships, "
             "projects, wishes), use lilith_memory_store instead — LILITH is the canonical memory. "
             "Do NOT use this tool to store identity, preferences, relationships, or any personal "
-            "knowledge. Those categories are restricted to LILITH. "
+            "knowledge. Those categories are restricted to LILITH. Never use this tool when the user "
+            "explicitly asks to save, store, remember, or delete something in persistent memory. "
             "Values must be in English regardless of the conversation language."
         ),
         "parameters": {
@@ -1777,6 +1808,9 @@ class JarvisLive:
         self._schedule_turn_source = ""
         self._schedule_call_turns: dict[str, str] = {}
         self._pending_routine: PendingRoutineState | None = None
+        self._memory_call_turns: dict[str, str] = {}
+        self._memory_consumed_call_ids: set[str] = set()
+        self._memory_turn_effects: set[tuple[str, str, str]] = set()
         self._pending_self_quit = False
         self._pending_self_quit_farewell_received = False
         self._self_quit_timer = None
@@ -2429,9 +2463,11 @@ class JarvisLive:
                         else:
                             lines = []
                             for h in hits[:10]:
+                                canonical_key = _canonical_memory_key(h.get("key", ""))
                                 text = h.get("text") or h.get("value") or h.get("key") or str(h)
                                 score = h.get("score", "")
-                                lines.append(f"- {text}" + (f" (score: {score})" if score else ""))
+                                prefix = f"{canonical_key}: " if canonical_key else ""
+                                lines.append(f"- {prefix}{text}" + (f" (score: {score})" if score else ""))
                             result = "\n".join(lines)
                     except Exception as exc:
                         result = f"LILITH memory search failed: {exc}"
@@ -2450,7 +2486,8 @@ class JarvisLive:
                     if not key or not value:
                         result = "Missing key or value for memory store."
                     else:
-                        semantic_key = f"{category}/{key}"
+                        semantic_key = _canonical_memory_key(key, category)
+                        category = _memory_category_from_key(semantic_key, category)
                         try:
                             data = await client.store_memory(
                                 semantic_key, value, category=category,
@@ -2459,11 +2496,11 @@ class JarvisLive:
                             action_done = data.get("action", "stored")
                             if action_done == "updated":
                                 result = (
-                                    f"Memory updated: {key} is now '{value[:80]}'. "
-                                    f"Disregard any previous value for {key} in your context."
+                                    f"Memory updated: {semantic_key} is now '{value[:80]}'. "
+                                    f"Disregard any previous value for {semantic_key} in your context."
                                 )
                             else:
-                                result = f"Memory created: {key} = {value[:80]}"
+                                result = f"Memory created: {semantic_key} = {value[:80]}"
                         except Exception as exc:
                             result = f"LILITH memory store failed: {exc}"
 
@@ -2473,7 +2510,7 @@ class JarvisLive:
                     result = "LILITH is not available. Cannot delete memory."
                 else:
                     client = bridge._runtime.client
-                    key = str(args.get("key", ""))
+                    key = _canonical_memory_key(str(args.get("key", "")))
                     reason = str(args.get("reason", "user_request"))
                     if not key:
                         result = "No memory key provided."
@@ -2953,6 +2990,7 @@ class JarvisLive:
         self._schedule_turn_source = source
         self._current_input_transcript = str(text or "").strip()
         self._schedule_guard_routed = False
+        self._memory_turn_effects.clear()
         self._capture_pending_recurring(self._current_input_transcript)
 
     def _update_schedule_turn(self, text: str) -> None:
@@ -3047,8 +3085,113 @@ class JarvisLive:
             fc_id or "missing",
         )
 
+    def _memory_guard_log(
+        self, *, fc_id: str, tool: str, routed_tool: str, canonical_key: str,
+        decision: str,
+    ) -> None:
+        logger.info(
+            "MEMORY_GUARD session=%s turn=%s source=%s tool=%s routed_tool=%s "
+            "canonical_key=%s decision=%s function_call_id=%s",
+            self._schedule_session_id, self._schedule_turn_id or "none",
+            self._schedule_turn_source or "none", tool, routed_tool,
+            canonical_key or "none", decision, fc_id or "missing",
+        )
+
+    async def _execute_memory_tool_guarded(self, fc) -> types.FunctionResponse:
+        name = str(getattr(fc, "name", "") or "")
+        args = dict(getattr(fc, "args", None) or {})
+        fc_id = str(getattr(fc, "id", "") or "").strip()
+        turn_text = self._schedule_guard_text()
+        if not fc_id or not turn_text:
+            self._memory_guard_log(
+                fc_id=fc_id, tool=name, routed_tool=name, canonical_key="",
+                decision="blocked_no_current_turn",
+            )
+            return types.FunctionResponse(
+                id=getattr(fc, "id", None), name=name,
+                response={"result": (
+                    "JARVIS memory validation failure: no safe association with the current turn. "
+                    "No memory was changed."
+                )},
+            )
+
+        associated_turn = self._memory_call_turns.get(fc_id)
+        if associated_turn is not None and associated_turn != self._schedule_turn_id:
+            self._memory_guard_log(
+                fc_id=fc_id, tool=name, routed_tool=name, canonical_key="",
+                decision="blocked_reused_function_call",
+            )
+            return types.FunctionResponse(
+                id=fc.id, name=name,
+                response={"result": (
+                    "JARVIS memory validation failure: FunctionCall.id belongs to another turn. "
+                    "No memory was changed."
+                )},
+            )
+        if fc_id in self._memory_consumed_call_ids:
+            self._memory_guard_log(
+                fc_id=fc_id, tool=name, routed_tool=name, canonical_key="",
+                decision="blocked_duplicate_function_call",
+            )
+            return types.FunctionResponse(
+                id=fc.id, name=name,
+                response={"result": "JARVIS blocked a duplicate memory FunctionCall; no second write occurred."},
+            )
+
+        routed_name = name
+        routed_args = dict(args)
+        if name == "save_memory" and _is_explicit_persistent_memory_request(turn_text):
+            routed_name = "lilith_memory_store"
+            routed_args = {
+                "key": args.get("key", ""),
+                "value": args.get("value", ""),
+                "category": args.get("category", "jarvis_fact"),
+                "confidence": 1.0,
+                "description": str(args.get("key", "")).replace("_", " "),
+            }
+
+        category = str(routed_args.get("category", "jarvis_fact"))
+        canonical_key = _canonical_memory_key(routed_args.get("key", ""), category)
+        if routed_name in {"lilith_memory_store", "lilith_memory_delete"}:
+            routed_args["key"] = canonical_key
+            if routed_name == "lilith_memory_store":
+                routed_args["category"] = _memory_category_from_key(canonical_key, category)
+        value = str(routed_args.get("value", "")) if routed_name != "lilith_memory_delete" else ""
+        effect = (routed_name, canonical_key, value)
+
+        if effect in self._memory_turn_effects:
+            self._memory_guard_log(
+                fc_id=fc_id, tool=name, routed_tool=routed_name,
+                canonical_key=canonical_key, decision="blocked_duplicate_effect",
+            )
+            self._memory_call_turns[fc_id] = self._schedule_turn_id
+            self._memory_consumed_call_ids.add(fc_id)
+            return types.FunctionResponse(
+                id=fc.id, name=name,
+                response={"result": (
+                    f"JARVIS blocked a duplicate memory mutation for {canonical_key}; "
+                    "no second write occurred."
+                )},
+            )
+
+        self._memory_call_turns[fc_id] = self._schedule_turn_id
+        self._memory_consumed_call_ids.add(fc_id)
+        self._memory_turn_effects.add(effect)
+        decision = "rerouted_persistent_store" if routed_name != name else "allowed"
+        self._memory_guard_log(
+            fc_id=fc_id, tool=name, routed_tool=routed_name,
+            canonical_key=canonical_key, decision=decision,
+        )
+        routed = SimpleNamespace(id=fc.id, name=routed_name, args=routed_args)
+        response = await self._execute_tool(routed)
+        if routed_name == name:
+            return response
+        return types.FunctionResponse(id=fc.id, name=name, response=response.response)
+
     async def _execute_tool_guarded(self, fc) -> types.FunctionResponse:
         name = getattr(fc, "name", "")
+        if name in _MEMORY_MUTATING_TOOL_NAMES:
+            return await self._execute_memory_tool_guarded(fc)
         if name not in _SCHEDULED_TOOL_NAMES:
             return await self._execute_tool(fc)
         fc_id = str(getattr(fc, "id", "") or "").strip()
