@@ -510,6 +510,7 @@ class TestLilithMemoryStore(unittest.TestCase):
         self.assertIn("created", resp.response["result"])
         mock.store_memory.assert_called_once_with(
             "preferences/favorite_color", "lila", category="preferences", confidence=1.0,
+            description=None,
         )
 
     def test_store_update_disregard_hint(self):
@@ -652,7 +653,8 @@ class TestLilithHomeAction(unittest.TestCase):
         self.assertIn("turn_on", r)
         self.assertIn("on", r)
         mock.home_resolve.assert_awaited_once_with("luz del mueble")
-        mock.home_action.assert_awaited_once_with("light.bombilla_mueble", "turn_on")
+        mock.home_action.assert_awaited_once_with(
+            "light.bombilla_mueble", "turn_on", parameters=None)
 
     def test_turn_off_resolved(self):
         mock = AsyncMock()
@@ -1142,15 +1144,16 @@ class TestSearchTextDescription(unittest.TestCase):
         self.assertIn("LILITH uses this to make the fact searchable", src)
 
     def test_store_passes_description_to_client(self):
-        jarvis = _jarvis_with_lilith()
-        jarvis._lilith._runtime.client.store_memory = AsyncMock(return_value={
+        mock = AsyncMock()
+        mock.store_memory.return_value = {
             "key": "jarvis:pets/dog_name", "action": "created", "superseded": [],
-        })
+        }
+        jarvis = _make_jarvis(lilith_client=mock)
         resp = _run(jarvis._execute_tool(_fake_fc("lilith_memory_store", {
             "key": "dog_name", "value": "Caín", "category": "pets",
             "description": "nombre del perro",
         })))
-        call_kwargs = jarvis._lilith._runtime.client.store_memory.call_args
+        call_kwargs = mock.store_memory.call_args
         self.assertEqual(call_kwargs.kwargs.get("description"), "nombre del perro")
         self.assertIn("Caín", resp.response["result"])
 
