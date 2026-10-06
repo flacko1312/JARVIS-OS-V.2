@@ -457,6 +457,67 @@ class TestLilithRoutineTool(unittest.TestCase):
         self.assertIn("no routine was changed", offline)
 
 
+class TestJlA9RoutineRoutingPolicy(unittest.TestCase):
+    """Regression contract for Gemini's mutually exclusive scheduling routes."""
+
+    @staticmethod
+    def _prompt_and_tools():
+        jarvis = _make_jarvis()
+        with patch("main.load_memory", return_value={}), \
+             patch("main._load_system_prompt", return_value="SYS"):
+            config = jarvis._build_config(lilith_context=None)
+        tools = {item["name"]: item for item in jarvis.tool_declarations}
+        live_names = {
+            declaration.name
+            for tool in config.tools
+            for declaration in (tool.function_declarations or [])
+        }
+        return config.system_instruction, tools, live_names
+
+    def test_a_immediate_light_routes_only_to_home_action(self):
+        prompt, tools, _ = self._prompt_and_tools()
+        self.assertIn('"Enciende la bombilla" -> lilith_home_action.', prompt)
+        self.assertIn("immediate action", tools["lilith_home_action"]["description"])
+
+    def test_b_one_future_occurrence_routes_to_reminder(self):
+        prompt, tools, _ = self._prompt_and_tools()
+        self.assertIn('"Recuérdame hoy a las 21:00 encender la bombilla" -> reminder.', prompt)
+        self.assertIn("ONE-TIME", tools["reminder"]["description"])
+
+    def test_c_daily_action_routes_to_lilith_routine(self):
+        prompt, tools, _ = self._prompt_and_tools()
+        self.assertIn('"Todos los días a las 21:00 enciende la bombilla" -> lilith_routine create only.', prompt)
+        self.assertIn("todos los días", tools["lilith_routine"]["description"])
+
+    def test_d_explicit_routine_routes_to_lilith_routine(self):
+        prompt, _, _ = self._prompt_and_tools()
+        self.assertIn('"Crea una rutina para encender la bombilla cada día a las 21:00" -> lilith_routine create only.', prompt)
+
+    def test_e_recurring_request_forbids_immediate_home_side_effect(self):
+        prompt, tools, _ = self._prompt_and_tools()
+        self.assertIn("Never call lilith_home_action as a side effect", prompt)
+        self.assertIn("do NOT call this tool", tools["lilith_home_action"]["description"])
+
+    def test_f_recurring_request_forbids_reminder_substitution(self):
+        prompt, tools, _ = self._prompt_and_tools()
+        self.assertIn("Never replace a recurring routine with reminder", prompt)
+        self.assertIn("Never use for recurring", tools["reminder"]["description"])
+
+    def test_g_incomplete_recurring_request_requires_clarification(self):
+        prompt, tools, _ = self._prompt_and_tools()
+        self.assertIn("ask a clarification question and call no action tool", prompt)
+        self.assertIn("Ask the user for clarification", tools["lilith_routine"]["description"])
+
+    def test_windows_live_config_contains_current_routine_tool(self):
+        _, tools, live_names = self._prompt_and_tools()
+        self.assertIn("lilith_routine", tools)
+        self.assertIn("lilith_routine", live_names)
+        self.assertEqual(
+            tools["lilith_routine"],
+            next(item for item in TOOL_DECLARATIONS if item["name"] == "lilith_routine"),
+        )
+
+
 # ── 3. lilith_memory_search ─────────────────────────────────────────────
 
 class TestLilithMemorySearch(unittest.TestCase):

@@ -150,6 +150,28 @@ LANGUAGE_RULE = (
     "tradúcelos y contesta en español. Nunca respondas en inglés. Nunca pronuncies etiquetas entre corchetes."
 )
 
+ROUTINE_ROUTING_RULES = """
+[SCHEDULING AND ROUTINE TOOL ROUTING — mandatory]
+Classify the user's intent before calling any action tool:
+1. A recurring or persistent schedule MUST use lilith_routine with operation=create.
+   Recurring/persistent cues include equivalents of: every day, daily, every morning,
+   every night, every week, every Monday, every N hours/days, routine, automate,
+   from now on, todos los días, cada día, diariamente, cada mañana, cada noche,
+   cada semana, todos los lunes, cada X horas/días, rutina, automatiza, a partir de ahora.
+2. A single future occurrence or an explicit request to be reminded once MUST use reminder.
+3. An action requested for now, with no future or recurring schedule, may use
+   lilith_home_action.
+Never call lilith_home_action as a side effect while defining a future routine.
+Never replace a recurring routine with reminder. For a recurring request, call only
+the appropriate lilith_routine operation. If recurrence, time, timezone, target, or
+action is missing or ambiguous, ask a clarification question and call no action tool.
+Examples:
+- "Enciende la bombilla" -> lilith_home_action.
+- "Recuérdame hoy a las 21:00 encender la bombilla" -> reminder.
+- "Todos los días a las 21:00 enciende la bombilla" -> lilith_routine create only.
+- "Crea una rutina para encender la bombilla cada día a las 21:00" -> lilith_routine create only.
+""".strip()
+
 _SELF_QUIT_PATTERNS = tuple(re.compile(pattern, re.IGNORECASE) for pattern in (
     r"\b(?:quit|close|exit)\s+(?:jarvis|yourself)\b",
     r"\b(?:shut|turn)\s+(?:jarvis|yourself)\s+(?:down|off)\b",
@@ -578,7 +600,13 @@ TOOL_DECLARATIONS = [
     },
     {
         "name": "reminder",
-        "description": "Sets a timed reminder using Task Scheduler.",
+        "description": (
+            "Set a ONE-TIME future reminder using the local OS scheduler. Use only for one "
+            "future occurrence or when the user explicitly asks to be reminded once. Never use "
+            "for recurring, daily, weekly, routine, automation, or 'from now on' requests; those "
+            "must use lilith_routine. A reminder notifies the user and does not execute a Home "
+            "Assistant device action."
+        ),
         "parameters": {
             "type": "OBJECT",
             "properties": {
@@ -1252,7 +1280,9 @@ TOOL_DECLARATIONS = [
     {
         "name": "lilith_home_action",
         "description": (
-            "Control a smart home device through LILITH and Home Assistant. "
+            "Control a smart home device NOW through LILITH and Home Assistant. Use only for an "
+            "immediate action with no future or recurring schedule. If the request includes a "
+            "recurring/persistent schedule, use lilith_routine instead and do NOT call this tool. "
             "Describe the device in natural language — LILITH resolves the real entity. "
             "Never invent entity IDs. Only turn_on and turn_off are supported. "
             "LILITH enforces safety rules and will reject prohibited actions. "
@@ -1485,10 +1515,17 @@ TOOL_DECLARATIONS = [
     {
         "name": "lilith_routine",
         "description": (
-            "Manage persistent routines in LILITH. Map natural-language requests to exactly one "
-            "operation. Ask the user for clarification before calling when the routine, time, "
-            "timezone, recurrence, target, or action is ambiguous. LILITH is authoritative: never "
-            "claim created/updated/enabled/disabled/deleted unless status is completed."
+            "CREATE AND MANAGE PERSISTENT OR RECURRING ROUTINES in LILITH. This is the mandatory "
+            "tool for requests equivalent to every day/daily/every morning/every night/every "
+            "week/every Monday/every N hours or days/routine/automate/from now on, including "
+            "todos los días/cada día/diariamente/cada mañana/cada noche/cada semana/todos los "
+            "lunes/cada X horas o días/rutina/automatiza/a partir de ahora. For create, translate "
+            "the requested action into the existing JL-A6 action_intent and action_parameters; "
+            "for a light use home.action with entity/action parameters. Never also call reminder "
+            "or lilith_home_action while defining the routine. Ask the user for clarification "
+            "before calling when time, timezone, recurrence, target, or action is ambiguous. "
+            "LILITH is authoritative: never claim created/updated/enabled/disabled/deleted unless "
+            "status is completed."
         ),
         "parameters": {
             "type": "OBJECT",
@@ -1914,10 +1951,10 @@ class JarvisLive:
         time_ctx = (
             f"[CURRENT DATE & TIME]\n"
             f"Right now it is: {time_str}\n"
-            f"Use this to calculate exact times for reminders.\n\n"
+            f"Use this to calculate exact times for one-time reminders and persistent routines.\n\n"
         )
 
-        parts = [LANGUAGE_RULE, time_ctx]
+        parts = [LANGUAGE_RULE, time_ctx, ROUTINE_ROUTING_RULES]
         lilith_is_authoritative = False
         if lilith_context:
             lilith_str = self._format_lilith_context(lilith_context)
