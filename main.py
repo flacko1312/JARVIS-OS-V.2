@@ -220,7 +220,7 @@ def _memory_category_from_key(key: str, fallback: str = "jarvis_fact") -> str:
 
 def _is_explicit_persistent_memory_request(text: str) -> bool:
     """Recognize an explicit request to persist user knowledge, not an operational note."""
-    value = _normalized_turn_text(text)
+    value = _memory_authority_control_text(text)
     return bool(re.search(
         r"\b(?:guarda|guardalo|guardar|almacena|memoriza|recuerda)\b.{0,32}\bmemoria\b|"
         r"\brecuerda que\b|\bquiero que recuerdes\b|"
@@ -232,30 +232,52 @@ def _is_explicit_persistent_memory_request(text: str) -> bool:
 
 def _is_explicit_local_memory_request(text: str) -> bool:
     """Recognize the narrow operational/session scope owned by local JARVIS memory."""
-    value = _normalized_turn_text(text)
+    value = _memory_authority_control_text(text)
     return bool(re.search(
         r"\b(?:esta|la|mi) sesion\b|\bcontexto (?:de sesion|operativo|del runtime)\b|"
         r"\b(?:nota|memoria|estado|bandera|flag) local\b|\b(?:runtime|ui) (?:hint|state|flag)\b|"
-        r"\bno lo guardes en lilith\b|\bguardalo solo localmente\b|\bguardalo localmente\b|"
-        r"\bsolo localmente\b|\bsolo durante (?:esta|la) sesion\b",
+        r"\bno lo guardes en lilith\b|\bguarda(?:lo)?(?: solo)? localmente\b|"
+        r"\bsolo (?:en (?:tu )?memoria )?local\b|\bsolo localmente\b|"
+        r"\bsolo durante (?:esta|la) sesion\b",
         value,
     ))
 
 
+def _memory_authority_control_text(text: str) -> str:
+    """Repair only known memory-control tokens fragmented by Live STT.
+
+    This view is used solely for authority classification. It never replaces the
+    transcript and is never used to derive or mutate a stored key/value.
+    """
+    value = _normalized_turn_text(text)
+    repairs = (
+        (r"\bguar\s+da\s+lo\s+cal\s+mente\b", "guarda localmente"),
+        (r"\bguar\s+des\b", "guardes"),
+        (r"\bguar\s+da\s+lo\b", "guardalo"),
+        (r"\bguar\s+da\b", "guarda"),
+        (r"\blo\s+cal\s+mente\b", "localmente"),
+        (r"\bli\s+lith\b", "lilith"),
+        (r"\bse\s+sion\b", "sesion"),
+    )
+    for pattern, replacement in repairs:
+        value = re.sub(pattern, replacement, value)
+    return value
+
+
 def _classify_memory_request(text: str, *, source: str, requested_tool: str) -> str:
     """Classify memory authority without trusting a possibly partial Live transcript."""
-    if requested_tool in {"lilith_memory_store", "lilith_memory_delete"}:
+    if requested_tool == "lilith_memory_delete":
         return "persistent"
-    if requested_tool != "save_memory":
+    if requested_tool not in {"save_memory", "lilith_memory_store"}:
         return "unknown"
+    # Authority comes from the user, never from Gemini's selected storage tool.
+    # A reliable negative/local instruction has precedence over persistence.
     if _is_explicit_local_memory_request(text):
         return "local"
     if _is_explicit_persistent_memory_request(text):
         return "persistent"
-    # A user-originated save must never silently fall into local memory merely
-    # because Gemini Live supplied only the final transcript fragment.
     if source in {"voice", "text"}:
-        return "persistent"
+        return "ambiguous"
     return "unknown"
 
 
@@ -3240,6 +3262,23 @@ class JarvisLive:
                 response={"result": "JARVIS blocked a duplicate memory FunctionCall; no second write occurred."},
             )
 
+        if classification in {"ambiguous", "unknown"}:
+            decision = "blocked_ambiguous_authority" if classification == "ambiguous" else "blocked_unknown_authority"
+            self._memory_call_turns[fc_id] = self._schedule_turn_id
+            self._memory_consumed_call_ids.add(fc_id)
+            self._memory_guard_log(
+                fc_id=fc_id, requested_tool=name, classification=classification,
+                routed_tool=name, canonical_key="", decision=decision,
+            )
+            clarification = (
+                "¿Quieres que lo guarde solo en JARVIS o de forma persistente en LILITH?"
+                if classification == "ambiguous"
+                else "JARVIS memory validation failure: memory authority is unknown. No memory was changed."
+            )
+            return types.FunctionResponse(
+                id=fc.id, name=name, response={"result": clarification},
+            )
+
         routed_name = name
         routed_args = dict(args)
         if name == "save_memory" and classification == "persistent":
@@ -3255,18 +3294,13 @@ class JarvisLive:
                 "confidence": 1.0,
                 "description": turn_text,
             }
-        elif name == "save_memory" and classification != "local":
-            self._memory_guard_log(
-                fc_id=fc_id, requested_tool=name, classification=classification,
-                routed_tool=name, canonical_key="", decision="blocked_unknown_authority",
-            )
-            return types.FunctionResponse(
-                id=fc.id, name=name,
-                response={"result": (
-                    "JARVIS memory validation failure: memory authority is unknown, so local storage "
-                    "was blocked. No memory was changed."
-                )},
-            )
+        elif name == "lilith_memory_store" and classification == "local":
+            routed_name = "save_memory"
+            routed_args = {
+                "key": args.get("key", ""),
+                "value": args.get("value", ""),
+                "category": args.get("category", "notes"),
+            }
 
         if routed_name == "lilith_memory_store":
             supplied_key = _canonical_memory_key(str(routed_args.get("key", "")))
@@ -3278,7 +3312,8 @@ class JarvisLive:
             routed_args.setdefault("confidence", 1.0)
             routed_args.setdefault("description", turn_text)
         elif routed_name == "save_memory":
-            routed_args["category"] = str(routed_args.get("category") or "notes")
+            local_category = str(routed_args.get("category") or "notes")
+            routed_args["category"] = local_category if local_category in {"notes", "projects"} else "notes"
             routed_args["key"] = _automatic_memory_key(turn_text, routed_args.get("key"))
 
         category = str(routed_args.get("category", "jarvis_fact"))
@@ -3325,7 +3360,11 @@ class JarvisLive:
         self._memory_call_turns[fc_id] = self._schedule_turn_id
         self._memory_consumed_call_ids.add(fc_id)
         self._memory_turn_effects.add(effect)
-        decision = "rerouted_persistent_store" if routed_name != name else "allowed"
+        decision = (
+            "rerouted_persistent_store" if routed_name == "lilith_memory_store" and routed_name != name
+            else "rerouted_local_store" if routed_name == "save_memory" and routed_name != name
+            else "allowed"
+        )
         self._memory_guard_log(
             fc_id=fc_id, requested_tool=name, classification=classification,
             routed_tool=routed_name, canonical_key=canonical_key, decision=decision,

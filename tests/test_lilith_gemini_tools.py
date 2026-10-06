@@ -1064,13 +1064,13 @@ class TestPersistentMemoryFlow(unittest.TestCase):
         )]))[0]
         self.assertIn("No results", missing.response["result"])
 
-    def test_partial_live_transcript_cannot_fall_back_to_local_memory(self):
+    def test_ambiguous_live_transcript_clarifies_without_writing(self):
         client = self._client()
         jarvis = _make_jarvis(lilith_client=client)
         call = _fake_fc("save_memory", {
             "category": "notes", "key": "codigo_temporal_pruebas", "value": "7319",
         })
-        session = TestGeminiLiveSchedulePath.LiveSession(jarvis, call, "7319")
+        session = TestGeminiLiveSchedulePath.LiveSession(jarvis, call, "Guarda este dato.")
         jarvis.session = session
 
         with patch("main.update_memory") as local_store, self.assertLogs(
@@ -1080,10 +1080,13 @@ class TestPersistentMemoryFlow(unittest.TestCase):
 
         log = "\n".join(captured.output)
         self.assertIn("requested_tool=save_memory", log)
-        self.assertIn("classification=persistent", log)
-        self.assertIn("decision=rerouted_persistent_store", log)
-        self.assertIn("canonical_key=notes/codigo_temporal_pruebas", log)
-        client.store_memory.assert_awaited_once()
+        self.assertIn("classification=ambiguous", log)
+        self.assertIn("decision=blocked_ambiguous_authority", log)
+        self.assertEqual(
+            session.responses[0].response["result"],
+            "¿Quieres que lo guarde solo en JARVIS o de forma persistente en LILITH?",
+        )
+        client.store_memory.assert_not_awaited()
         local_store.assert_not_called()
 
     def test_duplicate_function_call_id_writes_once(self):
@@ -1181,26 +1184,75 @@ class TestPersistentMemoryFlow(unittest.TestCase):
     def test_explicit_local_override_never_crosses_to_lilith(self):
         client = self._client()
         jarvis = _make_jarvis(lilith_client=client)
-        jarvis._begin_schedule_turn(
-            "No lo guardes en LILITH; guárdalo solo localmente.", "voice",
+        session = TestGeminiLiveSchedulePath.LiveSession(
+            jarvis, _fake_fc("save_memory", {"value": "diagnostic"}),
+            "No lo guardes en LILITH; guárdalo solo localmente.",
         )
+        jarvis.session = session
         with patch("main.update_memory") as local_store:
-            result = _run(jarvis._execute_tool_batch([_fake_fc(
-                "save_memory", {"value": "diagnostic"},
-            )]))[0]
-        self.assertEqual(result.response["result"], "ok")
+            _run(jarvis._receive_audio())
+        self.assertEqual(session.responses[0].response["result"], "ok")
         local_store.assert_called_once()
+        client.store_memory.assert_not_awaited()
+
+    def test_fragmented_live_local_control_preserves_key_and_value(self):
+        transcript = (
+            "No lo guar des el , guar da lo cal mente que mi nú mero tempo ral "
+            "es el 5 8 2 4."
+        )
+        client = self._client()
+        jarvis = _make_jarvis(lilith_client=client)
+        call = _fake_fc("save_memory", {
+            "category": "notes", "key": "temporary_number", "value": "5824",
+        })
+        session = TestGeminiLiveSchedulePath.LiveSession(jarvis, call, transcript)
+        jarvis.session = session
+
+        with patch("main.update_memory") as local_store, self.assertLogs(
+            "jarvis.main", level="INFO"
+        ) as captured:
+            _run(jarvis._receive_audio())
+
+        log = "\n".join(captured.output)
+        self.assertIn("classification=local", log)
+        self.assertIn("decision=allowed", log)
+        local_store.assert_called_once_with({
+            "notes": {"temporary_number": {"value": "5824"}},
+        })
+        client.store_memory.assert_not_awaited()
+
+    def test_local_authority_overrides_gemini_lilith_store_choice(self):
+        client = self._client()
+        jarvis = _make_jarvis(lilith_client=client)
+        jarvis._begin_schedule_turn(
+            "No lo guardes en LILITH. Guarda solo localmente mi número temporal.", "voice",
+        )
+        call = _fake_fc("lilith_memory_store", {
+            "category": "preferences", "key": "temporary_number", "value": "5824",
+        })
+        with patch("main.update_memory") as local_store, self.assertLogs(
+            "jarvis.main", level="INFO"
+        ) as captured:
+            result = _run(jarvis._execute_tool_batch([call]))[0]
+
+        self.assertEqual(result.response["result"], "ok")
+        self.assertIn("decision=rerouted_local_store", "\n".join(captured.output))
+        local_store.assert_called_once_with({
+            "notes": {"temporary_number": {"value": "5824"}},
+        })
         client.store_memory.assert_not_awaited()
 
     def test_current_session_request_never_crosses_to_lilith(self):
         client = self._client()
         jarvis = _make_jarvis(lilith_client=client)
-        jarvis._begin_schedule_turn("Recuerda esto solo durante esta sesión.", "voice")
+        session = TestGeminiLiveSchedulePath.LiveSession(
+            jarvis, _fake_fc("save_memory", {"value": "temporary"}),
+            "Recuerda esto solo durante esta sesión.",
+        )
+        jarvis.session = session
         with patch("main.update_memory") as local_store:
-            result = _run(jarvis._execute_tool_batch([_fake_fc(
-                "save_memory", {"value": "temporary"},
-            )]))[0]
-        self.assertEqual(result.response["result"], "ok")
+            _run(jarvis._receive_audio())
+        self.assertEqual(session.responses[0].response["result"], "ok")
         local_store.assert_called_once()
         client.store_memory.assert_not_awaited()
 
