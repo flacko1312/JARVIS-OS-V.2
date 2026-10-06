@@ -418,7 +418,11 @@ class TestLilithRoutineTool(unittest.TestCase):
         self.assertIn("LILITH confirmed", resp.response["result"])
         self.assertIn("routine_id", resp.response["result"])
         mock.command_submit.assert_awaited_once_with(
-            intent="routines.create", parameters={k: v for k, v in args.items() if k != "operation"})
+            intent="routines.create", parameters={k: v for k, v in args.items() if k != "operation"},
+            request_id="jarvis:fake-lilith_routine",
+            correlation_id="jarvis:fake-lilith_routine",
+            idempotency_key="jarvis:routine:fake-lilith_routine",
+        )
 
     def test_ambiguous_create_asks_for_missing_fields_without_calling_lilith(self):
         mock = AsyncMock()

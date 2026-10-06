@@ -2660,6 +2660,9 @@ class JarvisLive:
                         try:
                             data = await bridge._runtime.client.command_submit(
                                 intent=f"routines.{operation}", parameters=params,
+                                request_id=f"jarvis:{fc.id}",
+                                correlation_id=f"jarvis:{fc.id}",
+                                idempotency_key=f"jarvis:routine:{fc.id}",
                             )
                             status = data.get("status", "unknown")
                             corr = data.get("correlation_id") or "unknown"
