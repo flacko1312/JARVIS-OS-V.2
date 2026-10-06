@@ -6,6 +6,7 @@ import json
 import sys
 import traceback
 import uuid
+from dataclasses import dataclass, field
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -183,37 +184,122 @@ Examples:
 
 _SCHEDULED_TOOL_NAMES = frozenset({"lilith_home_action", "reminder", "lilith_routine"})
 _ROUTINE_READ_OPERATIONS = frozenset({"list", "get", "history"})
+_ROUTINE_WRITE_OPERATIONS = frozenset({"create", "update", "enable", "disable", "delete"})
 
 
-def _routine_args_from_wrong_call(turn_text: str, fc) -> dict | None:
-    """Build the existing JL-A9 routine contract without performing an effect."""
-    when = _daily_time_from_text(turn_text)
-    value = _normalized_turn_text(turn_text)
-    is_daily = bool(re.search(
+@dataclass
+class PendingRoutineState:
+    """Session-bound routine intent assembled across Gemini Live turns."""
+
+    session_id: str
+    origin_turn: int
+    last_turn: int
+    operation: str = "create"
+    target: str = ""
+    recurrence: str = ""
+    hour: int | None = None
+    minute: int | None = None
+    timezone: str = "Europe/Madrid"
+    action: str = ""
+    pending_clarification: set[str] = field(default_factory=set)
+    consumed_call_ids: set[str] = field(default_factory=set)
+
+    def observe_text(self, text: str, turn: int) -> None:
+        self.last_turn = turn
+        if _schedule_semantics(text) == "recurring":
+            self.recurrence = "daily" if _is_daily_routine_text(text) else self.recurrence
+        when = _daily_time_from_text(text)
+        if when is not None:
+            self.hour, self.minute = when
+        value = _normalized_turn_text(text)
+        if any(alias in value for alias in ("madrid", "mi zona horaria", "hora local")):
+            self.timezone = "Europe/Madrid"
+        action, target = _routine_action_target(text, {})
+        if action:
+            self.action = action
+        if target:
+            self.target = target
+        self.refresh_missing()
+
+    def absorb_call(self, args: dict) -> None:
+        operation = str(args.get("operation") or "").strip().lower()
+        if operation:
+            self.operation = operation
+        schedule_type = str(args.get("schedule_type") or "").strip().lower()
+        if schedule_type:
+            self.recurrence = schedule_type
+        schedule = args.get("schedule")
+        if isinstance(schedule, dict):
+            if self.hour is None and isinstance(schedule.get("hour"), int):
+                self.hour = schedule["hour"]
+            if self.minute is None and isinstance(schedule.get("minute"), int):
+                self.minute = schedule["minute"]
+        timezone = normalize_timezone(args.get("timezone"), default=self.timezone)
+        if timezone:
+            self.timezone = timezone
+        nested = args.get("action_parameters")
+        nested = dict(nested) if isinstance(nested, dict) else {}
+        self.target = str(
+            nested.get("entity_id") or nested.get("target") or args.get("target") or self.target
+        ).strip()
+        self.action = str(nested.get("action") or args.get("action") or self.action).strip()
+        self.refresh_missing()
+
+    def refresh_missing(self) -> None:
+        missing = set()
+        if not self.recurrence:
+            missing.add("recurrence")
+        if self.hour is None or self.minute is None:
+            missing.add("time")
+        if not self.target:
+            missing.add("target")
+        if not self.action:
+            missing.add("action")
+        self.pending_clarification = missing
+
+
+def _is_daily_routine_text(text: str) -> bool:
+    value = _normalized_turn_text(text)
+    return bool(re.search(
         r"\b(?:todos? los dias|cada dia|diariamente|cada manana|cada noche|every day|daily|every morning|every night)\b",
         value,
     ))
-    if not is_daily or when is None:
-        return None
-    source_args = dict(getattr(fc, "args", None) or {})
-    nested_params = source_args.get("action_parameters")
-    nested_params = dict(nested_params) if isinstance(nested_params, dict) else {}
-    action = str(source_args.get("action") or nested_params.get("action") or "").strip()
-    target = str(source_args.get("target") or nested_params.get("target") or "").strip()
+
+
+def _routine_action_target(text: str, source_args: dict) -> tuple[str, str]:
+    """Recover only safety-critical home fields when Gemini selects the wrong tool."""
+    value = _normalized_turn_text(text)
+    nested = source_args.get("action_parameters")
+    nested = dict(nested) if isinstance(nested, dict) else {}
+    action = str(source_args.get("action") or nested.get("action") or "").strip()
+    target = str(source_args.get("target") or nested.get("target") or nested.get("entity_id") or "").strip()
     if not action:
         if re.search(r"\b(?:enciende|encender|turn on|switch on)\b", value):
             action = "turn_on"
         elif re.search(r"\b(?:apaga|apagar|turn off|switch off)\b", value):
             action = "turn_off"
-    if not target:
-        message = str(source_args.get("message", "")).strip()
-        candidate = message or turn_text
+    if not target and action:
         target = re.sub(
             r"(?i)\b(?:todos? los dias|cada dia|diariamente|a las?\s+\w+(?:\s+de la (?:manana|tarde|noche))?|"
             r"enciende|encender|apaga|apagar|turn on|turn off|crea una rutina para|routine|every day)\b",
-            " ", candidate,
+            " ", text,
         )
         target = " ".join(target.strip(" .,:;-").split())
+    return action, target
+
+
+def _routine_args_from_wrong_call(turn_text: str, fc) -> dict | None:
+    """Build the existing JL-A9 routine contract without performing an effect."""
+    when = _daily_time_from_text(turn_text)
+    is_daily = _is_daily_routine_text(turn_text)
+    if not is_daily or when is None:
+        return None
+    source_args = dict(getattr(fc, "args", None) or {})
+    nested_params = source_args.get("action_parameters")
+    nested_params = dict(nested_params) if isinstance(nested_params, dict) else {}
+    action, target = _routine_action_target(
+        str(source_args.get("message", "")).strip() or turn_text, source_args
+    )
     if action not in {"turn_on", "turn_off"} or not target:
         return None
     hour, minute = when
@@ -1690,8 +1776,7 @@ class JarvisLive:
         self._schedule_turn_id = ""
         self._schedule_turn_source = ""
         self._schedule_call_turns: dict[str, str] = {}
-        self._pending_recurring_text = ""
-        self._pending_recurring_turn = 0
+        self._pending_routine: PendingRoutineState | None = None
         self._pending_self_quit = False
         self._pending_self_quit_farewell_received = False
         self._self_quit_timer = None
@@ -2875,20 +2960,58 @@ class JarvisLive:
         self._capture_pending_recurring(self._current_input_transcript)
 
     def _capture_pending_recurring(self, text: str) -> None:
-        if _schedule_semantics(text) == "recurring":
-            self._pending_recurring_text = text
-            self._pending_recurring_turn = self._schedule_turn_sequence
+        semantics = _schedule_semantics(text)
+        pending = self._pending_routine
+        if semantics == "recurring":
+            pending = PendingRoutineState(
+                session_id=self._schedule_session_id,
+                origin_turn=self._schedule_turn_sequence,
+                last_turn=self._schedule_turn_sequence,
+                timezone=os.getenv("JARVIS_TIMEZONE", "Europe/Madrid"),
+            )
+            self._pending_routine = pending
+            pending.observe_text(text, self._schedule_turn_sequence)
+        elif (
+            pending is not None
+            and pending.pending_clarification
+            and self._schedule_turn_sequence - pending.last_turn <= 4
+        ):
+            pending.observe_text(text, self._schedule_turn_sequence)
 
     def _effective_schedule_text(self, tool: str) -> str:
-        current = self._schedule_guard_text()
-        if _schedule_semantics(current) == "recurring" or tool != "lilith_routine":
-            return current
-        if (
-            self._pending_recurring_text
-            and self._schedule_turn_sequence - self._pending_recurring_turn <= 4
-        ):
-            return self._pending_recurring_text
-        return current
+        return self._schedule_guard_text()
+
+    def _active_pending_routine(self) -> PendingRoutineState | None:
+        pending = self._pending_routine
+        if pending is None or pending.session_id != self._schedule_session_id:
+            return None
+        if self._schedule_turn_sequence - pending.last_turn > 4:
+            self._pending_routine = None
+            return None
+        return pending
+
+    def _pending_create_args(self, fc, pending: PendingRoutineState) -> dict | None:
+        supplied = dict(getattr(fc, "args", None) or {})
+        pending.absorb_call(supplied)
+        if pending.pending_clarification:
+            return None
+        nested = supplied.get("action_parameters")
+        nested = dict(nested) if isinstance(nested, dict) else {}
+        target_key = "entity_id" if pending.target.startswith(("light.", "switch.")) else "target"
+        return {
+            **supplied,
+            "operation": "create",
+            "name": str(supplied.get("name") or f"{pending.action} {pending.target} {pending.recurrence}"),
+            "schedule_type": pending.recurrence,
+            "schedule": {"hour": pending.hour, "minute": pending.minute},
+            "timezone": pending.timezone,
+            "action_intent": str(supplied.get("action_intent") or "home.action"),
+            "action_parameters": {
+                **nested,
+                target_key: pending.target,
+                "action": pending.action,
+            },
+        }
 
     def _schedule_guard_text(self) -> str:
         if not getattr(self, "_schedule_turn_id", ""):
@@ -2954,29 +3077,68 @@ class JarvisLive:
             )
             return await self._execute_tool(fc)
 
-        if semantics == "recurring":
+        if name == "lilith_routine" and operation in _ROUTINE_WRITE_OPERATIONS - {"create"}:
+            if self._schedule_guard_routed:
+                self._schedule_log(
+                    fc_id=fc_id, tool=name, operation=operation,
+                    classification=semantics, decision="blocked_duplicate",
+                )
+                return types.FunctionResponse(
+                    id=fc.id, name=name,
+                    response={"result": "This turn already produced a routine mutation; duplicate blocked."},
+                )
+            self._schedule_guard_routed = True
+            self._schedule_log(
+                fc_id=fc_id, tool=name, operation=operation,
+                classification=semantics, decision="allowed_routine_management",
+            )
+            return await self._execute_tool(fc)
+
+        pending = self._active_pending_routine()
+        pending_followup_complete = bool(
+            pending is not None
+            and pending.last_turn == self._schedule_turn_sequence
+            and not pending.pending_clarification
+        )
+
+        if name == "lilith_routine" and operation == "create" and (semantics == "recurring" or pending is not None):
+            if self._schedule_guard_routed:
+                self._schedule_log(fc_id=fc_id, tool=name, operation=operation, classification="recurring", decision="blocked_duplicate")
+                return types.FunctionResponse(
+                    id=fc.id, name=name,
+                    response={"result": "The recurring request was already routed once; duplicate side effect blocked."},
+                )
+            if pending is None:
+                self._capture_pending_recurring(turn_text)
+                pending = self._active_pending_routine()
+            routine_args = self._pending_create_args(fc, pending) if pending is not None else None
+            self._schedule_guard_routed = True
+            if routine_args is None:
+                missing = ", ".join(sorted(pending.pending_clarification)) if pending else "routine details"
+                self._schedule_log(fc_id=fc_id, tool=name, operation=operation, classification="recurring", decision="blocked_incomplete")
+                return types.FunctionResponse(
+                    id=fc.id, name=name,
+                    response={"result": f"Recurring request is incomplete or ambiguous: missing {missing}. Ask only for those fields; no action was taken."},
+                )
+            pending.consumed_call_ids.add(fc_id)
+            routed = SimpleNamespace(id=fc.id, name=name, args=routine_args)
+            self._schedule_log(fc_id=fc_id, tool=name, operation=operation, classification="recurring", decision="allowed")
+            response = await self._execute_tool(routed)
+            self._pending_routine = None
+            return response
+
+        if semantics == "recurring" or pending_followup_complete:
             if self._schedule_guard_routed:
                 self._schedule_log(fc_id=fc_id, tool=name, operation=operation, classification=semantics, decision="blocked_duplicate")
                 return types.FunctionResponse(
                     id=fc.id, name=name,
                     response={"result": "The recurring request was already routed once; duplicate side effect blocked."},
                 )
-            if name == "lilith_routine":
-                normalized_args = _routine_args_from_wrong_call(turn_text, fc)
-                if normalized_args is None:
-                    self._schedule_guard_routed = True
-                    self._schedule_log(fc_id=fc_id, tool=name, operation=operation, classification=semantics, decision="blocked_incomplete")
-                    return types.FunctionResponse(
-                        id=fc.id, name=name,
-                        response={"result": "Recurring request is incomplete or ambiguous. Ask only for the missing time, action, or target; no action was taken."},
-                    )
-                merged_args = {**dict(getattr(fc, "args", None) or {}), **normalized_args}
-                routed = SimpleNamespace(id=fc.id, name=name, args=merged_args)
-                self._schedule_guard_routed = True
-                self._schedule_log(fc_id=fc_id, tool=name, operation=operation, classification=semantics, decision="allowed")
-                self._pending_recurring_text = ""
-                return await self._execute_tool(routed)
-            routine_args = _routine_args_from_wrong_call(turn_text, fc)
+            if pending is not None:
+                pending.absorb_call(args)
+                routine_args = self._pending_create_args(fc, pending)
+            else:
+                routine_args = _routine_args_from_wrong_call(turn_text, fc)
             if routine_args is None:
                 self._schedule_guard_routed = True
                 self._schedule_log(fc_id=fc_id, tool=name, operation=operation, classification=semantics, decision="blocked_incomplete")
@@ -2987,8 +3149,10 @@ class JarvisLive:
             self._schedule_guard_routed = True
             routed = SimpleNamespace(id=fc.id, name="lilith_routine", args=routine_args)
             self._schedule_log(fc_id=fc_id, tool=name, operation=operation, classification=semantics, decision="rerouted_lilith_routine")
-            self._pending_recurring_text = ""
             response = await self._execute_tool(routed)
+            if pending is not None:
+                pending.consumed_call_ids.add(fc_id)
+            self._pending_routine = None
             return types.FunctionResponse(id=fc.id, name=name, response=response.response)
 
         if semantics == "one_shot" and name != "reminder":

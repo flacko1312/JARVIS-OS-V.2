@@ -792,6 +792,66 @@ class TestJlA9ScheduleExecutionGuard(unittest.TestCase):
         self.assertIn("duplicate blocked", responses[1].response["result"])
         client.home_action.assert_not_awaited()
 
+    def test_v_partial_time_followup_completes_same_pending_routine(self):
+        client = self._home_client()
+        jarvis = _make_jarvis(lilith_client=client)
+        jarvis._begin_schedule_turn(
+            "Todos los días enciende la bombilla del mueble.", "voice"
+        )
+        self.assertEqual(jarvis._pending_routine.pending_clarification, {"time"})
+
+        jarvis._begin_schedule_turn("A las nueve de la noche, hora de Madrid.", "voice")
+        _run(jarvis._execute_tool_batch([_fake_fc("lilith_routine", {
+            "operation": "create",
+        })]))
+
+        params = client.command_submit.await_args.kwargs["parameters"]
+        self.assertEqual(params["schedule"], {"hour": 21, "minute": 0})
+        self.assertEqual(params["timezone"], "Europe/Madrid")
+        self.assertEqual(params["action_parameters"]["entity_id"], "light.bombilla_mueble")
+        self.assertEqual(params["action_parameters"]["action"], "turn_on")
+        self.assertIsNone(jarvis._pending_routine)
+
+    def test_w_lifecycle_writes_do_not_require_recurring_words(self):
+        cases = (
+            ("Actualiza esta rutina.", "update", {"routine_id": 4, "name": "Nueva"}),
+            ("Activa esta rutina.", "enable", {"routine_id": 4}),
+            ("Desactiva esta rutina.", "disable", {"routine_id": 4}),
+            ("Borra esta rutina.", "delete", {"routine_id": 4}),
+        )
+        for text, operation, args in cases:
+            with self.subTest(operation=operation):
+                client = self._home_client()
+                jarvis = _make_jarvis(lilith_client=client)
+                jarvis._begin_schedule_turn(text, "voice")
+                with patch("main.reminder") as reminder_action:
+                    response = _run(jarvis._execute_tool_batch([_fake_fc(
+                        "lilith_routine", {"operation": operation, **args}
+                    )]))[0]
+                self.assertIn("confirmed routine", response.response["result"])
+                self.assertEqual(
+                    client.command_submit.await_args.kwargs["intent"],
+                    f"routines.{operation}",
+                )
+                client.home_action.assert_not_awaited()
+                reminder_action.assert_not_called()
+
+    def test_x_duplicate_create_with_different_call_ids_executes_once(self):
+        client = self._home_client()
+        jarvis = _make_jarvis(lilith_client=client)
+        jarvis._begin_schedule_turn(
+            "Todos los días a las nueve de la noche enciende la bombilla del mueble.",
+            "voice",
+        )
+        calls = [
+            _fake_fc("lilith_routine", {"operation": "create"}),
+            _fake_fc("lilith_routine", {"operation": "create"}),
+        ]
+        calls[1].id = "different-call-id"
+        responses = _run(jarvis._execute_tool_batch(calls))
+        self.assertEqual(client.command_submit.await_count, 1)
+        self.assertIn("duplicate", responses[1].response["result"])
+
 
 class TestGeminiLiveSchedulePath(unittest.TestCase):
     """Exercise the actual receive -> FunctionCall -> tool-response path."""
