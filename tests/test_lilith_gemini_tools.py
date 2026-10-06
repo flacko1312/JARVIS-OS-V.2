@@ -23,6 +23,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import main
 from main import TOOL_DECLARATIONS, get_tool_declarations
 from core.lilith_gateway import LilithBridge
+from core.schedule_safety import daily_time_from_text, normalize_timezone
 
 
 # ── helpers ──────────────────────────────────────────────────────────────
@@ -505,8 +506,8 @@ class TestJlA9RoutineRoutingPolicy(unittest.TestCase):
 
     def test_g_incomplete_recurring_request_requires_clarification(self):
         prompt, tools, _ = self._prompt_and_tools()
-        self.assertIn("ask a clarification question and call no action tool", prompt)
-        self.assertIn("Ask the user for clarification", tools["lilith_routine"]["description"])
+        self.assertIn("Ask only when recurrence, time, target, or action is genuinely", prompt)
+        self.assertIn("Ask only when time, recurrence, target, or action is genuinely ambiguous", tools["lilith_routine"]["description"])
 
     def test_windows_live_config_contains_current_routine_tool(self):
         _, tools, live_names = self._prompt_and_tools()
@@ -660,6 +661,88 @@ class TestJlA9ScheduleExecutionGuard(unittest.TestCase):
         response = _run(jarvis._execute_tool_batch([call]))[0]
         self.assertIn("another turn", response.response["result"])
         self.assertEqual(client.home_action.await_count, 1)
+
+    def test_k_digit_nine_at_night_normalizes_to_2100(self):
+        self.assertEqual(
+            daily_time_from_text("todos los días a las 9 de la noche"),
+            (21, 0),
+        )
+
+    def test_l_written_nine_at_night_normalizes_to_2100(self):
+        self.assertEqual(
+            daily_time_from_text("cada día a las nueve de la noche"),
+            (21, 0),
+        )
+
+    def test_m_madrid_timezone_aliases_normalize(self):
+        for value in ("Madrid", "hora de Madrid", "mi zona horaria", None):
+            self.assertEqual(normalize_timezone(value), "Europe/Madrid")
+
+    def test_n_full_digit_request_builds_valid_create_payload_only(self):
+        client = self._home_client()
+        jarvis = _make_jarvis(lilith_client=client)
+        text = "Todos los días a las 9 de la noche enciende la bombilla del mueble."
+        jarvis._begin_schedule_turn(text, "voice")
+        with patch("main.reminder") as reminder_action:
+            _run(jarvis._execute_tool_batch([_fake_fc("lilith_home_action", {
+                "target": "bombilla del mueble", "action": "turn_on",
+            })]))
+        kwargs = client.command_submit.await_args.kwargs
+        self.assertEqual(kwargs["intent"], "routines.create")
+        self.assertEqual(kwargs["parameters"]["schedule_type"], "daily")
+        self.assertEqual(kwargs["parameters"]["schedule"], {"hour": 21, "minute": 0})
+        self.assertEqual(kwargs["parameters"]["timezone"], "Europe/Madrid")
+        self.assertEqual(kwargs["parameters"]["action_intent"], "home.action")
+        client.home_action.assert_not_awaited()
+        reminder_action.assert_not_called()
+
+    def test_o_routine_tool_normalizes_madrid_before_client(self):
+        client = self._home_client()
+        jarvis = _make_jarvis(lilith_client=client)
+        text = "Todos los días a las 9 de la noche enciende la bombilla del mueble."
+        jarvis._begin_schedule_turn(text, "voice")
+        args = {
+            "operation": "create", "name": "Bombilla habitación",
+            "schedule_type": "daily", "schedule": {"hour": 9, "minute": 0},
+            "timezone": "Madrid", "action_intent": "home.action",
+            "action_parameters": {"target": "bombilla del mueble", "action": "turn_on"},
+        }
+        _run(jarvis._execute_tool_batch([_fake_fc("lilith_routine", args)]))
+        params = client.command_submit.await_args.kwargs["parameters"]
+        self.assertEqual(params["schedule"], {"hour": 21, "minute": 0})
+        self.assertEqual(params["timezone"], "Europe/Madrid")
+        self.assertEqual(params["action_parameters"]["entity_id"], "light.bombilla_mueble")
+
+    def test_p_ambiguous_nine_requests_clarification_without_effect(self):
+        client = self._home_client()
+        jarvis = _make_jarvis(lilith_client=client)
+        jarvis._begin_schedule_turn(
+            "Todos los días a las nueve enciende la bombilla del mueble.", "voice"
+        )
+        with patch("main.reminder") as reminder_action:
+            response = _run(jarvis._execute_tool_batch([_fake_fc("lilith_home_action", {
+                "target": "bombilla del mueble", "action": "turn_on",
+            })]))[0]
+        self.assertIn("incomplete", response.response["result"])
+        client.command_submit.assert_not_awaited()
+        client.home_action.assert_not_awaited()
+        reminder_action.assert_not_called()
+
+    def test_q_confirmed_followup_uses_session_bound_pending_recurring_intent(self):
+        client = self._home_client()
+        jarvis = _make_jarvis(lilith_client=client)
+        jarvis._begin_schedule_turn(
+            "Todos los días a las 9 de la noche enciende la bombilla del mueble.", "voice"
+        )
+        jarvis._begin_schedule_turn("Sí, 21:00 hora de Madrid.", "voice")
+        _run(jarvis._execute_tool_batch([_fake_fc("lilith_routine", {
+            "operation": "create", "name": "Bombilla habitación",
+            "schedule_type": "daily", "schedule": {"hour": 21, "minute": 0},
+            "timezone": "Madrid", "action_intent": "home.action",
+            "action_parameters": {"target": "bombilla del mueble", "action": "turn_on"},
+        })]))
+        self.assertEqual(client.command_submit.await_count, 1)
+        client.home_action.assert_not_awaited()
 
 
 class TestGeminiLiveSchedulePath(unittest.TestCase):

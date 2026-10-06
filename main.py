@@ -9,6 +9,8 @@ import uuid
 from pathlib import Path
 from types import SimpleNamespace
 
+from core.schedule_safety import daily_time_from_text as _daily_time_from_text
+from core.schedule_safety import normalize_timezone
 from core.schedule_safety import normalized_turn_text as _normalized_turn_text
 from core.schedule_safety import schedule_semantics as _schedule_semantics
 
@@ -168,8 +170,10 @@ Classify the user's intent before calling any action tool:
    lilith_home_action.
 Never call lilith_home_action as a side effect while defining a future routine.
 Never replace a recurring routine with reminder. For a recurring request, call only
-the appropriate lilith_routine operation. If recurrence, time, timezone, target, or
-action is missing or ambiguous, ask a clarification question and call no action tool.
+the appropriate lilith_routine operation. Spanish times such as "9 de la noche" are
+unambiguously 21:00. Use Europe/Madrid for Madrid, hora de Madrid, mi zona horaria,
+or an omitted timezone. Ask only when recurrence, time, target, or action is genuinely
+missing or ambiguous, and call no action tool in that case.
 Examples:
 - "Enciende la bombilla" -> lilith_home_action.
 - "Recuérdame hoy a las 21:00 encender la bombilla" -> reminder.
@@ -178,31 +182,6 @@ Examples:
 """.strip()
 
 _SCHEDULED_TOOL_NAMES = frozenset({"lilith_home_action", "reminder", "lilith_routine"})
-_SPANISH_NUMBERS = {
-    "una": 1, "uno": 1, "dos": 2, "tres": 3, "cuatro": 4, "cinco": 5,
-    "seis": 6, "siete": 7, "ocho": 8, "nueve": 9, "diez": 10,
-    "once": 11, "doce": 12,
-}
-
-
-def _daily_time_from_text(text: str) -> tuple[int, int] | None:
-    value = _normalized_turn_text(text)
-    numeric = re.search(r"\b([01]?\d|2[0-3])[:.]([0-5]\d)\b", value)
-    if numeric:
-        return int(numeric.group(1)), int(numeric.group(2))
-    am_pm = re.search(r"\b(1[0-2]|0?[1-9])\s*(?:h\s*)?(am|pm)\b", value)
-    if am_pm:
-        return int(am_pm.group(1)) % 12 + (12 if am_pm.group(2) == "pm" else 0), 0
-    words = "|".join(_SPANISH_NUMBERS)
-    spoken = re.search(rf"\b(?:a las|a la)\s+({words})\b", value)
-    if not spoken:
-        return None
-    hour = _SPANISH_NUMBERS[spoken.group(1)]
-    if re.search(r"\b(?:de la )?(?:tarde|noche)\b", value) and hour < 12:
-        hour += 12
-    return hour, 0
-
-
 def _routine_args_from_wrong_call(turn_text: str, fc) -> dict | None:
     """Build the existing JL-A9 routine contract without performing an effect."""
     when = _daily_time_from_text(turn_text)
@@ -214,8 +193,10 @@ def _routine_args_from_wrong_call(turn_text: str, fc) -> dict | None:
     if not is_daily or when is None:
         return None
     source_args = dict(getattr(fc, "args", None) or {})
-    action = str(source_args.get("action", "")).strip()
-    target = str(source_args.get("target", "")).strip()
+    nested_params = source_args.get("action_parameters")
+    nested_params = dict(nested_params) if isinstance(nested_params, dict) else {}
+    action = str(source_args.get("action") or nested_params.get("action") or "").strip()
+    target = str(source_args.get("target") or nested_params.get("target") or "").strip()
     if not action:
         if re.search(r"\b(?:enciende|encender|turn on|switch on)\b", value):
             action = "turn_on"
@@ -234,11 +215,19 @@ def _routine_args_from_wrong_call(turn_text: str, fc) -> dict | None:
         return None
     hour, minute = when
     return {
-        "operation": "create", "name": f"{action} {target} daily",
+        "operation": "create", "name": str(source_args.get("name") or f"{action} {target} daily"),
         "schedule_type": "daily", "schedule": {"hour": hour, "minute": minute},
-        "timezone": os.getenv("JARVIS_TIMEZONE", "Europe/Madrid"),
+        "timezone": normalize_timezone(
+            source_args.get("timezone"),
+            default=os.getenv("JARVIS_TIMEZONE", "Europe/Madrid"),
+        ) or os.getenv("JARVIS_TIMEZONE", "Europe/Madrid"),
         "action_intent": "home.action",
-        "action_parameters": {"target": target, "action": action, "parameters": source_args.get("parameters") or {}},
+        "action_parameters": {
+            **nested_params,
+            "target": target,
+            "action": action,
+            "parameters": source_args.get("parameters") or nested_params.get("parameters") or {},
+        },
     }
 
 _SELF_QUIT_PATTERNS = tuple(re.compile(pattern, re.IGNORECASE) for pattern in (
@@ -1591,8 +1580,9 @@ TOOL_DECLARATIONS = [
             "lunes/cada X horas o días/rutina/automatiza/a partir de ahora. For create, translate "
             "the requested action into the existing JL-A6 action_intent and action_parameters; "
             "for a light use home.action with entity/action parameters. Never also call reminder "
-            "or lilith_home_action while defining the routine. Ask the user for clarification "
-            "before calling when time, timezone, recurrence, target, or action is ambiguous. "
+            "or lilith_home_action while defining the routine. Interpret 9 de la noche as 21:00. "
+            "Normalize Madrid, hora de Madrid, mi zona horaria, or an omitted timezone to "
+            "Europe/Madrid. Ask only when time, recurrence, target, or action is genuinely ambiguous. "
             "LILITH is authoritative: never claim created/updated/enabled/disabled/deleted unless "
             "status is completed."
         ),
@@ -1697,6 +1687,8 @@ class JarvisLive:
         self._schedule_turn_id = ""
         self._schedule_turn_source = ""
         self._schedule_call_turns: dict[str, str] = {}
+        self._pending_recurring_text = ""
+        self._pending_recurring_turn = 0
         self._pending_self_quit = False
         self._pending_self_quit_farewell_received = False
         self._self_quit_timer = None
@@ -2807,6 +2799,12 @@ class JarvisLive:
                                     **{k: v for k, v in action_params.items() if k != "target"},
                                     "entity_id": resolved["entity_id"],
                                 }
+                            logger.info(
+                                "ROUTINE_SUBMIT function_call_id=%s operation=%s schedule_type=%s schedule=%s timezone=%s action_intent=%s action_parameters=%s",
+                                fc.id, operation, params.get("schedule_type"), params.get("schedule"),
+                                params.get("timezone"), params.get("action_intent"),
+                                params.get("action_parameters"),
+                            )
                             data = await client.command_submit(
                                 intent=f"routines.{operation}", parameters=params,
                                 request_id=f"jarvis:{fc.id}",
@@ -2817,6 +2815,11 @@ class JarvisLive:
                             corr = data.get("correlation_id") or "unknown"
                             response = data.get("response") or {}
                             error = data.get("error") or {}
+                            logger.info(
+                                "ROUTINE_RESULT function_call_id=%s status=%s error_code=%s error_message=%s correlation_id=%s",
+                                fc.id, status, error.get("code", "none"),
+                                error.get("message", "none"), corr,
+                            )
                             if status == "completed":
                                 result = (
                                     f"LILITH confirmed routine {operation}; correlation_id={corr}; "
@@ -2830,6 +2833,10 @@ class JarvisLive:
                         except LookupError:
                             pass
                         except Exception as exc:
+                            logger.error(
+                                "ROUTINE_FAILED function_call_id=%s error_code=%s error_message=%s",
+                                fc.id, getattr(exc, "code", type(exc).__name__), str(exc),
+                            )
                             result = f"LILITH routine request failed; no success confirmed: {exc}"
 
             else:
@@ -2858,9 +2865,27 @@ class JarvisLive:
         self._schedule_turn_source = source
         self._current_input_transcript = str(text or "").strip()
         self._schedule_guard_routed = False
+        self._capture_pending_recurring(self._current_input_transcript)
 
     def _update_schedule_turn(self, text: str) -> None:
         self._current_input_transcript = str(text or "").strip()
+        self._capture_pending_recurring(self._current_input_transcript)
+
+    def _capture_pending_recurring(self, text: str) -> None:
+        if _schedule_semantics(text) == "recurring":
+            self._pending_recurring_text = text
+            self._pending_recurring_turn = self._schedule_turn_sequence
+
+    def _effective_schedule_text(self, tool: str) -> str:
+        current = self._schedule_guard_text()
+        if _schedule_semantics(current) == "recurring" or tool != "lilith_routine":
+            return current
+        if (
+            self._pending_recurring_text
+            and self._schedule_turn_sequence - self._pending_recurring_turn <= 4
+        ):
+            return self._pending_recurring_text
+        return current
 
     def _schedule_guard_text(self) -> str:
         if not getattr(self, "_schedule_turn_id", ""):
@@ -2880,7 +2905,7 @@ class JarvisLive:
         if name not in _SCHEDULED_TOOL_NAMES:
             return await self._execute_tool(fc)
         fc_id = str(getattr(fc, "id", "") or "").strip()
-        turn_text = self._schedule_guard_text()
+        turn_text = self._effective_schedule_text(name)
         if not fc_id or not turn_text:
             self._schedule_log(fc_id=fc_id, tool=name, classification="unknown", decision="blocked_no_current_turn")
             return types.FunctionResponse(
@@ -2905,9 +2930,20 @@ class JarvisLive:
                     response={"result": "The recurring request was already routed once; duplicate side effect blocked."},
                 )
             if name == "lilith_routine":
+                normalized_args = _routine_args_from_wrong_call(turn_text, fc)
+                if normalized_args is None:
+                    self._schedule_guard_routed = True
+                    self._schedule_log(fc_id=fc_id, tool=name, classification=semantics, decision="blocked_incomplete")
+                    return types.FunctionResponse(
+                        id=fc.id, name=name,
+                        response={"result": "Recurring request is incomplete or ambiguous. Ask only for the missing time, action, or target; no action was taken."},
+                    )
+                merged_args = {**dict(getattr(fc, "args", None) or {}), **normalized_args}
+                routed = SimpleNamespace(id=fc.id, name=name, args=merged_args)
                 self._schedule_guard_routed = True
                 self._schedule_log(fc_id=fc_id, tool=name, classification=semantics, decision="allowed")
-                return await self._execute_tool(fc)
+                self._pending_recurring_text = ""
+                return await self._execute_tool(routed)
             routine_args = _routine_args_from_wrong_call(turn_text, fc)
             if routine_args is None:
                 self._schedule_guard_routed = True
@@ -2919,6 +2955,7 @@ class JarvisLive:
             self._schedule_guard_routed = True
             routed = SimpleNamespace(id=fc.id, name="lilith_routine", args=routine_args)
             self._schedule_log(fc_id=fc_id, tool=name, classification=semantics, decision="rerouted_lilith_routine")
+            self._pending_recurring_text = ""
             response = await self._execute_tool(routed)
             return types.FunctionResponse(id=fc.id, name=name, response=response.response)
 
