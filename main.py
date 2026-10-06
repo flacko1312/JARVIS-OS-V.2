@@ -182,6 +182,17 @@ Examples:
 - "Crea una rutina para encender la bombilla cada día a las 21:00" -> lilith_routine create only.
 """.strip()
 
+MEMORY_ROUTING_RULES = """
+[MEMORY AUTHORITY — mandatory]
+LILITH is the authoritative persistent user memory. Use lilith_memory_store for personal facts,
+preferences, stable project information, persistent notes, or anything the user asks you to
+remember later. Use lilith_memory_search to recall it and lilith_memory_delete only for an explicit
+forget/delete request. save_memory is only for local operational/session/UI state, and only when the
+user explicitly asks for local-only or current-session storage. Never ask the user for a category,
+namespace, or internal key; choose those implementation details yourself. Confirm normal success
+naturally without exposing backend names or keys unless the user asks for technical details.
+""".strip()
+
 _SCHEDULED_TOOL_NAMES = frozenset({"lilith_home_action", "reminder", "lilith_routine"})
 _ROUTINE_READ_OPERATIONS = frozenset({"list", "get", "history"})
 _ROUTINE_WRITE_OPERATIONS = frozenset({"create", "update", "enable", "disable", "delete"})
@@ -224,7 +235,9 @@ def _is_explicit_local_memory_request(text: str) -> bool:
     value = _normalized_turn_text(text)
     return bool(re.search(
         r"\b(?:esta|la|mi) sesion\b|\bcontexto (?:de sesion|operativo|del runtime)\b|"
-        r"\b(?:nota|memoria|estado|bandera|flag) local\b|\b(?:runtime|ui) (?:hint|state|flag)\b",
+        r"\b(?:nota|memoria|estado|bandera|flag) local\b|\b(?:runtime|ui) (?:hint|state|flag)\b|"
+        r"\bno lo guardes en lilith\b|\bguardalo solo localmente\b|\bguardalo localmente\b|"
+        r"\bsolo localmente\b|\bsolo durante (?:esta|la) sesion\b",
         value,
     ))
 
@@ -249,6 +262,28 @@ def _classify_memory_request(text: str, *, source: str, requested_tool: str) -> 
 def _memory_key_alias(value: str) -> str:
     normalized = _normalized_turn_text(str(value or "")).replace("/", " ").replace("_", " ")
     return " ".join(normalized.split())
+
+
+def _automatic_memory_category(text: str, supplied: str | None = None) -> str:
+    value = _normalized_turn_text(text)
+    if re.search(r"\b(?:prefiero|preferencia|favorit[oa]|me gusta)\b", value):
+        return "preferences"
+    if re.search(r"\b(?:proyecto|project)\b", value):
+        return "projects"
+    candidate = str(supplied or "").strip()
+    return candidate or "notes"
+
+
+def _automatic_memory_key(text: str, supplied: str | None = None) -> str:
+    candidate = _canonical_memory_key(str(supplied or ""))
+    if candidate:
+        return candidate.rsplit("/", 1)[-1]
+    basis = _normalized_turn_text(text) or "memory_fact"
+    if re.search(r"\b(?:luz|light)\b", basis) and re.search(
+        r"\b(?:prefiero|preferencia|preferida|preferred|preference)\b", basis,
+    ):
+        return "preferred_light_level"
+    return f"fact_{hashlib.sha256(basis.encode('utf-8')).hexdigest()[:12]}"
 
 
 @dataclass
@@ -1385,12 +1420,14 @@ TOOL_DECLARATIONS = [
     {
         "name": "save_memory",
         "description": (
-            "Save a LOCAL operational note (runtime hints, session context, temporary flags). "
+            "Save a LOCAL-ONLY operational note (runtime hints, current-session context, temporary flags). "
             "For persistent personal facts about the user (name, age, preferences, relationships, "
             "projects, wishes), use lilith_memory_store instead — LILITH is the canonical memory. "
             "Do NOT use this tool to store identity, preferences, relationships, or any personal "
             "knowledge. Those categories are restricted to LILITH. Never use this tool when the user "
             "explicitly asks to save, store, remember, or delete something in persistent memory. "
+            "Use only when the user explicitly requests local-only or current-session storage. "
+            "Choose category and key internally; never ask the user for either. "
             "Values must be in English regardless of the conversation language."
         ),
         "parameters": {
@@ -1406,7 +1443,7 @@ TOOL_DECLARATIONS = [
                 "key":   {"type": "STRING", "description": "Short snake_case key (e.g. current_task, session_mode)"},
                 "value": {"type": "STRING", "description": "Concise value in English"},
             },
-            "required": ["category", "key", "value"]
+            "required": ["value"]
         }
     },
     # ── LILITH integration tools (JL-W005) ─────────────────────────────
@@ -1436,6 +1473,7 @@ TOOL_DECLARATIONS = [
             "this upserts, replacing the old value. Do NOT delete-then-recreate. "
             "Do NOT use lilith_memory_delete to correct a fact — only to forget one. "
             "LILITH enforces restricted categories (identity, housing, beliefs, economy, psychology). "
+            "Choose category and key internally and never ask the user for them. "
             "Value should be in the user's language."
         ),
         "parameters": {
@@ -1468,7 +1506,7 @@ TOOL_DECLARATIONS = [
                     )
                 },
             },
-            "required": ["key", "value"]
+            "required": ["value"]
         }
     },
     {
@@ -1477,7 +1515,8 @@ TOOL_DECLARATIONS = [
             "Delete a fact from LILITH's persistent memory. Use ONLY when the user "
             "explicitly asks to FORGET something entirely (e.g. 'forget my favorite color'). "
             "Do NOT use this to correct a fact — use lilith_memory_store with the same key instead. "
-            "Key format: category/attribute (e.g. preferences/favorite_color). "
+            "Resolve the stored fact naturally from the user's wording; never ask the user for its key. "
+            "When already known internally, key format is category/attribute (e.g. preferences/favorite_color). "
             "LILITH only allows deleting facts JARVIS created."
         ),
         "parameters": {
@@ -1486,7 +1525,7 @@ TOOL_DECLARATIONS = [
                 "key": {"type": "STRING", "description": "The semantic key to delete (category/attribute, e.g. preferences/favorite_color)"},
                 "reason": {"type": "STRING", "description": "Why: 'user_request' (explicit forget) or 'obsolete'"},
             },
-            "required": ["key"]
+            "required": []
         }
     },
     {
@@ -2179,7 +2218,7 @@ class JarvisLive:
             f"Use this to calculate exact times for one-time reminders and persistent routines.\n\n"
         )
 
-        parts = [LANGUAGE_RULE, time_ctx, ROUTINE_ROUTING_RULES]
+        parts = [LANGUAGE_RULE, time_ctx, ROUTINE_ROUTING_RULES, MEMORY_ROUTING_RULES]
         lilith_is_authoritative = False
         if lilith_context:
             lilith_str = self._format_lilith_context(lilith_context)
@@ -3205,12 +3244,16 @@ class JarvisLive:
         routed_args = dict(args)
         if name == "save_memory" and classification == "persistent":
             routed_name = "lilith_memory_store"
+            supplied_key = _canonical_memory_key(str(args.get("key", "")))
+            category = _automatic_memory_category(turn_text, args.get("category"))
+            if not args.get("category") and "/" in supplied_key and category == "notes":
+                category = supplied_key.split("/", 1)[0]
             routed_args = {
-                "key": args.get("key", ""),
+                "key": _automatic_memory_key(turn_text, args.get("key")),
                 "value": args.get("value", ""),
-                "category": args.get("category", "jarvis_fact"),
+                "category": category,
                 "confidence": 1.0,
-                "description": str(args.get("key", "")).replace("_", " "),
+                "description": turn_text,
             }
         elif name == "save_memory" and classification != "local":
             self._memory_guard_log(
@@ -3224,6 +3267,19 @@ class JarvisLive:
                     "was blocked. No memory was changed."
                 )},
             )
+
+        if routed_name == "lilith_memory_store":
+            supplied_key = _canonical_memory_key(str(routed_args.get("key", "")))
+            category = _automatic_memory_category(turn_text, routed_args.get("category"))
+            if not routed_args.get("category") and "/" in supplied_key and category == "notes":
+                category = supplied_key.split("/", 1)[0]
+            routed_args["category"] = category
+            routed_args["key"] = _automatic_memory_key(turn_text, routed_args.get("key"))
+            routed_args.setdefault("confidence", 1.0)
+            routed_args.setdefault("description", turn_text)
+        elif routed_name == "save_memory":
+            routed_args["category"] = str(routed_args.get("category") or "notes")
+            routed_args["key"] = _automatic_memory_key(turn_text, routed_args.get("key"))
 
         category = str(routed_args.get("category", "jarvis_fact"))
         raw_key = str(routed_args.get("key", ""))

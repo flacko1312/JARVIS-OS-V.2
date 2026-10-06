@@ -1004,7 +1004,6 @@ class TestPersistentMemoryFlow(unittest.TestCase):
             return [
                 {"key": f"jarvis:{key}", "text": value, "score": 1.0}
                 for key, value in facts.items()
-                if "codigo" in query.lower() or "código" in query.lower()
             ]
 
         def delete(key, **kwargs):
@@ -1145,6 +1144,76 @@ class TestPersistentMemoryFlow(unittest.TestCase):
             })]))[0]
         self.assertEqual(response.response["result"], "ok")
         local_store.assert_called_once()
+
+    def test_preference_live_save_is_canonical_lilith_and_natural_delete(self):
+        transcript = "Guarda en tu memoria que prefiero la luz al 40%."
+        client = self._client()
+        jarvis = _make_jarvis(lilith_client=client)
+        session = TestGeminiLiveSchedulePath.LiveSession(
+            jarvis, _fake_fc("save_memory", {"value": "Prefiere la luz al 40%."}), transcript,
+        )
+        jarvis.session = session
+
+        with patch("main.update_memory") as local_store:
+            _run(jarvis._receive_audio())
+
+        client.store_memory.assert_awaited_once()
+        stored_key, stored_value = client.store_memory.await_args.args[:2]
+        self.assertEqual(stored_key, "preferences/preferred_light_level")
+        self.assertEqual(stored_value, "Prefiere la luz al 40%.")
+        local_store.assert_not_called()
+
+        jarvis._shutdown_requested.clear()
+        jarvis._begin_schedule_turn("¿Qué recuerdas sobre mi luz?", "voice")
+        found = _run(jarvis._execute_tool_batch([_fake_fc(
+            "lilith_memory_search", {"query": "¿Qué recuerdas sobre mi luz?"},
+        )]))[0]
+        self.assertIn(stored_key, found.response["result"])
+        self.assertIn("40%", found.response["result"])
+
+        jarvis._begin_schedule_turn("Elimina de tu memoria mi preferencia de luz.", "voice")
+        deleted = _run(jarvis._execute_tool_batch([_fake_fc(
+            "lilith_memory_delete", {"reason": "user_request"},
+        )]))[0]
+        client.delete_memory.assert_awaited_once_with(stored_key, reason="user_request")
+        self.assertIn(stored_key, deleted.response["result"])
+
+    def test_explicit_local_override_never_crosses_to_lilith(self):
+        client = self._client()
+        jarvis = _make_jarvis(lilith_client=client)
+        jarvis._begin_schedule_turn(
+            "No lo guardes en LILITH; guárdalo solo localmente.", "voice",
+        )
+        with patch("main.update_memory") as local_store:
+            result = _run(jarvis._execute_tool_batch([_fake_fc(
+                "save_memory", {"value": "diagnostic"},
+            )]))[0]
+        self.assertEqual(result.response["result"], "ok")
+        local_store.assert_called_once()
+        client.store_memory.assert_not_awaited()
+
+    def test_current_session_request_never_crosses_to_lilith(self):
+        client = self._client()
+        jarvis = _make_jarvis(lilith_client=client)
+        jarvis._begin_schedule_turn("Recuerda esto solo durante esta sesión.", "voice")
+        with patch("main.update_memory") as local_store:
+            result = _run(jarvis._execute_tool_batch([_fake_fc(
+                "save_memory", {"value": "temporary"},
+            )]))[0]
+        self.assertEqual(result.response["result"], "ok")
+        local_store.assert_called_once()
+        client.store_memory.assert_not_awaited()
+
+    def test_memory_prompt_and_schemas_hide_internal_key_choices(self):
+        jarvis = _make_jarvis()
+        with patch("main.load_memory", return_value={}), \
+             patch("main._load_system_prompt", return_value="SYS"):
+            prompt = jarvis._build_config(lilith_context=None).system_instruction
+        tools = {item["name"]: item for item in TOOL_DECLARATIONS}
+        self.assertIn("Never ask the user for a category", prompt)
+        self.assertEqual(tools["save_memory"]["parameters"]["required"], ["value"])
+        self.assertEqual(tools["lilith_memory_store"]["parameters"]["required"], ["value"])
+        self.assertEqual(tools["lilith_memory_delete"]["parameters"]["required"], [])
 
 
 # ── 3. lilith_memory_search ─────────────────────────────────────────────
