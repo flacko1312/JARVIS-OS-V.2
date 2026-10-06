@@ -538,7 +538,7 @@ class TestJlA9ScheduleExecutionGuard(unittest.TestCase):
     def test_a_immediate_home_action_is_unchanged(self):
         client = self._home_client()
         jarvis = _make_jarvis(lilith_client=client)
-        jarvis._current_input_transcript = "Enciende la bombilla"
+        jarvis._begin_schedule_turn("Enciende la bombilla", "voice")
         _run(jarvis._execute_tool_batch([_fake_fc("lilith_home_action", {
             "target": "bombilla", "action": "turn_on", "parameters": {"transition": 0},
         })]))
@@ -548,7 +548,7 @@ class TestJlA9ScheduleExecutionGuard(unittest.TestCase):
 
     def test_b_one_shot_reminder_is_unchanged(self):
         jarvis = _make_jarvis()
-        jarvis._current_input_transcript = "Recuérdame hoy a las 21:00 encender la bombilla"
+        jarvis._begin_schedule_turn("Recuérdame hoy a las 21:00 encender la bombilla", "voice")
         with patch("main.reminder", return_value="Reminder set") as action:
             _run(jarvis._execute_tool_batch([_fake_fc("reminder", {
                 "date": "2026-10-06", "time": "21:00", "message": "Encender bombilla",
@@ -558,7 +558,7 @@ class TestJlA9ScheduleExecutionGuard(unittest.TestCase):
     def test_c_recurring_wrong_home_call_becomes_routine_before_side_effect(self):
         client = self._home_client()
         jarvis = _make_jarvis(lilith_client=client)
-        jarvis._current_input_transcript = "Todos los días a las 21:00 enciende la bombilla"
+        jarvis._begin_schedule_turn("Todos los días a las 21:00 enciende la bombilla", "voice")
         _run(jarvis._execute_tool_batch([_fake_fc("lilith_home_action", {
             "target": "bombilla", "action": "turn_on",
         })]))
@@ -571,7 +571,7 @@ class TestJlA9ScheduleExecutionGuard(unittest.TestCase):
     def test_d_explicit_routine_reaches_existing_routine_tool(self):
         client = self._home_client()
         jarvis = _make_jarvis(lilith_client=client)
-        jarvis._current_input_transcript = "Crea una rutina para encender la bombilla cada día a las 21:00"
+        jarvis._begin_schedule_turn("Crea una rutina para encender la bombilla cada día a las 21:00", "voice")
         args = {"operation": "create", "name": "Bombilla", "schedule_type": "daily",
                 "schedule": {"hour": 21, "minute": 0}, "timezone": "Europe/Madrid",
                 "action_intent": "home.action",
@@ -582,7 +582,7 @@ class TestJlA9ScheduleExecutionGuard(unittest.TestCase):
     def test_e_recurring_batch_never_executes_home_action(self):
         client = self._home_client()
         jarvis = _make_jarvis(lilith_client=client)
-        jarvis._current_input_transcript = "Todos los días a las nueve de la noche enciende la bombilla del mueble"
+        jarvis._begin_schedule_turn("Todos los días a las nueve de la noche enciende la bombilla del mueble", "voice")
         routine = {"operation": "create", "name": "Bombilla", "schedule_type": "daily",
                    "schedule": {"hour": 21, "minute": 0}, "timezone": "Europe/Madrid",
                    "action_intent": "home.action",
@@ -602,7 +602,7 @@ class TestJlA9ScheduleExecutionGuard(unittest.TestCase):
     def test_f_recurring_batch_never_executes_reminder(self):
         client = self._home_client()
         jarvis = _make_jarvis(lilith_client=client)
-        jarvis._current_input_transcript = "Todos los días a las 21:00 enciende la bombilla"
+        jarvis._begin_schedule_turn("Todos los días a las 21:00 enciende la bombilla", "voice")
         routine = {"operation": "create", "name": "Bombilla", "schedule_type": "daily",
                    "schedule": {"hour": 21, "minute": 0}, "timezone": "Europe/Madrid",
                    "action_intent": "home.action",
@@ -618,7 +618,7 @@ class TestJlA9ScheduleExecutionGuard(unittest.TestCase):
     def test_g_incomplete_recurring_request_clarifies_with_zero_side_effects(self):
         client = self._home_client()
         jarvis = _make_jarvis(lilith_client=client)
-        jarvis._current_input_transcript = "Todos los días enciende la bombilla"
+        jarvis._begin_schedule_turn("Todos los días enciende la bombilla", "voice")
         responses = _run(jarvis._execute_tool_batch([_fake_fc("lilith_home_action", {
             "target": "bombilla", "action": "turn_on",
         })]))
@@ -629,12 +629,88 @@ class TestJlA9ScheduleExecutionGuard(unittest.TestCase):
     def test_h_immediate_home_parameters_remain_intact(self):
         client = self._home_client()
         jarvis = _make_jarvis(lilith_client=client)
-        jarvis._current_input_transcript = "Enciende la bombilla al cincuenta por ciento"
+        jarvis._begin_schedule_turn("Enciende la bombilla al cincuenta por ciento", "voice")
         _run(jarvis._execute_tool_batch([_fake_fc("lilith_home_action", {
             "target": "bombilla", "action": "turn_on", "parameters": {"brightness_pct": 50},
         })]))
         client.home_action.assert_awaited_once_with(
             "light.bombilla_mueble", "turn_on", parameters={"brightness_pct": 50})
+
+    def test_i_missing_current_turn_blocks_home_and_reminder(self):
+        client = self._home_client()
+        jarvis = _make_jarvis(lilith_client=client)
+        jarvis._last_input_transcript = "Enciende la bombilla"
+        jarvis._last_input_transcript_at = main.time.monotonic()
+        with patch("main.reminder") as reminder_action:
+            responses = _run(jarvis._execute_tool_batch([
+                _fake_fc("lilith_home_action", {"target": "bombilla", "action": "turn_on"}),
+                _fake_fc("reminder", {"time": "21:00", "message": "Encender bombilla"}),
+            ]))
+        self.assertTrue(all("no safe association" in item.response["result"] for item in responses))
+        client.home_action.assert_not_awaited()
+        reminder_action.assert_not_called()
+
+    def test_j_function_call_id_cannot_be_reused_by_a_later_turn(self):
+        client = self._home_client()
+        jarvis = _make_jarvis(lilith_client=client)
+        call = _fake_fc("lilith_home_action", {"target": "bombilla", "action": "turn_on"})
+        jarvis._begin_schedule_turn("Enciende la bombilla", "voice")
+        _run(jarvis._execute_tool_batch([call]))
+        jarvis._begin_schedule_turn("Enciende la bombilla", "voice")
+        response = _run(jarvis._execute_tool_batch([call]))[0]
+        self.assertIn("another turn", response.response["result"])
+        self.assertEqual(client.home_action.await_count, 1)
+
+
+class TestGeminiLiveSchedulePath(unittest.TestCase):
+    """Exercise the actual receive -> FunctionCall -> tool-response path."""
+
+    class LiveSession:
+        def __init__(self, jarvis, call):
+            self.jarvis = jarvis
+            self.call = call
+            self.responses = []
+
+        async def receive(self):
+            transcript = SimpleNamespace(
+                text="Todos los días a las nueve de la noche enciende la bombilla del mueble."
+            )
+            server_content = SimpleNamespace(
+                output_transcription=None, input_transcription=transcript,
+                turn_complete=False,
+            )
+            yield SimpleNamespace(
+                server_content=server_content, tool_call=SimpleNamespace(function_calls=[self.call])
+            )
+
+        async def send_tool_response(self, *, function_responses):
+            self.responses.extend(function_responses)
+            self.jarvis._shutdown_requested.set()
+
+    def _run_wrong_live_call(self, name, args):
+        client = TestJlA9ScheduleExecutionGuard._home_client()
+        jarvis = _make_jarvis(lilith_client=client)
+        session = self.LiveSession(jarvis, _fake_fc(name, args))
+        jarvis.session = session
+        _run(jarvis._receive_audio())
+        return client, session
+
+    def test_live_recurring_request_cannot_execute_home_action(self):
+        client, session = self._run_wrong_live_call(
+            "lilith_home_action", {"target": "bombilla del mueble", "action": "turn_on"}
+        )
+        client.home_action.assert_not_awaited()
+        self.assertEqual(client.command_submit.await_count, 1)
+        self.assertEqual(len(session.responses), 1)
+
+    def test_live_recurring_request_cannot_execute_reminder(self):
+        with patch("main.reminder") as reminder_action:
+            client, session = self._run_wrong_live_call(
+                "reminder", {"time": "21:00", "message": "Encender bombilla del mueble"}
+            )
+        reminder_action.assert_not_called()
+        self.assertEqual(client.command_submit.await_count, 1)
+        self.assertEqual(len(session.responses), 1)
 
 
 # ── 3. lilith_memory_search ─────────────────────────────────────────────

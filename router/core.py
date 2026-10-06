@@ -11,6 +11,7 @@ from lilith_client.errors import LilithConnectionError, LilithError, LilithTimeo
 from lilith_client.monitor import LilithMonitor
 from router.classifier import classify
 from router.models import Domain, RouteResult
+from core.schedule_safety import schedule_semantics
 
 logger = logging.getLogger("jarvis.router")
 
@@ -115,6 +116,17 @@ class JarvisRouter:
 
     async def _handle_home(self, result: RouteResult) -> dict[str, Any]:
         raw = result.params.get("raw_input", "")
+        semantics = schedule_semantics(raw)
+        if semantics != "immediate":
+            logger.warning(
+                "Router HOME blocked scheduled text before effect: classification=%s",
+                semantics,
+            )
+            return {
+                "ok": False,
+                "scheduled_request": True,
+                "message": "Scheduled HOME request must be handled by the scheduling guard.",
+            }
         service, reference = _parse_home_command(raw)
         entity_id = result.params.get("entity")
 

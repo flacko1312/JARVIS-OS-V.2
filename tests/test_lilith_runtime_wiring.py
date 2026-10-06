@@ -296,6 +296,21 @@ class RealRouterThroughBridgeTests(unittest.TestCase):
         for text in ("apaga el wifi", "apaga el ordenador"):
             self.assertFalse(asyncio.run(bridge.route_typed(text)).handled, text)
 
+    def test_recurring_home_text_never_reaches_router_home_action(self):
+        bridge, _ = _real_runtime_bridge()
+        text = "Todos los días a las nueve de la noche enciende la bombilla del mueble."
+        out = asyncio.run(bridge.route_typed(text))
+        self.assertFalse(out.handled)
+        self.assertEqual(out.reason, "not_handled")
+
+    def test_one_shot_home_text_never_reaches_router_home_action(self):
+        bridge, _ = _real_runtime_bridge()
+        out = asyncio.run(bridge.route_typed(
+            "Mañana a las nueve enciende la bombilla del mueble."
+        ))
+        self.assertFalse(out.handled)
+        self.assertEqual(out.reason, "not_handled")
+
     def test_conversation_and_other_domains_reach_gemini(self):
         bridge, fake = _real_runtime_bridge()
         for text in ("hola, ¿cómo estás?", "abre chrome", "busca en google el tiempo", "cuéntame un chiste"):

@@ -5,9 +5,12 @@ import threading
 import json
 import sys
 import traceback
-import unicodedata
+import uuid
 from pathlib import Path
 from types import SimpleNamespace
+
+from core.schedule_safety import normalized_turn_text as _normalized_turn_text
+from core.schedule_safety import schedule_semantics as _schedule_semantics
 
 import sounddevice as sd
 from google import genai
@@ -180,28 +183,6 @@ _SPANISH_NUMBERS = {
     "seis": 6, "siete": 7, "ocho": 8, "nueve": 9, "diez": 10,
     "once": 11, "doce": 12,
 }
-
-
-def _normalized_turn_text(text: str) -> str:
-    decomposed = unicodedata.normalize("NFKD", str(text or "").lower())
-    return " ".join("".join(ch for ch in decomposed if not unicodedata.combining(ch)).split())
-
-
-def _schedule_semantics(text: str) -> str:
-    """Classify the mutually exclusive immediate/one-shot/recurring routes."""
-    value = _normalized_turn_text(text)
-    patterns = (
-        r"\btodos? los dias\b", r"\bcada dia\b", r"\bdiariamente\b",
-        r"\bcada (?:manana|noche|semana)\b", r"\btodos? los (?:lunes|martes|miercoles|jueves|viernes|sabados|domingos)\b",
-        r"\bcada \d+ (?:horas?|dias?)\b", r"\b(?:rutina|automatiza(?:r|cion)?)\b", r"\ba partir de ahora\b",
-        r"\bevery day\b", r"\bdaily\b", r"\bevery (?:morning|night|week|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b",
-        r"\bevery \d+ (?:hours?|days?)\b", r"\b(?:routine|automate)\b", r"\bfrom now on\b",
-    )
-    if any(re.search(pattern, value) for pattern in patterns):
-        return "recurring"
-    if re.search(r"\b(?:recuerdame|remind me)\b", value):
-        return "one_shot"
-    return "immediate"
 
 
 def _daily_time_from_text(text: str) -> tuple[int, int] | None:
@@ -1710,8 +1691,12 @@ class JarvisLive:
         self._current_input_transcript = ""
         self._last_input_transcript = ""
         self._last_input_transcript_at = 0.0
-        self._schedule_guard_turn = ""
         self._schedule_guard_routed = False
+        self._schedule_session_id = uuid.uuid4().hex[:12]
+        self._schedule_turn_sequence = 0
+        self._schedule_turn_id = ""
+        self._schedule_turn_source = ""
+        self._schedule_call_turns: dict[str, str] = {}
         self._pending_self_quit = False
         self._pending_self_quit_farewell_received = False
         self._self_quit_timer = None
@@ -1732,6 +1717,7 @@ class JarvisLive:
         self._current_input_transcript = str(text or "").strip()
         if not self._current_input_transcript:
             return False
+        self._begin_schedule_turn(self._current_input_transcript, "text")
         self._last_input_transcript = self._current_input_transcript
         self._last_input_transcript_at = time.monotonic()
         outgoing_text = self._current_input_transcript
@@ -2866,59 +2852,96 @@ class JarvisLive:
             response={"result": result}
         )
 
+    def _begin_schedule_turn(self, text: str, source: str) -> None:
+        self._schedule_turn_sequence += 1
+        self._schedule_turn_id = f"{self._schedule_session_id}:{self._schedule_turn_sequence}"
+        self._schedule_turn_source = source
+        self._current_input_transcript = str(text or "").strip()
+        self._schedule_guard_routed = False
+
+    def _update_schedule_turn(self, text: str) -> None:
+        self._current_input_transcript = str(text or "").strip()
+
     def _schedule_guard_text(self) -> str:
-        current = str(getattr(self, "_current_input_transcript", "") or "").strip()
-        if current:
-            return current
-        if time.monotonic() - float(getattr(self, "_last_input_transcript_at", 0.0)) <= 30:
-            return str(getattr(self, "_last_input_transcript", "") or "").strip()
-        return ""
+        if not getattr(self, "_schedule_turn_id", ""):
+            return ""
+        return str(getattr(self, "_current_input_transcript", "") or "").strip()
+
+    def _schedule_log(self, *, fc_id: str, tool: str, classification: str, decision: str) -> None:
+        logger.info(
+            "SCHEDULE_GUARD session=%s turn=%s source=%s classification=%s tool=%s decision=%s function_call_id=%s",
+            self._schedule_session_id, self._schedule_turn_id or "none",
+            self._schedule_turn_source or "none", classification, tool, decision,
+            fc_id or "missing",
+        )
 
     async def _execute_tool_guarded(self, fc) -> types.FunctionResponse:
         name = getattr(fc, "name", "")
         if name not in _SCHEDULED_TOOL_NAMES:
             return await self._execute_tool(fc)
+        fc_id = str(getattr(fc, "id", "") or "").strip()
         turn_text = self._schedule_guard_text()
-        if not turn_text:
-            # No reliable turn association means there is no safe basis for rewriting.
-            return await self._execute_tool(fc)
-        turn_key = _normalized_turn_text(turn_text)
-        if turn_key != self._schedule_guard_turn:
-            self._schedule_guard_turn = turn_key
-            self._schedule_guard_routed = False
+        if not fc_id or not turn_text:
+            self._schedule_log(fc_id=fc_id, tool=name, classification="unknown", decision="blocked_no_current_turn")
+            return types.FunctionResponse(
+                id=getattr(fc, "id", None), name=name,
+                response={"result": "Scheduled side effect blocked: no safe association with the current turn."},
+            )
+        associated_turn = self._schedule_call_turns.get(fc_id)
+        if associated_turn is not None and associated_turn != self._schedule_turn_id:
+            self._schedule_log(fc_id=fc_id, tool=name, classification="unknown", decision="blocked_reused_function_call")
+            return types.FunctionResponse(
+                id=fc.id, name=name,
+                response={"result": "Scheduled side effect blocked: FunctionCall.id was already associated with another turn."},
+            )
+        self._schedule_call_turns[fc_id] = self._schedule_turn_id
         semantics = _schedule_semantics(turn_text)
 
         if semantics == "recurring":
             if self._schedule_guard_routed:
+                self._schedule_log(fc_id=fc_id, tool=name, classification=semantics, decision="blocked_duplicate")
                 return types.FunctionResponse(
                     id=fc.id, name=name,
                     response={"result": "The recurring request was already routed once; duplicate side effect blocked."},
                 )
             if name == "lilith_routine":
                 self._schedule_guard_routed = True
+                self._schedule_log(fc_id=fc_id, tool=name, classification=semantics, decision="allowed")
                 return await self._execute_tool(fc)
             routine_args = _routine_args_from_wrong_call(turn_text, fc)
             if routine_args is None:
                 self._schedule_guard_routed = True
+                self._schedule_log(fc_id=fc_id, tool=name, classification=semantics, decision="blocked_incomplete")
                 return types.FunctionResponse(
                     id=fc.id, name=name,
                     response={"result": "Recurring request is incomplete. Ask for the missing recurrence time, action, or target; no action was taken."},
                 )
             self._schedule_guard_routed = True
             routed = SimpleNamespace(id=fc.id, name="lilith_routine", args=routine_args)
+            self._schedule_log(fc_id=fc_id, tool=name, classification=semantics, decision="rerouted_lilith_routine")
             response = await self._execute_tool(routed)
             return types.FunctionResponse(id=fc.id, name=name, response=response.response)
 
         if semantics == "one_shot" and name != "reminder":
+            self._schedule_log(fc_id=fc_id, tool=name, classification=semantics, decision="blocked_wrong_tool")
             return types.FunctionResponse(
                 id=fc.id, name=name,
                 response={"result": "This is a one-time future request; non-reminder side effect blocked."},
             )
         if semantics == "immediate" and name in {"reminder", "lilith_routine"}:
+            self._schedule_log(fc_id=fc_id, tool=name, classification=semantics, decision="blocked_wrong_tool")
             return types.FunctionResponse(
                 id=fc.id, name=name,
                 response={"result": "This is an immediate request; scheduled side effect blocked."},
             )
+        if self._schedule_guard_routed:
+            self._schedule_log(fc_id=fc_id, tool=name, classification=semantics, decision="blocked_duplicate")
+            return types.FunctionResponse(
+                id=fc.id, name=name,
+                response={"result": "This turn already produced a scheduled side effect; duplicate blocked."},
+            )
+        self._schedule_guard_routed = True
+        self._schedule_log(fc_id=fc_id, tool=name, classification=semantics, decision="allowed")
         return await self._execute_tool(fc)
 
     async def _execute_tool_batch(self, calls):
@@ -3022,9 +3045,9 @@ class JarvisLive:
                             txt = _clean_transcript(sc.input_transcription.text)
                             if txt:
                                 if not in_buf:
-                                    self._current_input_transcript = ""
+                                    self._begin_schedule_turn("", "voice")
                                 in_buf.append(txt)
-                                self._current_input_transcript = " ".join(in_buf).strip()
+                                self._update_schedule_turn(" ".join(in_buf).strip())
                                 if (
                                     not getattr(self, "_pending_self_quit", False)
                                     and self._is_explicit_self_quit_transcript(self._current_input_transcript)
