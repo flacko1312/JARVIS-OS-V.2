@@ -1215,11 +1215,55 @@ class TestPersistentMemoryFlow(unittest.TestCase):
 
         log = "\n".join(captured.output)
         self.assertIn("classification=local", log)
-        self.assertIn("decision=allowed", log)
+        self.assertIn("decision=allowed_local", log)
+        self.assertIn('local_indicators=["localmente"]', log)
         local_store.assert_called_once_with({
             "notes": {"temporary_number": {"value": "5824"}},
         })
         client.store_memory.assert_not_awaited()
+
+    def test_fragmented_negative_lilith_and_solo_local_are_authoritative(self):
+        transcript = (
+            "No lo guar des en Li lith. Guar da solo lo cal que mi nú mero tempo ral "
+            "es el 5 8 2 4."
+        )
+        client = self._client()
+        jarvis = _make_jarvis(lilith_client=client)
+        call = _fake_fc("save_memory", {
+            "category": "notes", "key": "temporary_number", "value": "5824",
+        })
+        session = TestGeminiLiveSchedulePath.LiveSession(jarvis, call, transcript)
+        jarvis.session = session
+
+        with patch("main.update_memory") as local_store, self.assertLogs(
+            "jarvis.main", level="INFO"
+        ) as captured:
+            _run(jarvis._receive_audio())
+
+        log = "\n".join(captured.output)
+        self.assertIn("requested_tool=save_memory", log)
+        self.assertIn("classification=local", log)
+        self.assertIn("decision=allowed_local", log)
+        self.assertIn("routed_tool=save_memory", log)
+        self.assertIn('negated_lilith_indicators=["no_lilith"]', log)
+        self.assertNotIn("TOOL_CALL  lilith_memory_store", log)
+        local_store.assert_called_once_with({
+            "notes": {"temporary_number": {"value": "5824"}},
+        })
+        client.store_memory.assert_not_awaited()
+
+    def test_control_vocabulary_handles_fragmented_authority_variants(self):
+        variants = (
+            "No lo guar des en Li lith.",
+            "Guar da solo lo cal este dato.",
+            "Recuerda esto solo esta se sión.",
+            "Guárdalo en JARVIS.",
+        )
+        for transcript in variants:
+            with self.subTest(transcript=transcript):
+                self.assertEqual(main._classify_memory_request(
+                    transcript, source="voice", requested_tool="save_memory",
+                ), "local")
 
     def test_local_authority_overrides_gemini_lilith_store_choice(self):
         client = self._client()

@@ -220,27 +220,13 @@ def _memory_category_from_key(key: str, fallback: str = "jarvis_fact") -> str:
 
 def _is_explicit_persistent_memory_request(text: str) -> bool:
     """Recognize an explicit request to persist user knowledge, not an operational note."""
-    value = _memory_authority_control_text(text)
-    return bool(re.search(
-        r"\b(?:guarda|guardalo|guardar|almacena|memoriza|recuerda)\b.{0,32}\bmemoria\b|"
-        r"\brecuerda que\b|\bquiero que recuerdes\b|"
-        r"\bguarda\b.{0,48}\b(?:mas adelante|para despues|en el futuro)\b|"
-        r"\b(?:save|store|remember)\b.{0,32}\b(?:memory|about me)\b",
-        value,
-    ))
+    return bool(_memory_authority_indicators(text)["persistent"])
 
 
 def _is_explicit_local_memory_request(text: str) -> bool:
     """Recognize the narrow operational/session scope owned by local JARVIS memory."""
-    value = _memory_authority_control_text(text)
-    return bool(re.search(
-        r"\b(?:esta|la|mi) sesion\b|\bcontexto (?:de sesion|operativo|del runtime)\b|"
-        r"\b(?:nota|memoria|estado|bandera|flag) local\b|\b(?:runtime|ui) (?:hint|state|flag)\b|"
-        r"\bno lo guardes en lilith\b|\bguarda(?:lo)?(?: solo)? localmente\b|"
-        r"\bsolo (?:en (?:tu )?memoria )?local\b|\bsolo localmente\b|"
-        r"\bsolo durante (?:esta|la) sesion\b",
-        value,
-    ))
+    evidence = _memory_authority_indicators(text)
+    return bool(evidence["local"] or evidence["negated_lilith"])
 
 
 def _memory_authority_control_text(text: str) -> str:
@@ -249,19 +235,63 @@ def _memory_authority_control_text(text: str) -> str:
     This view is used solely for authority classification. It never replaces the
     transcript and is never used to derive or mutate a stored key/value.
     """
-    value = _normalized_turn_text(text)
-    repairs = (
-        (r"\bguar\s+da\s+lo\s+cal\s+mente\b", "guarda localmente"),
-        (r"\bguar\s+des\b", "guardes"),
-        (r"\bguar\s+da\s+lo\b", "guardalo"),
-        (r"\bguar\s+da\b", "guarda"),
-        (r"\blo\s+cal\s+mente\b", "localmente"),
-        (r"\bli\s+lith\b", "lilith"),
-        (r"\bse\s+sion\b", "sesion"),
-    )
-    for pattern, replacement in repairs:
-        value = re.sub(pattern, replacement, value)
-    return value
+    tokens = re.findall(r"[a-z0-9]+", _normalized_turn_text(text))
+    vocabulary = {
+        "guarda", "guardalo", "guardes", "guardar", "local", "localmente",
+        "lilith", "sesion", "jarvis", "recuerda", "memoria",
+    }
+    # Dynamic programming avoids a greedy false split such as
+    # ``guar da lo cal mente`` -> ``guardalo cal mente``. The best path is the
+    # one that recognizes the most vocabulary items: ``guarda localmente``.
+    best: list[tuple[int, list[str]]] = [(0, []) for _ in range(len(tokens) + 1)]
+    for index in range(len(tokens) - 1, -1, -1):
+        best[index] = (best[index + 1][0], [tokens[index], *best[index + 1][1]])
+        for width in (3, 2):
+            candidate = "".join(tokens[index:index + width])
+            if len(tokens[index:index + width]) == width and candidate in vocabulary:
+                score = 1 + best[index + width][0]
+                if score > best[index][0]:
+                    best[index] = (score, [candidate, *best[index + width][1]])
+    return " ".join(best[0][1])
+
+
+def _memory_authority_indicators(text: str) -> dict[str, object]:
+    """Return explainable authority signals from the control-only transcript view."""
+    value = _memory_authority_control_text(text)
+    local_patterns = {
+        "localmente": r"\blocalmente\b",
+        "solo_local": r"\bsolo (?:en (?:tu )?memoria )?local\b|\bsolo localmente\b",
+        "jarvis": r"\b(?:solo )?(?:en )?jarvis\b",
+        "session_only": r"\bsolo (?:durante )?(?:esta|la) sesion\b",
+        "session_context": r"\b(?:esta|la|mi) sesion\b|\bcontexto (?:de sesion|operativo|del runtime)\b",
+        "local_state": r"\b(?:nota|memoria|estado|bandera|flag) local\b|\b(?:runtime|ui) (?:hint|state|flag)\b",
+    }
+    persistent_patterns = {
+        "memory_command": (
+            r"\b(?:guarda|guardalo|guardar|almacena|memoriza|recuerda)\b.{0,32}\bmemoria\b"
+        ),
+        "remember_fact": r"\brecuerda que\b|\bquiero que recuerdes\b",
+        "remember_later": r"\bguarda\b.{0,48}\b(?:mas adelante|para despues|en el futuro)\b",
+        "english_memory": r"\b(?:save|store|remember)\b.{0,32}\b(?:memory|about me)\b",
+    }
+    negated_patterns = {
+        "no_lilith": r"\bno (?:lo )?(?:guardes|guarda|guardar|guarde)(?:\s+\w+){0,3}\s+(?:en )?lilith\b",
+        "not_in_lilith": r"\bno (?:lo )?en lilith\b",
+    }
+    return {
+        "control_text": value,
+        "local": tuple(name for name, pattern in local_patterns.items() if re.search(pattern, value)),
+        "persistent": tuple(name for name, pattern in persistent_patterns.items() if re.search(pattern, value)),
+        "negated_lilith": tuple(name for name, pattern in negated_patterns.items() if re.search(pattern, value)),
+    }
+
+
+def _memory_control_log_excerpt(text: str) -> str:
+    """Keep only the authority clause for diagnostics; omit the fact/value after 'que'."""
+    value = str(text or "").strip()
+    value = re.split(r"\bque\b", value, maxsplit=1, flags=re.IGNORECASE)[0]
+    value = re.sub(r"\d+", "<value>", value)
+    return value[:180]
 
 
 def _classify_memory_request(text: str, *, source: str, requested_tool: str) -> str:
@@ -3185,11 +3215,24 @@ class JarvisLive:
         self, *, fc_id: str, requested_tool: str, classification: str,
         routed_tool: str, canonical_key: str, decision: str,
     ) -> None:
+        raw = self._schedule_guard_text()
+        evidence = _memory_authority_indicators(raw)
+        local_indicators = tuple(evidence["local"])
+        persistent_indicators = tuple(evidence["persistent"])
+        negated_indicators = tuple(evidence["negated_lilith"])
+        local_score = len(local_indicators) + (2 if negated_indicators else 0)
+        persistent_score = len(persistent_indicators)
         logger.info(
             "MEMORY_GUARD session=%s turn=%s function_call_id=%s requested_tool=%s "
-            "classification=%s decision=%s canonical_key=%s routed_tool=%s",
+            "raw_control_excerpt=%r normalized_control=%r local_indicators=%s "
+            "persistent_indicators=%s negated_lilith_indicators=%s local_score=%s "
+            "persistent_score=%s final_authority=%s classification=%s decision=%s "
+            "canonical_key=%s routed_tool=%s",
             self._schedule_session_id, self._schedule_turn_id or "none",
-            fc_id or "missing", requested_tool, classification, decision,
+            fc_id or "missing", requested_tool, _memory_control_log_excerpt(raw),
+            _memory_control_log_excerpt(str(evidence["control_text"])), json.dumps(local_indicators),
+            json.dumps(persistent_indicators), json.dumps(negated_indicators),
+            local_score, persistent_score, classification, classification, decision,
             canonical_key or "none", routed_tool,
         )
 
@@ -3363,6 +3406,7 @@ class JarvisLive:
         decision = (
             "rerouted_persistent_store" if routed_name == "lilith_memory_store" and routed_name != name
             else "rerouted_local_store" if routed_name == "save_memory" and routed_name != name
+            else "allowed_local" if routed_name == "save_memory" and classification == "local"
             else "allowed"
         )
         self._memory_guard_log(
