@@ -210,6 +210,30 @@ class LilithClient:
         """Read-only LILITH Git status snapshot."""
         return await self._request("GET", f"{_INTEGRATION}/git/status")
 
+    async def command_submit(
+        self,
+        *,
+        intent: str,
+        parameters: dict | None = None,
+        request_id: str | None = None,
+        correlation_id: str | None = None,
+        idempotency_key: str | None = None,
+        source: str = "jarvis",
+    ) -> dict:
+        """Submit one canonical JARVIS->LILITH command envelope."""
+        payload: dict[str, Any] = {
+            "source": source,
+            "intent": intent,
+            "parameters": parameters or {},
+        }
+        if request_id:
+            payload["request_id"] = request_id
+        if correlation_id:
+            payload["correlation_id"] = correlation_id
+        if idempotency_key:
+            payload["idempotency_key"] = idempotency_key
+        return await self._request("POST", f"{_INTEGRATION}/commands/submit", json=payload)
+
     async def is_available(self) -> bool:
         """Comprueba si LILITH responde. Nunca lanza excepción."""
         try:

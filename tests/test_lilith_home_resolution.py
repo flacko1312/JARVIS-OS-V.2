@@ -351,6 +351,36 @@ class ClientErrorCodeTests(unittest.TestCase):
             "json": None,
         })
 
+    def test_command_submit_posts_canonical_envelope(self):
+        seen = {}
+
+        class C(LilithClient):
+            async def _request(self, method, path, *, json=None):
+                seen.update(method=method, path=path, json=json)
+                return {"status": "completed", "intent": json["intent"]}
+
+        cfg = LilithConfig(base_url="http://127.0.0.1:9", api_key="test-key")
+        out = asyncio.run(C(cfg).command_submit(
+            intent="git.status",
+            parameters={},
+            request_id="req-1",
+            correlation_id="corr-1",
+            idempotency_key="idem-1",
+        ))
+        self.assertEqual(out["status"], "completed")
+        self.assertEqual(seen, {
+            "method": "POST",
+            "path": "/api/v1/integration/commands/submit",
+            "json": {
+                "source": "jarvis",
+                "intent": "git.status",
+                "parameters": {},
+                "request_id": "req-1",
+                "correlation_id": "corr-1",
+                "idempotency_key": "idem-1",
+            },
+        })
+
 
 if __name__ == "__main__":
     unittest.main()

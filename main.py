@@ -1451,6 +1451,35 @@ TOOL_DECLARATIONS = [
             "required": []
         }
     },
+    {
+        "name": "lilith_command_submit",
+        "description": (
+            "Submit one canonical command envelope to LILITH with request/correlation id, "
+            "source, intent, parameters, status and idempotency. Use only for the allowlisted "
+            "LILITH intents; LILITH enforces authority, decision, resistance and audit rules."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "intent": {
+                    "type": "STRING",
+                    "enum": [
+                        "runtime.status", "docs.list", "docs.read", "docs.search",
+                        "source.list", "source.read", "source.search", "git.status",
+                        "memory.search", "memory.store", "memory.delete",
+                        "home.resolve", "home.entity", "home.action",
+                        "home.request_approval", "home.resolve_approval",
+                    ],
+                    "description": "Canonical LILITH intent to submit",
+                },
+                "parameters": {"type": "OBJECT", "description": "Intent-specific parameters"},
+                "request_id": {"type": "STRING", "description": "Optional caller request id"},
+                "correlation_id": {"type": "STRING", "description": "Optional end-to-end correlation id"},
+                "idempotency_key": {"type": "STRING", "description": "Optional stable replay key"},
+            },
+            "required": ["intent"]
+        }
+    },
 ]
 
 # Tool names exposed by hosted clients. The names here are Gemini function
@@ -2543,6 +2572,42 @@ class JarvisLive:
                         result = "\n".join(lines)
                     except Exception as exc:
                         result = f"LILITH git status failed: {exc}"
+
+            elif name == "lilith_command_submit":
+                bridge = getattr(self, "_lilith", None)
+                if bridge is None or not bridge.is_running:
+                    result = "LILITH integration is not configured or not running."
+                else:
+                    intent = str(args.get("intent", "")).strip()
+                    params = args.get("parameters") or {}
+                    if not intent:
+                        result = "Missing LILITH command intent."
+                    elif not isinstance(params, dict):
+                        result = "LILITH command parameters must be an object."
+                    else:
+                        try:
+                            data = await bridge._runtime.client.command_submit(
+                                intent=intent,
+                                parameters=params,
+                                request_id=(args.get("request_id") or None),
+                                correlation_id=(args.get("correlation_id") or None),
+                                idempotency_key=(args.get("idempotency_key") or None),
+                            )
+                            status = data.get("status", "unknown")
+                            replay = " replayed" if data.get("replayed") else ""
+                            corr = data.get("correlation_id") or "unknown"
+                            err = data.get("error") or {}
+                            if status == "completed":
+                                result = f"LILITH command {intent} completed{replay}; correlation_id={corr}."
+                            elif err:
+                                result = (
+                                    f"LILITH command {intent} {status}{replay}; "
+                                    f"code={err.get('code', 'unknown')}; correlation_id={corr}."
+                                )
+                            else:
+                                result = f"LILITH command {intent} status={status}{replay}; correlation_id={corr}."
+                        except Exception as exc:
+                            result = f"LILITH command submit failed: {exc}"
 
             else:
                 result = f"Unknown tool: {name}"

@@ -82,7 +82,12 @@ def _make_jarvis(*, lilith_client=None) -> main.JarvisLive:
 
 
 def _run(coro):
-    return asyncio.get_event_loop().run_until_complete(coro)
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+    return loop.run_until_complete(coro)
 
 
 # ── 1. Tool declarations ────────────────────────────────────────────────
@@ -97,7 +102,8 @@ class TestToolDeclarations(unittest.TestCase):
                      "lilith_resolve_approval", "lilith_docs_list",
                      "lilith_docs_read", "lilith_docs_search",
                      "lilith_source_list", "lilith_source_read",
-                     "lilith_source_search", "lilith_git_status"):
+                     "lilith_source_search", "lilith_git_status",
+                     "lilith_command_submit"):
             self.assertIn(tool, names)
 
     def test_lilith_tools_excluded_from_cloud_safe(self):
@@ -108,7 +114,8 @@ class TestToolDeclarations(unittest.TestCase):
                      "lilith_resolve_approval", "lilith_docs_list",
                      "lilith_docs_read", "lilith_docs_search",
                      "lilith_source_list", "lilith_source_read",
-                     "lilith_source_search", "lilith_git_status"):
+                     "lilith_source_search", "lilith_git_status",
+                     "lilith_command_submit"):
             self.assertNotIn(tool, cloud_tools)
 
     def test_existing_tools_preserved(self):
@@ -351,6 +358,43 @@ class TestLilithGitStatusTool(unittest.TestCase):
     def test_git_status_offline(self):
         jarvis = _make_jarvis()
         resp = _run(jarvis._execute_tool(_fake_fc("lilith_git_status")))
+        self.assertIn("not configured", resp.response["result"])
+
+
+class TestLilithCommandSubmitTool(unittest.TestCase):
+
+    def test_command_submit_completed(self):
+        mock = AsyncMock()
+        mock.command_submit.return_value = {
+            "status": "completed",
+            "intent": "git.status",
+            "correlation_id": "corr-1",
+            "replayed": False,
+        }
+        jarvis = _make_jarvis(lilith_client=mock)
+        resp = _run(jarvis._execute_tool(_fake_fc("lilith_command_submit", {
+            "intent": "git.status",
+            "parameters": {},
+            "request_id": "req-1",
+            "correlation_id": "corr-1",
+            "idempotency_key": "idem-1",
+        })))
+        result = resp.response["result"]
+        self.assertIn("completed", result)
+        self.assertIn("corr-1", result)
+        mock.command_submit.assert_awaited_once_with(
+            intent="git.status",
+            parameters={},
+            request_id="req-1",
+            correlation_id="corr-1",
+            idempotency_key="idem-1",
+        )
+
+    def test_command_submit_offline(self):
+        jarvis = _make_jarvis()
+        resp = _run(jarvis._execute_tool(_fake_fc("lilith_command_submit", {
+            "intent": "git.status",
+        })))
         self.assertIn("not configured", resp.response["result"])
 
 
