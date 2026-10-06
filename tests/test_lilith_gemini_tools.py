@@ -1022,7 +1022,7 @@ class TestPersistentMemoryFlow(unittest.TestCase):
         client = self._client()
         jarvis = _make_jarvis(lilith_client=client)
         call = _fake_fc("save_memory", {
-            "category": "projects", "key": "temporary_test_code", "value": "7319",
+            "category": "notes", "key": "codigo_temporal_pruebas", "value": "7319",
         })
         session = TestGeminiLiveSchedulePath.LiveSession(jarvis, call, transcript)
         jarvis.session = session
@@ -1033,7 +1033,7 @@ class TestPersistentMemoryFlow(unittest.TestCase):
 
         client.store_memory.assert_awaited_once()
         self.assertEqual(client.store_memory.await_args.args[:2], (
-            "projects/temporary_test_code", "7319",
+            "notes/codigo_temporal_pruebas", "7319",
         ))
         local_store.assert_not_called()
         client.home_action.assert_not_awaited()
@@ -1045,25 +1045,47 @@ class TestPersistentMemoryFlow(unittest.TestCase):
         found = _run(jarvis._execute_tool_batch([_fake_fc(
             "lilith_memory_search", {"query": "código temporal de prueba"}
         )]))[0]
-        self.assertIn("projects/temporary_test_code", found.response["result"])
+        self.assertIn("notes/codigo_temporal_pruebas", found.response["result"])
         self.assertIn("7319", found.response["result"])
 
         jarvis._begin_schedule_turn("Elimina de tu memoria mi código temporal de prueba.", "voice")
         deleted = _run(jarvis._execute_tool_batch([_fake_fc(
             "lilith_memory_delete", {
-                "key": "jarvis:projects/temporary_test_code", "reason": "user_request",
+                "key": "codigo_temporal_pruebas", "reason": "user_request",
             }
         )]))[0]
         client.delete_memory.assert_awaited_once_with(
-            "projects/temporary_test_code", reason="user_request"
+            "notes/codigo_temporal_pruebas", reason="user_request"
         )
-        self.assertIn("projects/temporary_test_code", deleted.response["result"])
+        self.assertIn("notes/codigo_temporal_pruebas", deleted.response["result"])
 
         jarvis._begin_schedule_turn("¿Cuál es mi código temporal de prueba?", "voice")
         missing = _run(jarvis._execute_tool_batch([_fake_fc(
             "lilith_memory_search", {"query": "código temporal de prueba"}
         )]))[0]
         self.assertIn("No results", missing.response["result"])
+
+    def test_partial_live_transcript_cannot_fall_back_to_local_memory(self):
+        client = self._client()
+        jarvis = _make_jarvis(lilith_client=client)
+        call = _fake_fc("save_memory", {
+            "category": "notes", "key": "codigo_temporal_pruebas", "value": "7319",
+        })
+        session = TestGeminiLiveSchedulePath.LiveSession(jarvis, call, "7319")
+        jarvis.session = session
+
+        with patch("main.update_memory") as local_store, self.assertLogs(
+            "jarvis.main", level="INFO"
+        ) as captured:
+            _run(jarvis._receive_audio())
+
+        log = "\n".join(captured.output)
+        self.assertIn("requested_tool=save_memory", log)
+        self.assertIn("classification=persistent", log)
+        self.assertIn("decision=rerouted_persistent_store", log)
+        self.assertIn("canonical_key=notes/codigo_temporal_pruebas", log)
+        client.store_memory.assert_awaited_once()
+        local_store.assert_not_called()
 
     def test_duplicate_function_call_id_writes_once(self):
         client = self._client()

@@ -212,9 +212,43 @@ def _is_explicit_persistent_memory_request(text: str) -> bool:
     value = _normalized_turn_text(text)
     return bool(re.search(
         r"\b(?:guarda|guardalo|guardar|almacena|memoriza|recuerda)\b.{0,32}\bmemoria\b|"
+        r"\brecuerda que\b|\bquiero que recuerdes\b|"
+        r"\bguarda\b.{0,48}\b(?:mas adelante|para despues|en el futuro)\b|"
         r"\b(?:save|store|remember)\b.{0,32}\b(?:memory|about me)\b",
         value,
     ))
+
+
+def _is_explicit_local_memory_request(text: str) -> bool:
+    """Recognize the narrow operational/session scope owned by local JARVIS memory."""
+    value = _normalized_turn_text(text)
+    return bool(re.search(
+        r"\b(?:esta|la|mi) sesion\b|\bcontexto (?:de sesion|operativo|del runtime)\b|"
+        r"\b(?:nota|memoria|estado|bandera|flag) local\b|\b(?:runtime|ui) (?:hint|state|flag)\b",
+        value,
+    ))
+
+
+def _classify_memory_request(text: str, *, source: str, requested_tool: str) -> str:
+    """Classify memory authority without trusting a possibly partial Live transcript."""
+    if requested_tool in {"lilith_memory_store", "lilith_memory_delete"}:
+        return "persistent"
+    if requested_tool != "save_memory":
+        return "unknown"
+    if _is_explicit_local_memory_request(text):
+        return "local"
+    if _is_explicit_persistent_memory_request(text):
+        return "persistent"
+    # A user-originated save must never silently fall into local memory merely
+    # because Gemini Live supplied only the final transcript fragment.
+    if source in {"voice", "text"}:
+        return "persistent"
+    return "unknown"
+
+
+def _memory_key_alias(value: str) -> str:
+    normalized = _normalized_turn_text(str(value or "")).replace("/", " ").replace("_", " ")
+    return " ".join(normalized.split())
 
 
 @dataclass
@@ -1811,6 +1845,7 @@ class JarvisLive:
         self._memory_call_turns: dict[str, str] = {}
         self._memory_consumed_call_ids: set[str] = set()
         self._memory_turn_effects: set[tuple[str, str, str]] = set()
+        self._memory_key_aliases: dict[str, str] = {}
         self._pending_self_quit = False
         self._pending_self_quit_farewell_received = False
         self._self_quit_timer = None
@@ -3086,26 +3121,54 @@ class JarvisLive:
         )
 
     def _memory_guard_log(
-        self, *, fc_id: str, tool: str, routed_tool: str, canonical_key: str,
-        decision: str,
+        self, *, fc_id: str, requested_tool: str, classification: str,
+        routed_tool: str, canonical_key: str, decision: str,
     ) -> None:
         logger.info(
-            "MEMORY_GUARD session=%s turn=%s source=%s tool=%s routed_tool=%s "
-            "canonical_key=%s decision=%s function_call_id=%s",
+            "MEMORY_GUARD session=%s turn=%s function_call_id=%s requested_tool=%s "
+            "classification=%s decision=%s canonical_key=%s routed_tool=%s",
             self._schedule_session_id, self._schedule_turn_id or "none",
-            self._schedule_turn_source or "none", tool, routed_tool,
-            canonical_key or "none", decision, fc_id or "missing",
+            fc_id or "missing", requested_tool, classification, decision,
+            canonical_key or "none", routed_tool,
         )
+
+    async def _resolve_memory_delete_key(self, raw_key: str, turn_text: str) -> str:
+        canonical = _canonical_memory_key(raw_key)
+        if "/" in canonical:
+            return canonical
+        alias = _memory_key_alias(canonical)
+        if alias and alias in self._memory_key_aliases:
+            return self._memory_key_aliases[alias]
+        bridge = getattr(self, "_lilith", None)
+        if bridge is None or not bridge.is_running:
+            return ""
+        try:
+            hits = await bridge._runtime.client.search_memory(turn_text or raw_key, limit=10)
+        except Exception:
+            return ""
+        candidates = []
+        for hit in hits:
+            candidate = _canonical_memory_key(hit.get("key", ""))
+            if "/" not in candidate:
+                continue
+            candidates.append(candidate)
+            attribute_alias = _memory_key_alias(candidate.rsplit("/", 1)[-1])
+            if alias and alias == attribute_alias:
+                return candidate
+        return candidates[0] if len(set(candidates)) == 1 else ""
 
     async def _execute_memory_tool_guarded(self, fc) -> types.FunctionResponse:
         name = str(getattr(fc, "name", "") or "")
         args = dict(getattr(fc, "args", None) or {})
         fc_id = str(getattr(fc, "id", "") or "").strip()
         turn_text = self._schedule_guard_text()
+        classification = _classify_memory_request(
+            turn_text, source=self._schedule_turn_source, requested_tool=name,
+        )
         if not fc_id or not turn_text:
             self._memory_guard_log(
-                fc_id=fc_id, tool=name, routed_tool=name, canonical_key="",
-                decision="blocked_no_current_turn",
+                fc_id=fc_id, requested_tool=name, classification="unknown",
+                routed_tool=name, canonical_key="", decision="blocked_no_current_turn",
             )
             return types.FunctionResponse(
                 id=getattr(fc, "id", None), name=name,
@@ -3118,8 +3181,8 @@ class JarvisLive:
         associated_turn = self._memory_call_turns.get(fc_id)
         if associated_turn is not None and associated_turn != self._schedule_turn_id:
             self._memory_guard_log(
-                fc_id=fc_id, tool=name, routed_tool=name, canonical_key="",
-                decision="blocked_reused_function_call",
+                fc_id=fc_id, requested_tool=name, classification=classification,
+                routed_tool=name, canonical_key="", decision="blocked_reused_function_call",
             )
             return types.FunctionResponse(
                 id=fc.id, name=name,
@@ -3130,8 +3193,8 @@ class JarvisLive:
             )
         if fc_id in self._memory_consumed_call_ids:
             self._memory_guard_log(
-                fc_id=fc_id, tool=name, routed_tool=name, canonical_key="",
-                decision="blocked_duplicate_function_call",
+                fc_id=fc_id, requested_tool=name, classification=classification,
+                routed_tool=name, canonical_key="", decision="blocked_duplicate_function_call",
             )
             return types.FunctionResponse(
                 id=fc.id, name=name,
@@ -3140,7 +3203,7 @@ class JarvisLive:
 
         routed_name = name
         routed_args = dict(args)
-        if name == "save_memory" and _is_explicit_persistent_memory_request(turn_text):
+        if name == "save_memory" and classification == "persistent":
             routed_name = "lilith_memory_store"
             routed_args = {
                 "key": args.get("key", ""),
@@ -3149,9 +3212,37 @@ class JarvisLive:
                 "confidence": 1.0,
                 "description": str(args.get("key", "")).replace("_", " "),
             }
+        elif name == "save_memory" and classification != "local":
+            self._memory_guard_log(
+                fc_id=fc_id, requested_tool=name, classification=classification,
+                routed_tool=name, canonical_key="", decision="blocked_unknown_authority",
+            )
+            return types.FunctionResponse(
+                id=fc.id, name=name,
+                response={"result": (
+                    "JARVIS memory validation failure: memory authority is unknown, so local storage "
+                    "was blocked. No memory was changed."
+                )},
+            )
 
         category = str(routed_args.get("category", "jarvis_fact"))
-        canonical_key = _canonical_memory_key(routed_args.get("key", ""), category)
+        raw_key = str(routed_args.get("key", ""))
+        if routed_name == "lilith_memory_delete":
+            canonical_key = await self._resolve_memory_delete_key(raw_key, turn_text)
+            if not canonical_key:
+                self._memory_guard_log(
+                    fc_id=fc_id, requested_tool=name, classification=classification,
+                    routed_tool=routed_name, canonical_key="", decision="blocked_unresolved_key",
+                )
+                return types.FunctionResponse(
+                    id=fc.id, name=name,
+                    response={"result": (
+                        "JARVIS could not resolve one unique persistent-memory key from LILITH; "
+                        "nothing was deleted."
+                    )},
+                )
+        else:
+            canonical_key = _canonical_memory_key(raw_key, category)
         if routed_name in {"lilith_memory_store", "lilith_memory_delete"}:
             routed_args["key"] = canonical_key
             if routed_name == "lilith_memory_store":
@@ -3161,8 +3252,9 @@ class JarvisLive:
 
         if effect in self._memory_turn_effects:
             self._memory_guard_log(
-                fc_id=fc_id, tool=name, routed_tool=routed_name,
-                canonical_key=canonical_key, decision="blocked_duplicate_effect",
+                fc_id=fc_id, requested_tool=name, classification=classification,
+                routed_tool=routed_name, canonical_key=canonical_key,
+                decision="blocked_duplicate_effect",
             )
             self._memory_call_turns[fc_id] = self._schedule_turn_id
             self._memory_consumed_call_ids.add(fc_id)
@@ -3179,11 +3271,15 @@ class JarvisLive:
         self._memory_turn_effects.add(effect)
         decision = "rerouted_persistent_store" if routed_name != name else "allowed"
         self._memory_guard_log(
-            fc_id=fc_id, tool=name, routed_tool=routed_name,
-            canonical_key=canonical_key, decision=decision,
+            fc_id=fc_id, requested_tool=name, classification=classification,
+            routed_tool=routed_name, canonical_key=canonical_key, decision=decision,
         )
         routed = SimpleNamespace(id=fc.id, name=routed_name, args=routed_args)
         response = await self._execute_tool(routed)
+        result_text = str(response.response.get("result", ""))
+        if routed_name == "lilith_memory_store" and result_text.startswith(("Memory created:", "Memory updated:")):
+            self._memory_key_aliases[_memory_key_alias(canonical_key)] = canonical_key
+            self._memory_key_aliases[_memory_key_alias(canonical_key.rsplit("/", 1)[-1])] = canonical_key
         if routed_name == name:
             return response
         return types.FunctionResponse(id=fc.id, name=name, response=response.response)
