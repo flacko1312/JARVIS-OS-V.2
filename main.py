@@ -5,7 +5,9 @@ import threading
 import json
 import sys
 import traceback
+import unicodedata
 from pathlib import Path
+from types import SimpleNamespace
 
 import sounddevice as sd
 from google import genai
@@ -171,6 +173,92 @@ Examples:
 - "Todos los días a las 21:00 enciende la bombilla" -> lilith_routine create only.
 - "Crea una rutina para encender la bombilla cada día a las 21:00" -> lilith_routine create only.
 """.strip()
+
+_SCHEDULED_TOOL_NAMES = frozenset({"lilith_home_action", "reminder", "lilith_routine"})
+_SPANISH_NUMBERS = {
+    "una": 1, "uno": 1, "dos": 2, "tres": 3, "cuatro": 4, "cinco": 5,
+    "seis": 6, "siete": 7, "ocho": 8, "nueve": 9, "diez": 10,
+    "once": 11, "doce": 12,
+}
+
+
+def _normalized_turn_text(text: str) -> str:
+    decomposed = unicodedata.normalize("NFKD", str(text or "").lower())
+    return " ".join("".join(ch for ch in decomposed if not unicodedata.combining(ch)).split())
+
+
+def _schedule_semantics(text: str) -> str:
+    """Classify the mutually exclusive immediate/one-shot/recurring routes."""
+    value = _normalized_turn_text(text)
+    patterns = (
+        r"\btodos? los dias\b", r"\bcada dia\b", r"\bdiariamente\b",
+        r"\bcada (?:manana|noche|semana)\b", r"\btodos? los (?:lunes|martes|miercoles|jueves|viernes|sabados|domingos)\b",
+        r"\bcada \d+ (?:horas?|dias?)\b", r"\b(?:rutina|automatiza(?:r|cion)?)\b", r"\ba partir de ahora\b",
+        r"\bevery day\b", r"\bdaily\b", r"\bevery (?:morning|night|week|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b",
+        r"\bevery \d+ (?:hours?|days?)\b", r"\b(?:routine|automate)\b", r"\bfrom now on\b",
+    )
+    if any(re.search(pattern, value) for pattern in patterns):
+        return "recurring"
+    if re.search(r"\b(?:recuerdame|remind me)\b", value):
+        return "one_shot"
+    return "immediate"
+
+
+def _daily_time_from_text(text: str) -> tuple[int, int] | None:
+    value = _normalized_turn_text(text)
+    numeric = re.search(r"\b([01]?\d|2[0-3])[:.]([0-5]\d)\b", value)
+    if numeric:
+        return int(numeric.group(1)), int(numeric.group(2))
+    am_pm = re.search(r"\b(1[0-2]|0?[1-9])\s*(?:h\s*)?(am|pm)\b", value)
+    if am_pm:
+        return int(am_pm.group(1)) % 12 + (12 if am_pm.group(2) == "pm" else 0), 0
+    words = "|".join(_SPANISH_NUMBERS)
+    spoken = re.search(rf"\b(?:a las|a la)\s+({words})\b", value)
+    if not spoken:
+        return None
+    hour = _SPANISH_NUMBERS[spoken.group(1)]
+    if re.search(r"\b(?:de la )?(?:tarde|noche)\b", value) and hour < 12:
+        hour += 12
+    return hour, 0
+
+
+def _routine_args_from_wrong_call(turn_text: str, fc) -> dict | None:
+    """Build the existing JL-A9 routine contract without performing an effect."""
+    when = _daily_time_from_text(turn_text)
+    value = _normalized_turn_text(turn_text)
+    is_daily = bool(re.search(
+        r"\b(?:todos? los dias|cada dia|diariamente|cada manana|cada noche|every day|daily|every morning|every night)\b",
+        value,
+    ))
+    if not is_daily or when is None:
+        return None
+    source_args = dict(getattr(fc, "args", None) or {})
+    action = str(source_args.get("action", "")).strip()
+    target = str(source_args.get("target", "")).strip()
+    if not action:
+        if re.search(r"\b(?:enciende|encender|turn on|switch on)\b", value):
+            action = "turn_on"
+        elif re.search(r"\b(?:apaga|apagar|turn off|switch off)\b", value):
+            action = "turn_off"
+    if not target:
+        message = str(source_args.get("message", "")).strip()
+        candidate = message or turn_text
+        target = re.sub(
+            r"(?i)\b(?:todos? los dias|cada dia|diariamente|a las?\s+\w+(?:\s+de la (?:manana|tarde|noche))?|"
+            r"enciende|encender|apaga|apagar|turn on|turn off|crea una rutina para|routine|every day)\b",
+            " ", candidate,
+        )
+        target = " ".join(target.strip(" .,:;-").split())
+    if action not in {"turn_on", "turn_off"} or not target:
+        return None
+    hour, minute = when
+    return {
+        "operation": "create", "name": f"{action} {target} daily",
+        "schedule_type": "daily", "schedule": {"hour": hour, "minute": minute},
+        "timezone": os.getenv("JARVIS_TIMEZONE", "Europe/Madrid"),
+        "action_intent": "home.action",
+        "action_parameters": {"target": target, "action": action, "parameters": source_args.get("parameters") or {}},
+    }
 
 _SELF_QUIT_PATTERNS = tuple(re.compile(pattern, re.IGNORECASE) for pattern in (
     r"\b(?:quit|close|exit)\s+(?:jarvis|yourself)\b",
@@ -1622,6 +1710,8 @@ class JarvisLive:
         self._current_input_transcript = ""
         self._last_input_transcript = ""
         self._last_input_transcript_at = 0.0
+        self._schedule_guard_turn = ""
+        self._schedule_guard_routed = False
         self._pending_self_quit = False
         self._pending_self_quit_farewell_received = False
         self._self_quit_timer = None
@@ -2367,16 +2457,30 @@ class JarvisLive:
                                 entity_id = res["entity_id"]
                                 friendly = res.get("friendly_name") or target
                                 await client.home_action(entity_id, action_name, parameters=ha_params)
-                                # readback
+                                # Home Assistant state propagation can lag the service response.
                                 try:
-                                    state_data = await client.home_entity(entity_id)
-                                    current = state_data.get("state", "unknown")
+                                    expected = "on" if action_name == "turn_on" else "off"
+                                    state_data = {}
+                                    current = "unknown"
+                                    for attempt in range(4):
+                                        state_data = await client.home_entity(entity_id)
+                                        current = state_data.get("state", "unknown")
+                                        if current == expected:
+                                            break
+                                        if attempt < 3:
+                                            await asyncio.sleep(0.25)
                                     attrs = ""
                                     if ha_params and state_data.get("attributes"):
                                         brightness = state_data["attributes"].get("brightness")
                                         if brightness is not None:
                                             attrs = f" Brightness: {round(brightness/255*100)}%."
-                                    result = f"{action_name} on '{friendly}' ({entity_id}). Current state: {current}.{attrs}"
+                                    if current == expected:
+                                        result = f"{action_name} on '{friendly}' ({entity_id}). Verified state: {current}.{attrs}"
+                                    else:
+                                        result = (
+                                            f"{action_name} sent to '{friendly}' ({entity_id}), but the expected "
+                                            f"state '{expected}' was not verified; observed '{current}'."
+                                        )
                                 except Exception:
                                     result = f"{action_name} sent to '{friendly}' ({entity_id}). Could not confirm state."
                             else:
@@ -2695,7 +2799,29 @@ class JarvisLive:
                         result = "Routine request is ambiguous: missing " + ", ".join(missing) + "."
                     else:
                         try:
-                            data = await bridge._runtime.client.command_submit(
+                            client = bridge._runtime.client
+                            action_params = params.get("action_parameters")
+                            if (
+                                operation == "create"
+                                and params.get("action_intent") == "home.action"
+                                and isinstance(action_params, dict)
+                                and action_params.get("target")
+                                and not action_params.get("entity_id")
+                            ):
+                                target = str(action_params["target"])
+                                resolved = await client.home_resolve(target)
+                                resolve_status = resolved.get("status")
+                                if resolve_status != "resolved" or not resolved.get("entity_id"):
+                                    result = (
+                                        f"Routine target '{target}' could not be resolved unambiguously "
+                                        f"(status={resolve_status}); no routine was created."
+                                    )
+                                    raise LookupError(result)
+                                params["action_parameters"] = {
+                                    **{k: v for k, v in action_params.items() if k != "target"},
+                                    "entity_id": resolved["entity_id"],
+                                }
+                            data = await client.command_submit(
                                 intent=f"routines.{operation}", parameters=params,
                                 request_id=f"jarvis:{fc.id}",
                                 correlation_id=f"jarvis:{fc.id}",
@@ -2715,6 +2841,8 @@ class JarvisLive:
                                     f"LILITH did not complete routine {operation}; status={status}; "
                                     f"code={error.get('code', 'unknown')}; correlation_id={corr}."
                                 )
+                        except LookupError:
+                            pass
                         except Exception as exc:
                             result = f"LILITH routine request failed; no success confirmed: {exc}"
 
@@ -2738,6 +2866,61 @@ class JarvisLive:
             response={"result": result}
         )
 
+    def _schedule_guard_text(self) -> str:
+        current = str(getattr(self, "_current_input_transcript", "") or "").strip()
+        if current:
+            return current
+        if time.monotonic() - float(getattr(self, "_last_input_transcript_at", 0.0)) <= 30:
+            return str(getattr(self, "_last_input_transcript", "") or "").strip()
+        return ""
+
+    async def _execute_tool_guarded(self, fc) -> types.FunctionResponse:
+        name = getattr(fc, "name", "")
+        if name not in _SCHEDULED_TOOL_NAMES:
+            return await self._execute_tool(fc)
+        turn_text = self._schedule_guard_text()
+        if not turn_text:
+            # No reliable turn association means there is no safe basis for rewriting.
+            return await self._execute_tool(fc)
+        turn_key = _normalized_turn_text(turn_text)
+        if turn_key != self._schedule_guard_turn:
+            self._schedule_guard_turn = turn_key
+            self._schedule_guard_routed = False
+        semantics = _schedule_semantics(turn_text)
+
+        if semantics == "recurring":
+            if self._schedule_guard_routed:
+                return types.FunctionResponse(
+                    id=fc.id, name=name,
+                    response={"result": "The recurring request was already routed once; duplicate side effect blocked."},
+                )
+            if name == "lilith_routine":
+                self._schedule_guard_routed = True
+                return await self._execute_tool(fc)
+            routine_args = _routine_args_from_wrong_call(turn_text, fc)
+            if routine_args is None:
+                self._schedule_guard_routed = True
+                return types.FunctionResponse(
+                    id=fc.id, name=name,
+                    response={"result": "Recurring request is incomplete. Ask for the missing recurrence time, action, or target; no action was taken."},
+                )
+            self._schedule_guard_routed = True
+            routed = SimpleNamespace(id=fc.id, name="lilith_routine", args=routine_args)
+            response = await self._execute_tool(routed)
+            return types.FunctionResponse(id=fc.id, name=name, response=response.response)
+
+        if semantics == "one_shot" and name != "reminder":
+            return types.FunctionResponse(
+                id=fc.id, name=name,
+                response={"result": "This is a one-time future request; non-reminder side effect blocked."},
+            )
+        if semantics == "immediate" and name in {"reminder", "lilith_routine"}:
+            return types.FunctionResponse(
+                id=fc.id, name=name,
+                response={"result": "This is an immediate request; scheduled side effect blocked."},
+            )
+        return await self._execute_tool(fc)
+
     async def _execute_tool_batch(self, calls):
         """Run read-only calls concurrently while preserving mutation order."""
         mutating = {
@@ -2757,8 +2940,8 @@ class JarvisLive:
             show_progress(getattr(call_list[0], "name", "tool"))
         try:
             if any(getattr(call, "name", "") in mutating for call in call_list):
-                return [await self._execute_tool(call) for call in call_list]
-            return list(await asyncio.gather(*(self._execute_tool(call) for call in call_list)))
+                return [await self._execute_tool_guarded(call) for call in call_list]
+            return list(await asyncio.gather(*(self._execute_tool_guarded(call) for call in call_list)))
         finally:
             if callable(hide_progress):
                 hide_progress()
@@ -2880,8 +3063,6 @@ class JarvisLive:
 
                     if response.tool_call:
                         function_calls = list(response.tool_call.function_calls)
-                        for fc in function_calls:
-                            print(f"[JARVIS] 📞 {fc.name}")
                         fn_responses = await self._execute_tool_batch(function_calls)
                         await self.session.send_tool_response(
                             function_responses=fn_responses

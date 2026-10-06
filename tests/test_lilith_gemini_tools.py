@@ -518,6 +518,125 @@ class TestJlA9RoutineRoutingPolicy(unittest.TestCase):
         )
 
 
+class TestJlA9ScheduleExecutionGuard(unittest.TestCase):
+    """The side-effect boundary must not trust Gemini's selected tool."""
+
+    @staticmethod
+    def _home_client():
+        client = AsyncMock()
+        client.home_resolve.return_value = {
+            "status": "resolved", "entity_id": "light.bombilla_mueble",
+            "friendly_name": "Bombilla del mueble",
+        }
+        client.home_action.return_value = {}
+        client.home_entity.return_value = {"state": "on"}
+        client.command_submit.return_value = {
+            "status": "completed", "correlation_id": "guard-corr", "response": {"routine_id": 31},
+        }
+        return client
+
+    def test_a_immediate_home_action_is_unchanged(self):
+        client = self._home_client()
+        jarvis = _make_jarvis(lilith_client=client)
+        jarvis._current_input_transcript = "Enciende la bombilla"
+        _run(jarvis._execute_tool_batch([_fake_fc("lilith_home_action", {
+            "target": "bombilla", "action": "turn_on", "parameters": {"transition": 0},
+        })]))
+        client.home_action.assert_awaited_once_with(
+            "light.bombilla_mueble", "turn_on", parameters={"transition": 0})
+        client.command_submit.assert_not_awaited()
+
+    def test_b_one_shot_reminder_is_unchanged(self):
+        jarvis = _make_jarvis()
+        jarvis._current_input_transcript = "Recuérdame hoy a las 21:00 encender la bombilla"
+        with patch("main.reminder", return_value="Reminder set") as action:
+            _run(jarvis._execute_tool_batch([_fake_fc("reminder", {
+                "date": "2026-10-06", "time": "21:00", "message": "Encender bombilla",
+            })]))
+        action.assert_called_once()
+
+    def test_c_recurring_wrong_home_call_becomes_routine_before_side_effect(self):
+        client = self._home_client()
+        jarvis = _make_jarvis(lilith_client=client)
+        jarvis._current_input_transcript = "Todos los días a las 21:00 enciende la bombilla"
+        _run(jarvis._execute_tool_batch([_fake_fc("lilith_home_action", {
+            "target": "bombilla", "action": "turn_on",
+        })]))
+        client.home_action.assert_not_awaited()
+        self.assertEqual(client.command_submit.await_args.kwargs["intent"], "routines.create")
+        params = client.command_submit.await_args.kwargs["parameters"]
+        self.assertEqual(params["schedule"], {"hour": 21, "minute": 0})
+        self.assertEqual(params["action_parameters"]["entity_id"], "light.bombilla_mueble")
+
+    def test_d_explicit_routine_reaches_existing_routine_tool(self):
+        client = self._home_client()
+        jarvis = _make_jarvis(lilith_client=client)
+        jarvis._current_input_transcript = "Crea una rutina para encender la bombilla cada día a las 21:00"
+        args = {"operation": "create", "name": "Bombilla", "schedule_type": "daily",
+                "schedule": {"hour": 21, "minute": 0}, "timezone": "Europe/Madrid",
+                "action_intent": "home.action",
+                "action_parameters": {"entity_id": "light.bombilla_mueble", "action": "turn_on"}}
+        _run(jarvis._execute_tool_batch([_fake_fc("lilith_routine", args)]))
+        self.assertEqual(client.command_submit.await_args.kwargs["intent"], "routines.create")
+
+    def test_e_recurring_batch_never_executes_home_action(self):
+        client = self._home_client()
+        jarvis = _make_jarvis(lilith_client=client)
+        jarvis._current_input_transcript = "Todos los días a las nueve de la noche enciende la bombilla del mueble"
+        routine = {"operation": "create", "name": "Bombilla", "schedule_type": "daily",
+                   "schedule": {"hour": 21, "minute": 0}, "timezone": "Europe/Madrid",
+                   "action_intent": "home.action",
+                   "action_parameters": {"entity_id": "light.bombilla_mueble", "action": "turn_on"}}
+        with patch("builtins.print") as output:
+            _run(jarvis._execute_tool_batch([
+                _fake_fc("lilith_home_action", {"target": "bombilla del mueble", "action": "turn_on"}),
+                _fake_fc("lilith_routine", routine),
+            ]))
+        client.home_action.assert_not_awaited()
+        self.assertEqual(client.command_submit.await_count, 1)
+        console = " ".join(str(call) for call in output.call_args_list)
+        self.assertIn("lilith_routine", console)
+        self.assertNotIn("lilith_home_action", console)
+        self.assertNotIn("reminder", console)
+
+    def test_f_recurring_batch_never_executes_reminder(self):
+        client = self._home_client()
+        jarvis = _make_jarvis(lilith_client=client)
+        jarvis._current_input_transcript = "Todos los días a las 21:00 enciende la bombilla"
+        routine = {"operation": "create", "name": "Bombilla", "schedule_type": "daily",
+                   "schedule": {"hour": 21, "minute": 0}, "timezone": "Europe/Madrid",
+                   "action_intent": "home.action",
+                   "action_parameters": {"entity_id": "light.bombilla_mueble", "action": "turn_on"}}
+        with patch("main.reminder") as action:
+            _run(jarvis._execute_tool_batch([
+                _fake_fc("reminder", {"time": "21:00", "message": "Encender bombilla"}),
+                _fake_fc("lilith_routine", routine),
+            ]))
+        action.assert_not_called()
+        self.assertEqual(client.command_submit.await_count, 1)
+
+    def test_g_incomplete_recurring_request_clarifies_with_zero_side_effects(self):
+        client = self._home_client()
+        jarvis = _make_jarvis(lilith_client=client)
+        jarvis._current_input_transcript = "Todos los días enciende la bombilla"
+        responses = _run(jarvis._execute_tool_batch([_fake_fc("lilith_home_action", {
+            "target": "bombilla", "action": "turn_on",
+        })]))
+        self.assertIn("incomplete", responses[0].response["result"])
+        client.home_action.assert_not_awaited()
+        client.command_submit.assert_not_awaited()
+
+    def test_h_immediate_home_parameters_remain_intact(self):
+        client = self._home_client()
+        jarvis = _make_jarvis(lilith_client=client)
+        jarvis._current_input_transcript = "Enciende la bombilla al cincuenta por ciento"
+        _run(jarvis._execute_tool_batch([_fake_fc("lilith_home_action", {
+            "target": "bombilla", "action": "turn_on", "parameters": {"brightness_pct": 50},
+        })]))
+        client.home_action.assert_awaited_once_with(
+            "light.bombilla_mueble", "turn_on", parameters={"brightness_pct": 50})
+
+
 # ── 3. lilith_memory_search ─────────────────────────────────────────────
 
 class TestLilithMemorySearch(unittest.TestCase):
@@ -747,6 +866,37 @@ class TestLilithHomeAction(unittest.TestCase):
             "target": "X", "action": "turn_on",
         })))
         self.assertIn("Could not confirm", resp.response["result"])
+
+    def test_readback_waits_for_expected_state_instead_of_reporting_stale_state(self):
+        mock = AsyncMock()
+        mock.home_resolve.return_value = {
+            "status": "resolved", "entity_id": "light.x", "friendly_name": "X",
+        }
+        mock.home_action.return_value = {}
+        mock.home_entity.side_effect = [{"state": "off"}, {"state": "on"}]
+        jarvis = _make_jarvis(lilith_client=mock)
+        with patch("main.asyncio.sleep", new=AsyncMock()) as pause:
+            resp = _run(jarvis._execute_tool(_fake_fc("lilith_home_action", {
+                "target": "X", "action": "turn_on",
+            })))
+        self.assertIn("Verified state: on", resp.response["result"])
+        self.assertEqual(mock.home_entity.await_count, 2)
+        pause.assert_awaited_once_with(0.25)
+
+    def test_readback_never_claims_verification_when_state_stays_stale(self):
+        mock = AsyncMock()
+        mock.home_resolve.return_value = {
+            "status": "resolved", "entity_id": "light.x", "friendly_name": "X",
+        }
+        mock.home_action.return_value = {}
+        mock.home_entity.return_value = {"state": "off"}
+        jarvis = _make_jarvis(lilith_client=mock)
+        with patch("main.asyncio.sleep", new=AsyncMock()):
+            resp = _run(jarvis._execute_tool(_fake_fc("lilith_home_action", {
+                "target": "X", "action": "turn_on",
+            })))
+        self.assertIn("not verified", resp.response["result"])
+        self.assertNotIn("Verified state", resp.response["result"])
 
 
 # ── 6. lilith_home_action — safety cases ─────────────────────────────────
