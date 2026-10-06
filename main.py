@@ -1469,6 +1469,8 @@ TOOL_DECLARATIONS = [
                         "memory.search", "memory.store", "memory.delete",
                         "home.resolve", "home.entity", "home.action",
                         "home.request_approval", "home.resolve_approval",
+                        "routines.create", "routines.list", "routines.get", "routines.update",
+                        "routines.enable", "routines.disable", "routines.delete", "routines.history",
                     ],
                     "description": "Canonical LILITH intent to submit",
                 },
@@ -1478,6 +1480,33 @@ TOOL_DECLARATIONS = [
                 "idempotency_key": {"type": "STRING", "description": "Optional stable replay key"},
             },
             "required": ["intent"]
+        }
+    },
+    {
+        "name": "lilith_routine",
+        "description": (
+            "Manage persistent routines in LILITH. Map natural-language requests to exactly one "
+            "operation. Ask the user for clarification before calling when the routine, time, "
+            "timezone, recurrence, target, or action is ambiguous. LILITH is authoritative: never "
+            "claim created/updated/enabled/disabled/deleted unless status is completed."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "operation": {"type": "STRING", "enum": [
+                    "create", "list", "get", "update", "enable", "disable", "delete", "history"
+                ]},
+                "routine_id": {"type": "INTEGER", "description": "Required except create/list"},
+                "name": {"type": "STRING"},
+                "description": {"type": "STRING"},
+                "schedule_type": {"type": "STRING", "enum": ["manual", "once", "daily", "weekly", "interval"]},
+                "schedule": {"type": "OBJECT", "description": "hour/minute, weekday, every_minutes or ISO run_at"},
+                "timezone": {"type": "STRING", "description": "IANA timezone such as Europe/Madrid"},
+                "action_intent": {"type": "STRING", "description": "Existing JL-A6 intent, e.g. home.action or runtime.status"},
+                "action_parameters": {"type": "OBJECT"},
+                "limit": {"type": "INTEGER", "description": "History limit, 1-100"},
+            },
+            "required": ["operation"]
         }
     },
 ]
@@ -2609,6 +2638,46 @@ class JarvisLive:
                         except Exception as exc:
                             result = f"LILITH command submit failed: {exc}"
 
+            elif name == "lilith_routine":
+                bridge = getattr(self, "_lilith", None)
+                if bridge is None or not bridge.is_running:
+                    result = "LILITH integration is not configured or not running; no routine was changed."
+                else:
+                    operation = str(args.get("operation", "")).strip().lower()
+                    allowed = {"create", "list", "get", "update", "enable", "disable", "delete", "history"}
+                    params = {k: v for k, v in args.items() if k != "operation" and v is not None}
+                    missing = []
+                    if operation == "create":
+                        missing = [k for k in ("name", "schedule_type", "schedule", "timezone", "action_intent")
+                                   if k not in params]
+                    elif operation not in {"list"} and "routine_id" not in params:
+                        missing = ["routine_id"]
+                    if operation not in allowed:
+                        result = "Unknown routine operation; no routine was changed."
+                    elif missing:
+                        result = "Routine request is ambiguous: missing " + ", ".join(missing) + "."
+                    else:
+                        try:
+                            data = await bridge._runtime.client.command_submit(
+                                intent=f"routines.{operation}", parameters=params,
+                            )
+                            status = data.get("status", "unknown")
+                            corr = data.get("correlation_id") or "unknown"
+                            response = data.get("response") or {}
+                            error = data.get("error") or {}
+                            if status == "completed":
+                                result = (
+                                    f"LILITH confirmed routine {operation}; correlation_id={corr}; "
+                                    f"authoritative_result={json.dumps(response, ensure_ascii=False, default=str)}"
+                                )
+                            else:
+                                result = (
+                                    f"LILITH did not complete routine {operation}; status={status}; "
+                                    f"code={error.get('code', 'unknown')}; correlation_id={corr}."
+                                )
+                        except Exception as exc:
+                            result = f"LILITH routine request failed; no success confirmed: {exc}"
+
             else:
                 result = f"Unknown tool: {name}"
                 logger.warning("TOOL_UNKNOWN  %s  args=%s", name, args)
@@ -2637,7 +2706,7 @@ class JarvisLive:
             "file_processor", "code_helper", "dev_agent", "game_updater",
             "create_presentation", "save_memory", "jarvis_ui_control", "graphics_quality",
             "lilith_memory_store", "lilith_memory_delete", "lilith_home_action",
-            "lilith_resolve_approval",
+            "lilith_resolve_approval", "lilith_routine",
         }
         call_list = list(calls or [])
         # Real tool activity -> UI (drives the EXECUTING state of the core visual).

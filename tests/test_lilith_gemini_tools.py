@@ -398,6 +398,61 @@ class TestLilithCommandSubmitTool(unittest.TestCase):
         self.assertIn("not configured", resp.response["result"])
 
 
+class TestLilithRoutineTool(unittest.TestCase):
+
+    def test_declared_and_excluded_from_cloud_safe(self):
+        self.assertIn("lilith_routine", {t["name"] for t in TOOL_DECLARATIONS})
+        self.assertNotIn("lilith_routine", {t["name"] for t in get_tool_declarations(cloud_safe=True)})
+
+    def test_create_maps_natural_language_fields_to_authoritative_command(self):
+        mock = AsyncMock()
+        mock.command_submit.return_value = {
+            "status": "completed", "correlation_id": "routine-corr",
+            "response": {"routine": {"routine_id": 12, "name": "Noticias"}},
+        }
+        jarvis = _make_jarvis(lilith_client=mock)
+        args = {"operation": "create", "name": "Noticias", "schedule_type": "daily",
+                "schedule": {"hour": 5, "minute": 0}, "timezone": "Europe/Madrid",
+                "action_intent": "runtime.status", "action_parameters": {}}
+        resp = _run(jarvis._execute_tool(_fake_fc("lilith_routine", args)))
+        self.assertIn("LILITH confirmed", resp.response["result"])
+        self.assertIn("routine_id", resp.response["result"])
+        mock.command_submit.assert_awaited_once_with(
+            intent="routines.create", parameters={k: v for k, v in args.items() if k != "operation"})
+
+    def test_ambiguous_create_asks_for_missing_fields_without_calling_lilith(self):
+        mock = AsyncMock()
+        jarvis = _make_jarvis(lilith_client=mock)
+        resp = _run(jarvis._execute_tool(_fake_fc("lilith_routine", {
+            "operation": "create", "name": "Bombilla",
+        })))
+        self.assertIn("ambiguous", resp.response["result"])
+        mock.command_submit.assert_not_awaited()
+
+    def test_disable_and_update_use_existing_routine_id(self):
+        mock = AsyncMock()
+        mock.command_submit.return_value = {"status": "completed", "correlation_id": "c", "response": {}}
+        jarvis = _make_jarvis(lilith_client=mock)
+        _run(jarvis._execute_tool(_fake_fc("lilith_routine", {"operation": "disable", "routine_id": 4})))
+        _run(jarvis._execute_tool(_fake_fc("lilith_routine", {
+            "operation": "update", "routine_id": 4, "schedule": {"hour": 10, "minute": 0}})))
+        self.assertEqual(mock.command_submit.await_args_list[0].kwargs["intent"], "routines.disable")
+        self.assertEqual(mock.command_submit.await_args_list[1].kwargs["intent"], "routines.update")
+
+    def test_blocked_or_offline_never_reports_success(self):
+        mock = AsyncMock()
+        mock.command_submit.return_value = {"status": "blocked", "correlation_id": "c",
+                                            "error": {"code": "routine_action_not_allowed"}}
+        jarvis = _make_jarvis(lilith_client=mock)
+        blocked = _run(jarvis._execute_tool(_fake_fc("lilith_routine", {
+            "operation": "delete", "routine_id": 9}))).response["result"]
+        self.assertIn("did not complete", blocked)
+        self.assertNotIn("confirmed", blocked)
+        offline = _run(_make_jarvis()._execute_tool(_fake_fc("lilith_routine", {
+            "operation": "list"}))).response["result"]
+        self.assertIn("no routine was changed", offline)
+
+
 # ── 3. lilith_memory_search ─────────────────────────────────────────────
 
 class TestLilithMemorySearch(unittest.TestCase):
