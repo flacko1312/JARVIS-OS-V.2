@@ -182,6 +182,9 @@ Examples:
 """.strip()
 
 _SCHEDULED_TOOL_NAMES = frozenset({"lilith_home_action", "reminder", "lilith_routine"})
+_ROUTINE_READ_OPERATIONS = frozenset({"list", "get", "history"})
+
+
 def _routine_args_from_wrong_call(turn_text: str, fc) -> dict | None:
     """Build the existing JL-A9 routine contract without performing an effect."""
     when = _daily_time_from_text(turn_text)
@@ -2892,11 +2895,15 @@ class JarvisLive:
             return ""
         return str(getattr(self, "_current_input_transcript", "") or "").strip()
 
-    def _schedule_log(self, *, fc_id: str, tool: str, classification: str, decision: str) -> None:
+    def _schedule_log(
+        self, *, fc_id: str, tool: str, classification: str, decision: str,
+        operation: str = "",
+    ) -> None:
         logger.info(
-            "SCHEDULE_GUARD session=%s turn=%s source=%s classification=%s tool=%s decision=%s function_call_id=%s",
+            "SCHEDULE_GUARD session=%s turn=%s source=%s classification=%s tool=%s operation=%s decision=%s function_call_id=%s",
             self._schedule_session_id, self._schedule_turn_id or "none",
-            self._schedule_turn_source or "none", classification, tool, decision,
+            self._schedule_turn_source or "none", classification, tool,
+            operation or "none", decision,
             fc_id or "missing",
         )
 
@@ -2905,16 +2912,24 @@ class JarvisLive:
         if name not in _SCHEDULED_TOOL_NAMES:
             return await self._execute_tool(fc)
         fc_id = str(getattr(fc, "id", "") or "").strip()
+        args = dict(getattr(fc, "args", None) or {})
+        operation = str(args.get("operation", "")).strip().lower() if name == "lilith_routine" else ""
         turn_text = self._effective_schedule_text(name)
         if not fc_id or not turn_text:
-            self._schedule_log(fc_id=fc_id, tool=name, classification="unknown", decision="blocked_no_current_turn")
+            self._schedule_log(
+                fc_id=fc_id, tool=name, operation=operation,
+                classification="unknown", decision="blocked_no_current_turn",
+            )
             return types.FunctionResponse(
                 id=getattr(fc, "id", None), name=name,
                 response={"result": "Scheduled side effect blocked: no safe association with the current turn."},
             )
         associated_turn = self._schedule_call_turns.get(fc_id)
         if associated_turn is not None and associated_turn != self._schedule_turn_id:
-            self._schedule_log(fc_id=fc_id, tool=name, classification="unknown", decision="blocked_reused_function_call")
+            self._schedule_log(
+                fc_id=fc_id, tool=name, operation=operation,
+                classification="unknown", decision="blocked_reused_function_call",
+            )
             return types.FunctionResponse(
                 id=fc.id, name=name,
                 response={"result": "Scheduled side effect blocked: FunctionCall.id was already associated with another turn."},
@@ -2922,9 +2937,26 @@ class JarvisLive:
         self._schedule_call_turns[fc_id] = self._schedule_turn_id
         semantics = _schedule_semantics(turn_text)
 
+        if name == "lilith_routine" and operation in _ROUTINE_READ_OPERATIONS:
+            if self._schedule_guard_routed:
+                self._schedule_log(
+                    fc_id=fc_id, tool=name, operation=operation,
+                    classification=semantics, decision="blocked_duplicate",
+                )
+                return types.FunctionResponse(
+                    id=fc.id, name=name,
+                    response={"result": "This turn already produced a routine call; duplicate blocked."},
+                )
+            self._schedule_guard_routed = True
+            self._schedule_log(
+                fc_id=fc_id, tool=name, operation=operation,
+                classification=semantics, decision="allowed_read_only",
+            )
+            return await self._execute_tool(fc)
+
         if semantics == "recurring":
             if self._schedule_guard_routed:
-                self._schedule_log(fc_id=fc_id, tool=name, classification=semantics, decision="blocked_duplicate")
+                self._schedule_log(fc_id=fc_id, tool=name, operation=operation, classification=semantics, decision="blocked_duplicate")
                 return types.FunctionResponse(
                     id=fc.id, name=name,
                     response={"result": "The recurring request was already routed once; duplicate side effect blocked."},
@@ -2933,7 +2965,7 @@ class JarvisLive:
                 normalized_args = _routine_args_from_wrong_call(turn_text, fc)
                 if normalized_args is None:
                     self._schedule_guard_routed = True
-                    self._schedule_log(fc_id=fc_id, tool=name, classification=semantics, decision="blocked_incomplete")
+                    self._schedule_log(fc_id=fc_id, tool=name, operation=operation, classification=semantics, decision="blocked_incomplete")
                     return types.FunctionResponse(
                         id=fc.id, name=name,
                         response={"result": "Recurring request is incomplete or ambiguous. Ask only for the missing time, action, or target; no action was taken."},
@@ -2941,44 +2973,44 @@ class JarvisLive:
                 merged_args = {**dict(getattr(fc, "args", None) or {}), **normalized_args}
                 routed = SimpleNamespace(id=fc.id, name=name, args=merged_args)
                 self._schedule_guard_routed = True
-                self._schedule_log(fc_id=fc_id, tool=name, classification=semantics, decision="allowed")
+                self._schedule_log(fc_id=fc_id, tool=name, operation=operation, classification=semantics, decision="allowed")
                 self._pending_recurring_text = ""
                 return await self._execute_tool(routed)
             routine_args = _routine_args_from_wrong_call(turn_text, fc)
             if routine_args is None:
                 self._schedule_guard_routed = True
-                self._schedule_log(fc_id=fc_id, tool=name, classification=semantics, decision="blocked_incomplete")
+                self._schedule_log(fc_id=fc_id, tool=name, operation=operation, classification=semantics, decision="blocked_incomplete")
                 return types.FunctionResponse(
                     id=fc.id, name=name,
                     response={"result": "Recurring request is incomplete. Ask for the missing recurrence time, action, or target; no action was taken."},
                 )
             self._schedule_guard_routed = True
             routed = SimpleNamespace(id=fc.id, name="lilith_routine", args=routine_args)
-            self._schedule_log(fc_id=fc_id, tool=name, classification=semantics, decision="rerouted_lilith_routine")
+            self._schedule_log(fc_id=fc_id, tool=name, operation=operation, classification=semantics, decision="rerouted_lilith_routine")
             self._pending_recurring_text = ""
             response = await self._execute_tool(routed)
             return types.FunctionResponse(id=fc.id, name=name, response=response.response)
 
         if semantics == "one_shot" and name != "reminder":
-            self._schedule_log(fc_id=fc_id, tool=name, classification=semantics, decision="blocked_wrong_tool")
+            self._schedule_log(fc_id=fc_id, tool=name, operation=operation, classification=semantics, decision="blocked_wrong_tool")
             return types.FunctionResponse(
                 id=fc.id, name=name,
                 response={"result": "This is a one-time future request; non-reminder side effect blocked."},
             )
         if semantics == "immediate" and name in {"reminder", "lilith_routine"}:
-            self._schedule_log(fc_id=fc_id, tool=name, classification=semantics, decision="blocked_wrong_tool")
+            self._schedule_log(fc_id=fc_id, tool=name, operation=operation, classification=semantics, decision="blocked_wrong_tool")
             return types.FunctionResponse(
                 id=fc.id, name=name,
                 response={"result": "This is an immediate request; scheduled side effect blocked."},
             )
         if self._schedule_guard_routed:
-            self._schedule_log(fc_id=fc_id, tool=name, classification=semantics, decision="blocked_duplicate")
+            self._schedule_log(fc_id=fc_id, tool=name, operation=operation, classification=semantics, decision="blocked_duplicate")
             return types.FunctionResponse(
                 id=fc.id, name=name,
                 response={"result": "This turn already produced a scheduled side effect; duplicate blocked."},
             )
         self._schedule_guard_routed = True
-        self._schedule_log(fc_id=fc_id, tool=name, classification=semantics, decision="allowed")
+        self._schedule_log(fc_id=fc_id, tool=name, operation=operation, classification=semantics, decision="allowed")
         return await self._execute_tool(fc)
 
     async def _execute_tool_batch(self, calls):

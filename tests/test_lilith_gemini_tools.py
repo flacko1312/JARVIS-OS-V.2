@@ -744,6 +744,54 @@ class TestJlA9ScheduleExecutionGuard(unittest.TestCase):
         self.assertEqual(client.command_submit.await_count, 1)
         client.home_action.assert_not_awaited()
 
+    def _assert_read_only_routine_allowed(self, text, operation, **args):
+        client = self._home_client()
+        client.command_submit.return_value = {
+            "status": "completed", "correlation_id": "read-only-corr",
+            "response": {"count": 1, "routines": [{"routine_id": 4, "name": "Bombilla"}]},
+        }
+        jarvis = _make_jarvis(lilith_client=client)
+        jarvis._begin_schedule_turn(text, "voice")
+        with patch("main.reminder") as reminder_action:
+            response = _run(jarvis._execute_tool_batch([
+                _fake_fc("lilith_routine", {"operation": operation, **args})
+            ]))[0]
+        self.assertIn("confirmed routine", response.response["result"])
+        self.assertEqual(client.command_submit.await_args.kwargs["intent"], f"routines.{operation}")
+        client.home_action.assert_not_awaited()
+        reminder_action.assert_not_called()
+        return jarvis, client
+
+    def test_r_list_what_routines_do_i_have_is_allowed(self):
+        self._assert_read_only_routine_allowed("¿Qué rutinas tengo?", "list")
+
+    def test_s_list_my_scheduled_routines_is_allowed(self):
+        self._assert_read_only_routine_allowed("Dime mis rutinas programadas.", "list")
+
+    def test_t_history_is_allowed_without_schedule_semantics(self):
+        self._assert_read_only_routine_allowed(
+            "Enséñame el historial de esta rutina.", "history", routine_id=4,
+        )
+
+    def test_t2_get_is_allowed_without_schedule_semantics(self):
+        self._assert_read_only_routine_allowed(
+            "Enséñame esta rutina.", "get", routine_id=4,
+        )
+
+    def test_u_read_only_duplicate_function_call_id_remains_blocked(self):
+        client = self._home_client()
+        client.command_submit.return_value = {
+            "status": "completed", "correlation_id": "read-only-corr",
+            "response": {"count": 0, "routines": []},
+        }
+        jarvis = _make_jarvis(lilith_client=client)
+        jarvis._begin_schedule_turn("¿Qué rutinas tengo?", "voice")
+        call = _fake_fc("lilith_routine", {"operation": "list"})
+        responses = _run(jarvis._execute_tool_batch([call, call]))
+        self.assertEqual(client.command_submit.await_count, 1)
+        self.assertIn("duplicate blocked", responses[1].response["result"])
+        client.home_action.assert_not_awaited()
+
 
 class TestGeminiLiveSchedulePath(unittest.TestCase):
     """Exercise the actual receive -> FunctionCall -> tool-response path."""
