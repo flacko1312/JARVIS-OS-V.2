@@ -22,7 +22,7 @@ from api import status as jarvis_status
 from core.jarvis_client import JarvisClient
 from core.lilith_gateway import LilithBridge
 from memory.memory_manager import (
-    load_memory, update_memory, format_memory_for_prompt,
+    load_memory, format_memory_for_prompt,
 )
 import hashlib
 import importlib
@@ -188,8 +188,9 @@ LILITH is the authoritative persistent user memory. Use lilith_memory_store for 
 preferences, stable project information, persistent notes, or anything the user asks you to
 remember later. Use lilith_memory_search to recall it and lilith_memory_delete only for an explicit
 forget/delete request. save_memory is only for local operational/session/UI state, and only when the
-user explicitly asks for local-only or current-session storage. Never ask the user for a category,
-namespace, or internal key; choose those implementation details yourself. Confirm normal success
+user explicitly asks for local-only or current-session storage. Use local_memory_search to recall
+that explicitly local-only state. Never ask the user for a category, namespace, or internal key;
+choose those implementation details yourself. Confirm normal success
 naturally without exposing backend names or keys unless the user asks for technical details.
 """.strip()
 
@@ -1498,6 +1499,34 @@ TOOL_DECLARATIONS = [
             "required": ["value"]
         }
     },
+    {
+        "name": "local_memory_search",
+        "description": (
+            "Read/search JARVIS LOCAL-ONLY operational memory. Use this only when the user asks "
+            "to recall something they explicitly stored locally/in JARVIS/current-session memory. "
+            "Do not use it for normal persistent personal memory; use lilith_memory_search for that. "
+            "If you know the internal key from the prior local save, pass it; otherwise omit it and "
+            "the tool returns the small local notes/projects set for semantic selection."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "category": {
+                    "type": "STRING",
+                    "description": "Optional local category: notes or projects"
+                },
+                "key": {
+                    "type": "STRING",
+                    "description": "Optional exact local snake_case key, when known"
+                },
+                "query": {
+                    "type": "STRING",
+                    "description": "Optional natural-language description of the local fact"
+                },
+            },
+            "required": []
+        }
+    },
     # ── LILITH integration tools (JL-W005) ─────────────────────────────
     {
         "name": "lilith_memory_search",
@@ -1937,6 +1966,12 @@ class JarvisLive:
         self._memory_consumed_call_ids: set[str] = set()
         self._memory_turn_effects: set[tuple[str, str, str]] = set()
         self._memory_key_aliases: dict[str, str] = {}
+        # Explicitly local/session memory is process-local RAM only. It must not
+        # survive a JarvisLive restart and must never use the persistent memory manager.
+        self._local_session_memory: dict[str, dict[str, dict[str, str]]] = {
+            "notes": {},
+            "projects": {},
+        }
         self._pending_self_quit = False
         self._pending_self_quit_farewell_received = False
         self._self_quit_timer = None
@@ -2379,13 +2414,103 @@ class JarvisLive:
                     }
                 )
             if key and value:
-                update_memory({category: {key: {"value": value}}})
-                print(f"[Memory] 💾 save_memory: {category}/{key} = {value}")
+                category = str(category or "notes")
+                if category not in {"notes", "projects"}:
+                    category = "notes"
+                key = str(key)
+                value = str(value)
+                local_key = f"{category}/{key}"
+                logger.info("LOCAL_MEMORY write_start key=%s", local_key)
+                try:
+                    bucket = self._local_session_memory.setdefault(category, {})
+                    bucket[key] = {"value": value}
+                    stored = bucket.get(key, {}).get("value")
+                    if stored != value:
+                        raise RuntimeError("local write verification failed")
+                except Exception as exc:
+                    result = f"Local memory write failed: {type(exc).__name__}"
+                    logger.error(
+                        "LOCAL_MEMORY write_failure key=%s error=%s",
+                        local_key, type(exc).__name__, exc_info=True,
+                    )
+                    logger.info("TOOL_RESULT  %s  result=%s", name, result)
+                    if not self.ui.muted:
+                        self.ui.set_state("LISTENING")
+                    return types.FunctionResponse(
+                        id=fc.id, name=name, response={"result": result}
+                    )
+                logger.info("LOCAL_MEMORY write_success key=%s", local_key)
+                print(f"[Memory] 💾 save_memory: {local_key}")
+            else:
+                result = "Local memory write failed: key and value are required."
+                logger.warning("LOCAL_MEMORY write_failure key=none error=missing_key_or_value")
+                logger.info("TOOL_RESULT  %s  result=%s", name, result)
+                if not self.ui.muted:
+                    self.ui.set_state("LISTENING")
+                return types.FunctionResponse(
+                    id=fc.id, name=name, response={"result": result}
+                )
             if not self.ui.muted:
                 self.ui.set_state("LISTENING")
+            logger.info("TOOL_RESULT  %s  result=ok", name)
             return types.FunctionResponse(
                 id=fc.id, name=name,
                 response={"result": "ok", "silent": True}
+            )
+
+        if name == "local_memory_search":
+            allowed_categories = ("notes", "projects")
+            requested_category = str(args.get("category") or "").strip()
+            requested_key = str(args.get("key") or "").strip().rsplit("/", 1)[-1]
+            query = _memory_key_alias(str(args.get("query") or ""))
+            categories = (
+                (requested_category,)
+                if requested_category in allowed_categories
+                else allowed_categories
+            )
+            memory = self._local_session_memory
+            entries: list[tuple[str, str, str]] = []
+            for local_category in categories:
+                items = memory.get(local_category, {})
+                if not isinstance(items, dict):
+                    continue
+                for local_key, entry in items.items():
+                    if requested_key and local_key != requested_key:
+                        continue
+                    stored_value = entry.get("value") if isinstance(entry, dict) else entry
+                    if stored_value is None:
+                        continue
+                    entries.append((local_category, str(local_key), str(stored_value)))
+
+            if query and not requested_key:
+                query_terms = set(query.split())
+                scored = []
+                for entry in entries:
+                    searchable = set(_memory_key_alias(f"{entry[1]} {entry[2]}").split())
+                    scored.append((len(query_terms & searchable), entry))
+                matching = [entry for score, entry in scored if score > 0]
+                if matching:
+                    entries = matching
+
+            entries = entries[:10]
+            logger.info(
+                "LOCAL_MEMORY read key=%s hit=%s matches=%d",
+                requested_key or "any", bool(entries), len(entries),
+            )
+            if entries:
+                result = "\n".join(
+                    f"- {category}/{key} = {value}" for category, key, value in entries
+                )
+            else:
+                result = "No matching local JARVIS memory."
+            logger.info(
+                "TOOL_RESULT  %s  result=%s",
+                name, f"{len(entries)} local match(es)" if entries else "no local matches",
+            )
+            if not self.ui.muted:
+                self.ui.set_state("LISTENING")
+            return types.FunctionResponse(
+                id=fc.id, name=name, response={"result": result}
             )
 
         result = "Done."

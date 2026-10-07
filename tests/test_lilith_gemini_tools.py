@@ -1026,15 +1026,13 @@ class TestPersistentMemoryFlow(unittest.TestCase):
         session = TestGeminiLiveSchedulePath.LiveSession(jarvis, call, transcript)
         jarvis.session = session
 
-        with patch("main.update_memory") as local_store, \
-             patch("main.reminder") as reminder_action:
+        with patch("main.reminder") as reminder_action:
             _run(jarvis._receive_audio())
 
         client.store_memory.assert_awaited_once()
         self.assertEqual(client.store_memory.await_args.args[:2], (
             "notes/codigo_temporal_pruebas", "7319",
         ))
-        local_store.assert_not_called()
         client.home_action.assert_not_awaited()
         client.command_submit.assert_not_awaited()
         reminder_action.assert_not_called()
@@ -1073,9 +1071,7 @@ class TestPersistentMemoryFlow(unittest.TestCase):
         session = TestGeminiLiveSchedulePath.LiveSession(jarvis, call, "Guarda este dato.")
         jarvis.session = session
 
-        with patch("main.update_memory") as local_store, self.assertLogs(
-            "jarvis.main", level="INFO"
-        ) as captured:
+        with self.assertLogs("jarvis.main", level="INFO") as captured:
             _run(jarvis._receive_audio())
 
         log = "\n".join(captured.output)
@@ -1087,7 +1083,6 @@ class TestPersistentMemoryFlow(unittest.TestCase):
             "¿Quieres que lo guarde solo en JARVIS o de forma persistente en LILITH?",
         )
         client.store_memory.assert_not_awaited()
-        local_store.assert_not_called()
 
     def test_duplicate_function_call_id_writes_once(self):
         client = self._client()
@@ -1132,21 +1127,21 @@ class TestPersistentMemoryFlow(unittest.TestCase):
             "category": "projects", "key": "projects/temporary_test_code", "value": "7319",
         })
         canonical.id = "canonical-memory-call-id"
-        with patch("main.update_memory") as local_store:
-            responses = _run(jarvis._execute_tool_batch([local, canonical]))
+        responses = _run(jarvis._execute_tool_batch([local, canonical]))
         self.assertEqual(client.store_memory.await_count, 1)
-        local_store.assert_not_called()
         self.assertIn("duplicate", responses[1].response["result"])
 
     def test_operational_local_note_remains_local(self):
         jarvis = _make_jarvis()
         jarvis._begin_schedule_turn("Anota el modo de esta sesión.", "voice")
-        with patch("main.update_memory") as local_store:
-            response = _run(jarvis._execute_tool_batch([_fake_fc("save_memory", {
-                "category": "notes", "key": "session_mode", "value": "diagnostic",
-            })]))[0]
+        response = _run(jarvis._execute_tool_batch([_fake_fc("save_memory", {
+            "category": "notes", "key": "session_mode", "value": "diagnostic",
+        })]))[0]
         self.assertEqual(response.response["result"], "ok")
-        local_store.assert_called_once()
+        self.assertEqual(
+            jarvis._local_session_memory["notes"]["session_mode"]["value"],
+            "diagnostic",
+        )
 
     def test_preference_live_save_is_canonical_lilith_and_natural_delete(self):
         transcript = "Guarda en tu memoria que prefiero la luz al 40%."
@@ -1157,14 +1152,12 @@ class TestPersistentMemoryFlow(unittest.TestCase):
         )
         jarvis.session = session
 
-        with patch("main.update_memory") as local_store:
-            _run(jarvis._receive_audio())
+        _run(jarvis._receive_audio())
 
         client.store_memory.assert_awaited_once()
         stored_key, stored_value = client.store_memory.await_args.args[:2]
         self.assertEqual(stored_key, "preferences/preferred_light_level")
         self.assertEqual(stored_value, "Prefiere la luz al 40%.")
-        local_store.assert_not_called()
 
         jarvis._shutdown_requested.clear()
         jarvis._begin_schedule_turn("¿Qué recuerdas sobre mi luz?", "voice")
@@ -1189,10 +1182,14 @@ class TestPersistentMemoryFlow(unittest.TestCase):
             "No lo guardes en LILITH; guárdalo solo localmente.",
         )
         jarvis.session = session
-        with patch("main.update_memory") as local_store:
-            _run(jarvis._receive_audio())
+        _run(jarvis._receive_audio())
         self.assertEqual(session.responses[0].response["result"], "ok")
-        local_store.assert_called_once()
+        self.assertEqual(
+            jarvis._local_session_memory["notes"]["fact_" + main.hashlib.sha256(
+                main._normalized_turn_text("No lo guardes en LILITH; guárdalo solo localmente.").encode("utf-8")
+            ).hexdigest()[:12]]["value"],
+            "diagnostic",
+        )
         client.store_memory.assert_not_awaited()
 
     def test_fragmented_live_local_control_preserves_key_and_value(self):
@@ -1208,18 +1205,17 @@ class TestPersistentMemoryFlow(unittest.TestCase):
         session = TestGeminiLiveSchedulePath.LiveSession(jarvis, call, transcript)
         jarvis.session = session
 
-        with patch("main.update_memory") as local_store, self.assertLogs(
-            "jarvis.main", level="INFO"
-        ) as captured:
+        with self.assertLogs("jarvis.main", level="INFO") as captured:
             _run(jarvis._receive_audio())
 
         log = "\n".join(captured.output)
         self.assertIn("classification=local", log)
         self.assertIn("decision=allowed_local", log)
         self.assertIn('local_indicators=["localmente"]', log)
-        local_store.assert_called_once_with({
-            "notes": {"temporary_number": {"value": "5824"}},
-        })
+        self.assertEqual(
+            jarvis._local_session_memory["notes"]["temporary_number"]["value"],
+            "5824",
+        )
         client.store_memory.assert_not_awaited()
 
     def test_fragmented_negative_lilith_and_solo_local_are_authoritative(self):
@@ -1235,9 +1231,7 @@ class TestPersistentMemoryFlow(unittest.TestCase):
         session = TestGeminiLiveSchedulePath.LiveSession(jarvis, call, transcript)
         jarvis.session = session
 
-        with patch("main.update_memory") as local_store, self.assertLogs(
-            "jarvis.main", level="INFO"
-        ) as captured:
+        with self.assertLogs("jarvis.main", level="INFO") as captured:
             _run(jarvis._receive_audio())
 
         log = "\n".join(captured.output)
@@ -1247,9 +1241,10 @@ class TestPersistentMemoryFlow(unittest.TestCase):
         self.assertIn("routed_tool=save_memory", log)
         self.assertIn('negated_lilith_indicators=["no_lilith"]', log)
         self.assertNotIn("TOOL_CALL  lilith_memory_store", log)
-        local_store.assert_called_once_with({
-            "notes": {"temporary_number": {"value": "5824"}},
-        })
+        self.assertEqual(
+            jarvis._local_session_memory["notes"]["temporary_number"]["value"],
+            "5824",
+        )
         client.store_memory.assert_not_awaited()
 
     def test_control_vocabulary_handles_fragmented_authority_variants(self):
@@ -1274,16 +1269,15 @@ class TestPersistentMemoryFlow(unittest.TestCase):
         call = _fake_fc("lilith_memory_store", {
             "category": "preferences", "key": "temporary_number", "value": "5824",
         })
-        with patch("main.update_memory") as local_store, self.assertLogs(
-            "jarvis.main", level="INFO"
-        ) as captured:
+        with self.assertLogs("jarvis.main", level="INFO") as captured:
             result = _run(jarvis._execute_tool_batch([call]))[0]
 
         self.assertEqual(result.response["result"], "ok")
         self.assertIn("decision=rerouted_local_store", "\n".join(captured.output))
-        local_store.assert_called_once_with({
-            "notes": {"temporary_number": {"value": "5824"}},
-        })
+        self.assertEqual(
+            jarvis._local_session_memory["notes"]["temporary_number"]["value"],
+            "5824",
+        )
         client.store_memory.assert_not_awaited()
 
     def test_current_session_request_never_crosses_to_lilith(self):
@@ -1294,11 +1288,40 @@ class TestPersistentMemoryFlow(unittest.TestCase):
             "Recuerda esto solo durante esta sesión.",
         )
         jarvis.session = session
-        with patch("main.update_memory") as local_store:
-            _run(jarvis._receive_audio())
+        _run(jarvis._receive_audio())
         self.assertEqual(session.responses[0].response["result"], "ok")
-        local_store.assert_called_once()
+        self.assertTrue(jarvis._local_session_memory["notes"])
         client.store_memory.assert_not_awaited()
+
+    def test_local_memory_same_session_read_and_restart_is_empty(self):
+        jarvis = _make_jarvis()
+        jarvis._begin_schedule_turn(
+            "Guarda localmente que mi número temporal es 5824.", "voice"
+        )
+        saved = _run(jarvis._execute_tool_batch([_fake_fc("save_memory", {
+            "category": "notes", "key": "temporary_number", "value": "5824",
+        })]))[0]
+        self.assertEqual(saved.response["result"], "ok")
+
+        found = _run(jarvis._execute_tool(_fake_fc(
+            "local_memory_search", {"key": "temporary_number"},
+        )))
+        self.assertIn("5824", found.response["result"])
+
+        restarted = _make_jarvis()
+        missing = _run(restarted._execute_tool(_fake_fc(
+            "local_memory_search", {"key": "temporary_number"},
+        )))
+        self.assertIn("No matching local JARVIS memory", missing.response["result"])
+
+    def test_local_memory_search_does_not_read_persistent_memory_manager(self):
+        jarvis = _make_jarvis()
+        jarvis._local_session_memory["notes"]["session_only"] = {"value": "ram"}
+        with patch("main.load_memory", side_effect=AssertionError("persistent read forbidden")):
+            found = _run(jarvis._execute_tool(_fake_fc(
+                "local_memory_search", {"key": "session_only"},
+            )))
+        self.assertIn("ram", found.response["result"])
 
     def test_memory_prompt_and_schemas_hide_internal_key_choices(self):
         jarvis = _make_jarvis()
@@ -1864,21 +1887,19 @@ class TestMemoryCanonicalization(unittest.TestCase):
 
     def test_save_memory_allows_notes(self):
         jarvis = _make_jarvis()
-        with patch("main.update_memory") as mock_update:
-            resp = _run(jarvis._execute_tool(_fake_fc("save_memory", {
-                "category": "notes", "key": "session_flag", "value": "debug",
-            })))
+        resp = _run(jarvis._execute_tool(_fake_fc("save_memory", {
+            "category": "notes", "key": "session_flag", "value": "debug",
+        })))
         self.assertEqual(resp.response["result"], "ok")
-        mock_update.assert_called_once()
+        self.assertEqual(jarvis._local_session_memory["notes"]["session_flag"]["value"], "debug")
 
     def test_save_memory_allows_projects(self):
         jarvis = _make_jarvis()
-        with patch("main.update_memory") as mock_update:
-            resp = _run(jarvis._execute_tool(_fake_fc("save_memory", {
-                "category": "projects", "key": "current", "value": "JARVIS",
-            })))
+        resp = _run(jarvis._execute_tool(_fake_fc("save_memory", {
+            "category": "projects", "key": "current", "value": "JARVIS",
+        })))
         self.assertEqual(resp.response["result"], "ok")
-        mock_update.assert_called_once()
+        self.assertEqual(jarvis._local_session_memory["projects"]["current"]["value"], "JARVIS")
 
     def test_save_memory_declaration_warns_about_lilith(self):
         src = open(os.path.join(os.path.dirname(__file__), "..", "main.py"), encoding="utf-8").read()
