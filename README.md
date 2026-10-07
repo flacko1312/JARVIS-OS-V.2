@@ -128,6 +128,7 @@ installs the same `jarvis` command through the standard Python package entry poi
 - [Usage guide](docs/USAGE.md)
 - [Tutorial](docs/TUTORIAL.md)
 - [Complete QA and bug-audit guide](docs/QA.md)
+- [Supported test matrix](docs/TESTING.md)
 - [Contribution notes](CONTRIBUTING.md)
 
 ## Configuration files
