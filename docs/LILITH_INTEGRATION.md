@@ -1,6 +1,6 @@
 # LILITH integration — JL-W001 → JL-W006
 
-Status: **typed input + voice tool calling integrated and verified (2026-10-02).** Merged to `main`.
+Status: **typed input, voice tool calling, routines, HOME resolution, and LILITH command tools integrated.** Human microphone/Gemini Live routine conversation remains the only JL-A10 gate.
 Branch: `main` (merged from `feat/lilith-gemini-tools` via fast-forward, 2026-10-04).
 
 ## What it does
@@ -13,7 +13,7 @@ everything else goes to Gemini exactly as before. With the variables unset, JARV
 |---|---|
 | `recuerda que ...` | stored in LILITH (`jarvis_fact`); HUD shows `LILITH: Guardado...`; **not** sent to Gemini |
 | `qué sabes de ...` | LILITH memory search; HUD shows the stored text; **not** sent to Gemini |
-| HOME words (`luz`, `bombilla`, `puerta`, ...) | router needs an entity (JL-H005 pending) -> LILITH does nothing -> **sent to Gemini** |
+| HOME words (`luz`, `bombilla`, `puerta`, ...) | typed HOME resolves through LILITH `/home/resolve`; safe actions go through `/home/action`; ambiguous/unknown/not-allowed cases do nothing and report honestly |
 | LILITH offline / error / timeout (12 s) | HUD note `LILITH no disponible; continúo con Gemini.` -> **sent to Gemini** |
 | anything else (conversation, windows, files, ...) | **sent to Gemini** |
 | internal prompts starting with `[` (e.g. `[UI EVENT]`), verified self-quit | never offered to LILITH |
@@ -58,6 +58,7 @@ itself (the HUD then shows `SYS: LILITH is configured but the integration could 
   runtime with a fake client, `send_text` hook, `run()` lifecycle, cloud_safe).
 * Library tests (84) live in `flacko1312/jarvis` and need `pytest-asyncio` (not in this venv).
 * Pre-existing failures in this repo (74, mostly `tests/test_ui_regressions.py`) are unrelated and unchanged.
+* Current Linux recovery baseline: `tests/test_lilith_home_resolution.py` = 33 passed. Focused memory authority (`TestPersistentMemoryFlow` + `TestMemoryCanonicalization`) = 23 passed, 4 subtests passed when run with temporary `sounddevice`/`google.genai` stubs; full collection still needs the supported GUI/audio environment.
 * `scripts/lilith_typed_e2e.py`: manual E2E against the real runtime (real Gemini Live session, real LILITH).
   Side effects: one stored memory, a brief low-brightness change on one light (restored), one short Gemini turn.
   Run with `PYTHONUTF8=1`.
@@ -65,11 +66,12 @@ itself (the HUD then shows `SYS: LILITH is configured but the integration could 
 ## Done since initial doc
 
 * **JL-H005**: HOME by typed name resolves through LILITH (`/home/resolve`). Verified E2E.
-* **JL-W005/W006**: Gemini Live tool calling → LILITH. 4 tools: `lilith_memory_search`, `lilith_memory_store`,
-  `lilith_home_action`, `lilith_health`. Verified offline (30 tests). Voice E2E pending (requires Windows + mic).
+* **JL-W005/W006**: Gemini Live tool calling → LILITH. Tools include memory, HOME, health/runtime, docs/source/Git, command submit, and routines. Offline/Linux slices and Windows tool E2E passed; human microphone/Gemini Live routine conversation remains.
 * **JL-M003**: Memory context injection into Gemini system prompt.
 * **JL-S003**: Approval flow for CONSULTATIVE/SENSITIVE actions.
 * **JL-M004**: Deterministic semantic fact identity + context freshness.
+* **JL-A7/JL-A8/JL-A9**: Persistent routines, due execution through LILITH/AUT-5, and natural-language routine tool.
+* **JL-A10**: Real server/JARVIS tool E2E passed; only owner-operated Windows GUI microphone validation remains.
 
 ## Canonical workflow (2026-10-04)
 
