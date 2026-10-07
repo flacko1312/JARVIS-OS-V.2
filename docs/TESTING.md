@@ -72,8 +72,17 @@ These cannot be marked PASS from Linux:
 - Speaking the JL-A9/JL-A10 routine phrases through the real microphone.
 - Confirming Gemini Live interpretation and response in the live GUI.
 - Any test that depends on a physical audio input/output path.
+- Verifying that the Windows runtime at `C:\JARVIS` is identical to this Linux checkout
+  when `/mnt/c/JARVIS` is inaccessible.
 
 Report them as `EXPECTED HARDWARE GATE` until actually performed on the Windows machine.
+
+## 6A. Voice Architecture Scope
+
+The current primary voice/conversation interface is JARVIS + Gemini Live. Do not copy
+LILITH-native wake-word, Whisper or local STT parameters into JARVIS test expectations.
+Those LILITH-native components are deferred/future/fallback work and are tested only in
+their own project scope if reactivated.
 
 ## 7. Reporting Rules
 

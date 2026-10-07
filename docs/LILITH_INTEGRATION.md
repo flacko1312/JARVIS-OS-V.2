@@ -1,9 +1,27 @@
 # LILITH integration — JL-W001 → JL-W006
 
-Status: **typed input, voice tool calling, routines, HOME resolution, and LILITH command tools integrated.** Human microphone/Gemini Live routine conversation remains the only JL-A10 gate.
+Status: **JARVIS + Gemini Live is the canonical current primary voice/conversation interface for the combined system.** Typed input, voice tool calling, routines, HOME resolution, and LILITH command tools are integrated. Human microphone/Gemini Live routine conversation remains the only JL-A10 gate.
 Branch: `main` (merged from `feat/lilith-gemini-tools` via fast-forward, 2026-10-04).
 
 ## What it does
+
+Canonical voice architecture as of 2026-10-07:
+
+```text
+USER
+  -> JARVIS + Gemini Live
+  -> natural conversation / STT / TTS
+  -> structured tools / commands
+  -> LILITH
+  -> memory / decisions / autonomy / routines / Home Assistant / authoritative state
+  -> verified result
+  -> JARVIS response
+```
+
+JARVIS owns live conversation, microphone capture, Gemini Live STT/TTS and tool
+selection. LILITH owns persistent memory, decisions, autonomy, routines, Home Assistant
+and authoritative state. LILITH-native wake-word/local STT is a deferred future/fallback
+project and is not part of current production voice.
 
 When `LILITH_API_URL` and `LILITH_API_KEY` are set, typed messages are offered to LILITH first
 (`JarvisRuntime.process_input`). Only text that LILITH **actually executed** is kept away from Gemini;
