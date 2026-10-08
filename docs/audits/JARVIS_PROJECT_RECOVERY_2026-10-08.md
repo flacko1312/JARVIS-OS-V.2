@@ -232,7 +232,7 @@ Final evidence is recorded after all code/document changes:
 
 - Root pytest: 502 collected; 425 passed; 77 skipped with explicit reason; 0 failed; 0 errors; 10 subtests passed; one external `google.genai`/Python 3.14 deprecation warning.
 - Automated QA: 5/5 checks passed (compile, pip consistency, full pytest, offscreen UI evidence, tracked-secret scan); P0=0/P1=0; three P2 audit findings.
-- Capability self-test: see final Git section/evidence; machine capabilities pass or are explicitly WARN/human-gated, never fabricated.
+- Capability self-test: automated health 100%; seven PASS, one WARN (`AI / VOICE` contracts and 13 input/12 output devices detected, but the isolated self-test process did not receive a Gemini key), zero FAIL; four supervised groups remain.
 - Web: ESLint pass; TypeScript pass; Next 16.4.0 production build pass; production dependency audit 0 vulnerabilities.
 - `pip check`: no broken requirements.
 - `git diff --check`: required before commits.
@@ -262,20 +262,21 @@ The complete register is `docs/TECHNICAL_DEBT.md`. No P0 remains. One P1 is the 
 
 ## 23. Git State
 
-Baseline divergence was reconciled by normal merge; no reset, clean, stash, broad checkout or data deletion was used. Changes are staged explicitly by path and committed logically. The final expected condition is `main == origin/main`, zero ahead/behind, no staged/modified/untracked tracked work. Ignored private/runtime files remain intentionally ignored and are not “dirty” Git state.
+Baseline divergence was reconciled by normal merge; no reset, clean, stash, broad checkout or data deletion was used. Changes were staged explicitly by path and committed logically. Final handoff verification uses `git rev-parse HEAD`, `git rev-parse origin/main`, and `git rev-list --left-right --count origin/main...HEAD`; they match with `0 0`, and the tracked worktree is clean. Ignored private/runtime files remain intentionally ignored and are not “dirty” Git state.
 
-The Linux clone is expected to remain at its prior clean commit until explicitly pulled; it is a secondary clone, not a contradictory source of truth. INTEGRACION remained clean and required no change because its canonical boundary was consistent. LILITH remained untouched.
+The Linux clone was clean and five commits behind after the Windows push, then fast-forwarded to the same `origin/main`; it is now clean and `0 0`. INTEGRACION remained clean and `0 0` at `5ce1944`; the historical `/home/flako1312/jarvis` repository remained clean and `0 0` at `db5c25f`. LILITH remained untouched.
+
+The real runtime was restarted after the recovery commits. The new process tree started at 2026-10-08 10:39 Europe/Madrid from `C:\JARVIS\.venv\Scripts\jarvis.exe`; the base interpreter child reported the same start second. `import main` resolved to `C:\JARVIS\main.py`. Sanitized startup evidence showed Gemini Live model enumeration, `JARVIS_START`, LILITH health 200, memory-context retrieval, and LILITH monitor/runtime online. `tmp/jarvis_status.json` reported `state=online`. This proves source/runtime identity and connection startup, not spoken microphone quality.
 
 ## 24. Human / Hardware Gates
 
-1. Restart the committed `C:\JARVIS` runtime and confirm process start is after final HEAD.
-2. Speak: “Hola JARVIS, dime que estás conectado.” Confirm Spanish audio and stable LISTENING/SPEAKING return.
-3. Ask: “¿Qué rutinas tengo programadas?” Confirm `lilith_routine` list.
-4. Speak: “Crea una rutina para encender la bombilla del mueble todos los días a las nueve de la noche.” Confirm `classification=recurring`, `decision=allowed`, `TOOL_CALL lilith_routine`, verified LILITH persistence; forbid reminder/Home substitution.
-5. Ask: “Enséñame mis rutinas.” Confirm the created item is authoritative.
-6. Say: “Borra la rutina que acabas de crear.” Confirm verified deletion, then list again.
-7. Optionally perform one safe owner-approved HA on/off action and restore state; never use a dangerous action for certification.
-8. Check mute/unmute, interruption, device loss/reconnect, display scaling and a 30-minute soak.
+1. Speak: “Hola JARVIS, dime que estás conectado.” Confirm Spanish audio and stable LISTENING/SPEAKING return.
+2. Ask: “¿Qué rutinas tengo programadas?” Confirm `lilith_routine` list.
+3. Speak: “Crea una rutina para encender la bombilla del mueble todos los días a las nueve de la noche.” Confirm `classification=recurring`, `decision=allowed`, `TOOL_CALL lilith_routine`, verified LILITH persistence; forbid reminder/Home substitution.
+4. Ask: “Enséñame mis rutinas.” Confirm the created item is authoritative.
+5. Say: “Borra la rutina que acabas de crear.” Confirm verified deletion, then list again.
+6. Optionally perform one safe owner-approved HA on/off action and restore state; never use a dangerous action for certification.
+7. Check mute/unmute, interruption, device loss/reconnect, display scaling and a 30-minute soak.
 
 This is an `EXPECTED HARDWARE GATE`, not a failure and not a PASS. JL-A10 remains open until the owner supplies evidence.
 

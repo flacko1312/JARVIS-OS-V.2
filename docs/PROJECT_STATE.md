@@ -25,7 +25,7 @@ Machine-verifiable recovery and stabilization are complete on the real Windows c
 - Real Gemini Live network enumeration was observed from the runtime/test environment, but complete spoken STT/TTS/tool E2E must be owner-operated.
 - Real microphone selection, echo cancellation quality, barge-in, device loss/reconnect, Windows display scaling, and 30-minute soak are not machine-certifiable without hardware use.
 - Real LILITH routine create/list/delete and one safe Home Assistant action require owner approval because they mutate authoritative external state.
-- The active runtime must be restarted after the recovery commit to load the stabilized source; process identity and post-restart log evidence are part of finalization.
+- The active runtime was restarted from `C:\JARVIS\.venv\Scripts\jarvis.exe` after the recovery commits. Its process tree resolves to the same checkout, `import main` resolves to `C:\JARVIS\main.py`, status is online, Gemini model discovery succeeded, and the LILITH monitor reported online. Spoken/audio behavior remains a human gate.
 
 ## Not started / deferred
 
