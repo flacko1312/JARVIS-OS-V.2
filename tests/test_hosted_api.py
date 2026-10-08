@@ -168,7 +168,9 @@ class HostedApiTests(unittest.TestCase):
         import main
 
         with patch.object(main, "JarvisLive", FakeLiveEngine):
-            with self.client.websocket_connect(f"/ws?token={self.access_token}") as socket:
+            with self.client.websocket_connect(
+                "/ws", subprotocols=["jarvis", self.access_token]
+            ) as socket:
                 received = [socket.receive_json(), socket.receive_json()]
                 self.assertEqual({event["type"] for event in received}, {"ready", "status"})
                 socket.send_json({"type": "text", "content": "status report"})

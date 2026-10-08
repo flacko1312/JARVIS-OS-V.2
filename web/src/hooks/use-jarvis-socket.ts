@@ -75,7 +75,7 @@ export function useJarvisSocket() {
       const token = getToken();
       if (!token || !desired.current) return;
       setState("CONNECTING");
-      const ws = new WebSocket(`${WS_URL}/ws?token=${encodeURIComponent(token)}`);
+      const ws = new WebSocket(`${WS_URL}/ws`, ["jarvis", token]);
       ws.binaryType = "arraybuffer";
       socket.current = ws;
       ws.onmessage = (message) => {

@@ -16,6 +16,11 @@ EXPECTED_TOOLS = {
     "desktop_control", "code_helper", "dev_agent", "agent_task",
     "computer_control", "game_updater", "flight_finder", "jarvis_ui_control",
     "file_processor", "create_presentation", "deep_research", "graphics_quality", "task_status", "save_memory",
+    "local_memory_search", "lilith_memory_search", "lilith_memory_store", "lilith_memory_delete",
+    "lilith_home_action", "lilith_request_approval", "lilith_resolve_approval", "lilith_health",
+    "lilith_runtime_status", "lilith_docs_list", "lilith_docs_read", "lilith_docs_search",
+    "lilith_source_list", "lilith_source_read", "lilith_source_search", "lilith_git_status",
+    "lilith_command_submit", "lilith_routine",
 }
 
 

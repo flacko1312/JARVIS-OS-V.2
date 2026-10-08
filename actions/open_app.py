@@ -1,3 +1,5 @@
+import os
+import re
 import time
 import subprocess
 import platform
@@ -79,11 +81,11 @@ def _normalize(raw: str) -> str:
 
 def _launch_windows(app_name: str) -> bool:
 
-    if shutil.which(app_name) or shutil.which(app_name.split(".")[0]):
+    executable = shutil.which(app_name) or shutil.which(app_name.split(".")[0])
+    if executable:
         try:
             subprocess.Popen(
-                app_name,
-                shell=True,
+                [executable],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
@@ -91,9 +93,9 @@ def _launch_windows(app_name: str) -> bool:
         except Exception as e:
             print(f"[open_app] subprocess failed: {e}")
 
-    if ":" in app_name:
+    if re.fullmatch(r"ms-settings:(?:[A-Za-z0-9._/?=&%-]*)", app_name):
         try:
-            subprocess.Popen(f"start {app_name}", shell=True)
+            os.startfile(app_name)
             return True
         except Exception:
             pass

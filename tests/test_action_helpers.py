@@ -33,7 +33,10 @@ class ActionHelperTests(unittest.TestCase):
         self.assertEqual(browser_control._normalize_url("http://localhost:8000"), "http://localhost:8000")
 
     def test_open_app_normalization_removes_polite_noise(self):
-        self.assertEqual(open_app._normalize("Please open Google Chrome"), "Google Chrome")
+        expected = open_app._APP_ALIASES["google chrome"].get(
+            open_app._SYSTEM, "Google Chrome"
+        )
+        self.assertEqual(open_app._normalize("Please open Google Chrome"), expected)
 
     def test_successful_macos_direct_launch_has_no_artificial_post_wait(self):
         completed = MagicMock(returncode=0)

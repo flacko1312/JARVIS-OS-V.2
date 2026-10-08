@@ -265,7 +265,7 @@ async def live_socket(websocket: WebSocket) -> None:
             await websocket.close(code=4401, reason=str(exc.detail))
             return
 
-    await websocket.accept()
+    await websocket.accept(subprotocol="jarvis")
     if not api_key:
         await websocket.send_json({
             "type": "error",

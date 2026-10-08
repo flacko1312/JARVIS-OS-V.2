@@ -109,10 +109,14 @@ def automated(_args) -> int:
         "QT_QPA_PLATFORM": env.get("QT_QPA_PLATFORM", "offscreen"),
         "PYTHONUNBUFFERED": "1",
     })
+    test_env = env.copy()
+    # The suite already mocks side effects and explicitly exercises QA mode where
+    # required. Globally enabling the guard changes the behavior under test.
+    test_env["JARVIS_QA_MODE"] = "0"
     report.checks.extend([
         _run_check("source compilation", [sys.executable, "-m", "compileall", "-q", "actions", "agent", "api", "awareness", "config", "core", "memory", "main.py", "ui.py"], env),
         _run_check("dependency consistency", [sys.executable, "-m", "pip", "check"], env),
-        _run_check("complete unittest suite", [sys.executable, "-m", "unittest", "discover", "-s", "tests", "-v"], env),
+        _run_check("complete pytest suite", [sys.executable, "-m", "pytest", "-q"], test_env),
         _run_check("offscreen UI evidence", [sys.executable, "scripts/qa_ui_probe.py", str(directory / "ui")], env),
         _secret_scan(),
     ])

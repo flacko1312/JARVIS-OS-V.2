@@ -35,11 +35,17 @@ def get_current_user(
 
 
 def websocket_user(websocket: WebSocket, db: Session) -> User:
-    token = websocket.query_params.get("token", "")
+    authorization = websocket.headers.get("authorization", "")
+    token = ""
+    if authorization.lower().startswith("bearer "):
+        token = authorization.split(" ", 1)[1].strip()
     if not token:
-        authorization = websocket.headers.get("authorization", "")
-        if authorization.lower().startswith("bearer "):
-            token = authorization.split(" ", 1)[1].strip()
+        protocols = [
+            value.strip()
+            for value in websocket.headers.get("sec-websocket-protocol", "").split(",")
+        ]
+        if len(protocols) >= 2 and protocols[0] == "jarvis":
+            token = protocols[1]
     if not token:
         raise HTTPException(status_code=401, detail="Authentication required")
     return _user_for_token(token, db)

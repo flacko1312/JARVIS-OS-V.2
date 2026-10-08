@@ -36,7 +36,8 @@ class StartupClapTests(unittest.TestCase):
 
     def test_gate_times_out_without_claps(self):
         factory = lambda **kwargs: _ClapStream(emit_claps=False, **kwargs)
-        self.assertFalse(main.wait_for_startup_claps(timeout=0.06, stream_factory=factory))
+        with patch.dict(os.environ, {"JARVIS_SKIP_CLAP_GATE": ""}):
+            self.assertFalse(main.wait_for_startup_claps(timeout=0.06, stream_factory=factory))
 
 
 if __name__ == "__main__":

@@ -16,3 +16,7 @@ py-modules = ["main", "ui", "runtime"]
 
 [tool.setuptools.packages.find]
 include = ["actions*", "agent*", "api*", "awareness*", "config*", "core*", "lilith_client*", "memory*", "router*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+norecursedirs = [".*", ".venv", "node_modules", "tmp"]

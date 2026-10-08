@@ -32,14 +32,20 @@ class CapabilityResult:
 def _run_tests(*names: str) -> tuple[bool, str]:
     environment = {
         **os.environ,
-        "JARVIS_QA_MODE": "1",
+        # Individual safety tests opt into QA mode themselves. Enabling it for
+        # every contract test changes memory/action behavior and yields false failures.
+        "JARVIS_QA_MODE": "0",
+        "JARVIS_SKIP_CLAP_GATE": "",
         "QT_QPA_PLATFORM": "offscreen",
+        "PYTHONIOENCODING": "utf-8",
     }
     result = subprocess.run(
         [sys.executable, "-m", "unittest", "-q", *names],
         cwd=ROOT,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=180,
         check=False,
         env=environment,

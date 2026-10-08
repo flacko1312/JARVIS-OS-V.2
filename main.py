@@ -1889,7 +1889,6 @@ CLOUD_SAFE_ACTIONS = frozenset({
     "create_presentation",
     "flight_finder",
     "email_control",
-    "code_helper",
     "youtube_video",
 })
 
@@ -3752,12 +3751,15 @@ class JarvisLive:
     async def _execute_tool_batch(self, calls):
         """Run read-only calls concurrently while preserving mutation order."""
         mutating = {
-            "send_message", "prepare_message_reply", "email_control", "reminder",
+            "open_app", "send_message", "prepare_message_reply", "email_control", "reminder",
+            "youtube_video", "media_control", "browser_control", "agent_task",
             "computer_settings", "computer_control", "desktop_control", "file_controller",
-            "file_processor", "code_helper", "dev_agent", "game_updater",
-            "create_presentation", "save_memory", "jarvis_ui_control", "graphics_quality",
+            "file_processor", "code_helper", "dev_agent", "game_updater", "flight_finder",
+            "create_presentation", "deep_research", "task_status", "save_memory",
+            "jarvis_ui_control", "graphics_quality",
             "lilith_memory_store", "lilith_memory_delete", "lilith_home_action",
-            "lilith_resolve_approval", "lilith_routine",
+            "lilith_request_approval", "lilith_resolve_approval", "lilith_command_submit",
+            "lilith_routine",
         }
         call_list = list(calls or [])
         # Real tool activity -> UI (drives the EXECUTING state of the core visual).
