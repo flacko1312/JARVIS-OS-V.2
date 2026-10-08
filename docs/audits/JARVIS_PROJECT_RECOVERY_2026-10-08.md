@@ -268,34 +268,55 @@ The Linux clone was clean and five commits behind after the Windows push, then f
 
 The real runtime was restarted after the recovery commits. The new process tree started at 2026-10-08 10:39 Europe/Madrid from `C:\JARVIS\.venv\Scripts\jarvis.exe`; the base interpreter child reported the same start second. `import main` resolved to `C:\JARVIS\main.py`. Sanitized startup evidence showed Gemini Live model enumeration, `JARVIS_START`, LILITH health 200, memory-context retrieval, and LILITH monitor/runtime online. `tmp/jarvis_status.json` reported `state=online`. This proves source/runtime identity and connection startup, not spoken microphone quality.
 
-## 24. Human / Hardware Gates
+## 24. JL-A10 Physical Test Status
+
+Status: **PARTIAL PASS / BUG FOUND**.
+
+Passed:
+
+- Microphone/runtime active.
+- LILITH connectivity.
+- `lilith_routine` list.
+- Recurring routing to `lilith_routine`.
+- Create persistence.
+- List after create.
+- Delete.
+- List after delete.
+
+Failed:
+
+- Semantic schedule correctness: intended `22:00` from "10 de la noche", submitted `13:00`.
+
+Root finding for the fix: LILITH correctly executed the structured schedule JARVIS supplied. The defect was upstream in JARVIS/Gemini Live FunctionCall acceptance: a contradictory `schedule.hour=13` could be accepted when deterministic current-turn routine text was available in the FunctionCall description. JARVIS now validates deterministic Spanish time expressions before routine submission. This does not complete JL-A10; the owner must physically retest the fixed build.
+
+## 25. Human / Hardware Gates
 
 1. Speak: “Hola JARVIS, dime que estás conectado.” Confirm Spanish audio and stable LISTENING/SPEAKING return.
 2. Ask: “¿Qué rutinas tengo programadas?” Confirm `lilith_routine` list.
-3. Speak: “Crea una rutina para encender la bombilla del mueble todos los días a las nueve de la noche.” Confirm `classification=recurring`, `decision=allowed`, `TOOL_CALL lilith_routine`, verified LILITH persistence; forbid reminder/Home substitution.
+3. Speak: “Crea una rutina para encender la bombilla del mueble todos los días a las diez de la noche.” Confirm `classification=recurring`, `decision=allowed`, `TOOL_CALL lilith_routine`, submitted schedule `22:00 Europe/Madrid`, verified LILITH persistence; forbid reminder/Home substitution and forbid `13:00`.
 4. Ask: “Enséñame mis rutinas.” Confirm the created item is authoritative.
 5. Say: “Borra la rutina que acabas de crear.” Confirm verified deletion, then list again.
 6. Optionally perform one safe owner-approved HA on/off action and restore state; never use a dangerous action for certification.
 7. Check mute/unmute, interruption, device loss/reconnect, display scaling and a 30-minute soak.
 
-This is an `EXPECTED HARDWARE GATE`, not a failure and not a PASS. JL-A10 remains open until the owner supplies evidence.
+JL-A10 is not complete. Do not claim the physical retest passed until the owner supplies new evidence from the fixed build.
 
-## 25. Documentation Hierarchy
+## 26. Documentation Hierarchy
 
 `README.md` is the entry point. Canonical authorities are `docs/ARCHITECTURE.md`, `docs/PROJECT_STATE.md`, `docs/TASKS.md`, `docs/TESTING.md`, `docs/LILITH_INTEGRATION.md`, and `docs/TECHNICAL_DEBT.md`. Git is detailed history; `docs/CHANGELOG.md` is a summary. This audit is a dated evidence snapshot. `docs/PROJECT_DOCUMENT_INDEX.md` is navigation only. `docs/MEMORY.md` and external older roadmap/state documents are historical/reference, not active authority.
 
-## 26. Recovery Definition of Done
+## 27. Recovery Definition of Done
 
 All machine-verifiable items are satisfied: identity, architecture, tool inventory, memory authority, routine/HA routing, API/config/dependency/security classification, baseline/final tests, docs hierarchy, debt, and Git reconciliation. Zero unexplained failures, collection errors or tracked dirty files are required at final handoff. Human audio/routine/HA certification is explicitly excluded from machine completion and prevents unconditional GO.
 
-## 27. Exact Current Development Point
+## 28. Exact Current Development Point
 
 JARVIS is at post-recovery stabilization: current code implements Gemini Live desktop/hosted interfaces, deterministic authority guards, LILITH persistent memory/routines/HA integration, and local Windows actions. No new feature branch was started. The active boundary is “certify the existing behavior,” not “extend it.”
 
-## 28. GO / NO-GO
+## 29. GO / NO-GO
 
-**NO-GO for unconditional production certification.** Reason: JL-A10 spoken microphone/Gemini Live and real authoritative routine lifecycle have not been owner-operated on the final restarted commit. **GO for machine baseline and owner certification:** automated code, tests, QA, API, GUI offscreen, dependency and frontend build checks have no unexplained failure.
+**NO-GO for unconditional production certification.** Reason: JL-A10 owner-operated testing found the semantic routine schedule bug above, and the fixed build has not been physically retested. **GO for machine baseline and owner retest:** automated routine guard evidence covers the fix.
 
-## 29. Exact Next JARVIS Task
+## 30. Exact Next JARVIS Task
 
-Run **JL-A10 owner-operated spoken Gemini Live certification** exactly as section 24 and `docs/TESTING.md` specify, capture sanitized correlation/guard evidence, clean up the created routine, and only then decide whether JL-A10 can close. Do not start AUT-8 from this recovery.
+Run **JL-A10 owner-operated spoken Gemini Live certification** exactly as section 25 and `docs/TESTING.md` specify, capture sanitized correlation/guard evidence, clean up the created routine, and only then decide whether JL-A10 can close. Do not start AUT-8 or AUT-9 from this recovery.

@@ -1,6 +1,6 @@
 # LILITH integration — JL-W001 → JL-W006
 
-Status: **JARVIS + Gemini Live is the canonical current primary voice/conversation interface for the combined system.** Typed input, voice tool calling, routines, HOME resolution, and LILITH command tools are integrated. Human microphone/Gemini Live routine conversation remains the only JL-A10 gate.
+Status: **JARVIS + Gemini Live is the canonical current primary voice/conversation interface for the combined system.** Typed input, voice tool calling, routines, HOME resolution, and LILITH command tools are integrated. JL-A10 physical routine testing is PARTIAL PASS / BUG FOUND pending retest of the semantic schedule fix.
 Branch: `main` (merged from `feat/lilith-gemini-tools` via fast-forward, 2026-10-04).
 
 ## What it does
@@ -89,7 +89,7 @@ itself (the HUD then shows `SYS: LILITH is configured but the integration could 
 * **JL-S003**: Approval flow for CONSULTATIVE/SENSITIVE actions.
 * **JL-M004**: Deterministic semantic fact identity + context freshness.
 * **JL-A7/JL-A8/JL-A9**: Persistent routines, due execution through LILITH/AUT-5, and natural-language routine tool.
-* **JL-A10**: Real server/JARVIS tool E2E passed; only owner-operated Windows GUI microphone validation remains.
+* **JL-A10**: PARTIAL PASS / BUG FOUND. Passed: microphone/runtime active, LILITH connectivity, `lilith_routine` list, recurring routing to `lilith_routine`, create persistence, list after create, delete, and list after delete. Failed: semantic schedule correctness, where intended `22:00` from "10 de la noche" was submitted as `13:00`. The deterministic JARVIS guard has regression coverage for the fix, but JL-A10 is not complete until the owner physically retests it.
 
 ## Canonical workflow (2026-10-04)
 

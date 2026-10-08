@@ -125,7 +125,7 @@ git pull --ff-only origin main
 
 - "Hola JARVIS, dime que estás conectado."
 - "¿Qué rutinas tengo programadas?"
-- "Crea una rutina para encender la bombilla del mueble todos los días a las nueve de la noche."
+- "Crea una rutina para encender la bombilla del mueble todos los días a las diez de la noche."
 - "Enséñame mis rutinas."
 - "Borra la rutina que acabas de crear."
 
@@ -134,6 +134,7 @@ git pull --ff-only origin main
 - Console/HUD log shows the spoken transcript.
 - Gemini Live responds audibly and/or with visible transcript.
 - For routine commands, logs show `lilith_routine` or the canonical command path, not `lilith_home_action` for recurring routine creation.
+- For the routine create, the submitted schedule is `22:00 Europe/Madrid`; `13:00` is a failure for "diez de la noche".
 - LILITH returns a completed result for create/list/delete before JARVIS claims success.
 - No traceback, reconnect loop, or false success appears.
 

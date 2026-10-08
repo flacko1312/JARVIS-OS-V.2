@@ -6,9 +6,11 @@ Status: **CANONICAL ACTIONABLE BACKLOG**. Do not use historical prompts or audit
 
 ### JL-A10 — owner-operated spoken Gemini Live certification
 
-Status: OPEN / EXPECTED HARDWARE GATE.
+Status: OPEN / PARTIAL PASS / BUG FOUND.
 
-Run the exact procedure in `docs/TESTING.md` from the restarted `C:\JARVIS` runtime. Verify spoken Spanish, microphone/audio, routine create/list/delete through `lilith_routine`, and the absence of local-reminder/Home-action substitution. Record sanitized log correlation IDs and then close JL-A10 only with owner evidence.
+Owner physical evidence confirmed microphone/runtime activity, LILITH connectivity, `lilith_routine` list routing, create persistence, list after create, delete, and list after delete. It also found a semantic schedule correctness bug: intended `22:00` from "10 de la noche", but JARVIS submitted `13:00` to LILITH. JL-A10 must stay open until the fixed build is retested physically.
+
+Run the exact procedure in `docs/TESTING.md` from the restarted `C:\JARVIS` runtime. Verify spoken Spanish, microphone/audio, routine create/list/delete through `lilith_routine`, and semantic schedule correctness for `10 de la noche` -> `22:00`. Record sanitized log correlation IDs and then close JL-A10 only with owner evidence.
 
 ## Stabilization backlog
 
@@ -21,6 +23,6 @@ Run the exact procedure in `docs/TESTING.md` from the restarted `C:\JARVIS` runt
 
 ## Explicitly out of scope
 
-- AUT-8.
+- AUT-8 / AUT-9.
 - LILITH-native production voice.
 - New agents, schedulers, memory stores, Home Assistant clients, or GUI redesign.

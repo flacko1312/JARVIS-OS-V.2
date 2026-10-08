@@ -62,19 +62,30 @@ def daily_time_from_text(text: str) -> tuple[int, int] | None:
     if am_pm:
         return int(am_pm.group(1)) % 12 + (12 if am_pm.group(2) == "pm" else 0), 0
     words = "|".join(_SPANISH_NUMBERS)
-    spoken = re.search(rf"\b(?:a las|a la)\s+(\d{{1,2}}|{words})\b", value)
+    spoken = re.search(
+        rf"\b(?:(?:a las|a la)\s+)?(\d{{1,2}}|{words})\s*(?:h\s*)?"
+        rf"(?:de la\s+)?(manana|tarde|noche)\b",
+        value,
+    )
+    if not spoken:
+        spoken = re.search(rf"\b(?:a las|a la)\s+(\d{{1,2}}|{words})\b", value)
     if not spoken:
         return None
     raw_hour = spoken.group(1)
     hour = int(raw_hour) if raw_hour.isdigit() else _SPANISH_NUMBERS[raw_hour]
     if not 1 <= hour <= 23:
         return None
-    period = re.search(r"\b(?:de la )?(manana|tarde|noche)\b", value)
+    period = spoken.group(2) if spoken.lastindex and spoken.lastindex >= 2 else None
+    if period is None:
+        period_match = re.search(r"\b(?:de la )?(manana|tarde|noche)\b", value)
+        period = period_match.group(1) if period_match else None
     if hour <= 12 and period is None:
         return None
-    if period and period.group(1) in {"tarde", "noche"} and hour < 12:
+    if period == "noche" and hour < 6:
+        return None
+    if period in {"tarde", "noche"} and hour < 12:
         hour += 12
-    if period and period.group(1) == "manana" and hour == 12:
+    if period == "manana" and hour == 12:
         hour = 0
     return hour, 0
 

@@ -674,6 +674,21 @@ class TestJlA9ScheduleExecutionGuard(unittest.TestCase):
             (21, 0),
         )
 
+    def test_l2_spanish_explicit_times_normalize_deterministically(self):
+        cases = {
+            "10 de la noche": (22, 0),
+            "9 de la noche": (21, 0),
+            "10 de la mañana": (10, 0),
+            "1 de la tarde": (13, 0),
+            "22:00": (22, 0),
+        }
+        for text, expected in cases.items():
+            with self.subTest(text=text):
+                self.assertEqual(daily_time_from_text(text), expected)
+
+    def test_l3_one_at_night_is_ambiguous(self):
+        self.assertIsNone(daily_time_from_text("1 de la noche"))
+
     def test_m_madrid_timezone_aliases_normalize(self):
         for value in ("Madrid", "hora de Madrid", "mi zona horaria", None):
             self.assertEqual(normalize_timezone(value), "Europe/Madrid")
@@ -712,6 +727,39 @@ class TestJlA9ScheduleExecutionGuard(unittest.TestCase):
         self.assertEqual(params["schedule"], {"hour": 21, "minute": 0})
         self.assertEqual(params["timezone"], "Europe/Madrid")
         self.assertEqual(params["action_parameters"]["entity_id"], "light.bombilla_mueble")
+
+    def test_o2_physical_failure_schedule_13_is_corrected_to_2200(self):
+        client = self._home_client()
+        jarvis = _make_jarvis(lilith_client=client)
+        description = "Encender bombilla mueble todos los días a las 10 de la noche"
+        jarvis._begin_schedule_turn(description, "voice")
+        args = {
+            "timezone": "Europe/Madrid",
+            "action_intent": "home.action",
+            "description": description,
+            "operation": "create",
+            "action_parameters": {
+                "target": "bombilla mueble",
+                "action": "turn_on",
+            },
+            "schedule_type": "daily",
+            "name": "Encender bombilla mueble diario",
+            "schedule": {
+                "hour": 13,
+                "minute": 0,
+            },
+        }
+
+        _run(jarvis._execute_tool_batch([_fake_fc("lilith_routine", args)]))
+
+        self.assertEqual(client.command_submit.await_count, 1)
+        kwargs = client.command_submit.await_args.kwargs
+        self.assertEqual(kwargs["intent"], "routines.create")
+        self.assertEqual(kwargs["parameters"]["schedule"], {"hour": 22, "minute": 0})
+        self.assertEqual(kwargs["parameters"]["timezone"], "Europe/Madrid")
+        self.assertEqual(kwargs["parameters"]["action_intent"], "home.action")
+        self.assertEqual(kwargs["idempotency_key"], "jarvis:routine:fake-lilith_routine")
+        client.home_action.assert_not_awaited()
 
     def test_p_ambiguous_nine_requests_clarification_without_effect(self):
         client = self._home_client()
@@ -985,6 +1033,42 @@ class TestGeminiLiveSchedulePath(unittest.TestCase):
         self.assertIn("decision=allowed", log)
         self.assertNotIn("blocked_wrong_tool", log)
         self.assertEqual(client.command_submit.await_count, 1)
+
+    def test_live_physical_failure_description_time_overrides_bad_schedule(self):
+        description = "Encender bombilla mueble todos los días a las 10 de la noche"
+        args = {
+            "operation": "create",
+            "name": "Encender bombilla mueble diario",
+            "description": description,
+            "schedule_type": "daily",
+            "schedule": {"hour": 13, "minute": 0},
+            "timezone": "Europe/Madrid",
+            "action_intent": "home.action",
+            "action_parameters": {
+                "target": "bombilla mueble",
+                "action": "turn_on",
+            },
+        }
+        client = TestJlA9ScheduleExecutionGuard._home_client()
+        jarvis = _make_jarvis(lilith_client=client)
+        session = self.LiveSession(
+            jarvis,
+            _fake_fc("lilith_routine", args),
+            "Crea una rutina para encender",
+        )
+        jarvis.session = session
+
+        with patch("main.reminder") as reminder_action:
+            _run(jarvis._receive_audio())
+
+        params = client.command_submit.await_args.kwargs["parameters"]
+        self.assertEqual(params["schedule"], {"hour": 22, "minute": 0})
+        self.assertEqual(params["timezone"], "Europe/Madrid")
+        self.assertEqual(client.command_submit.await_args.kwargs["intent"], "routines.create")
+        client.home_action.assert_not_awaited()
+        reminder_action.assert_not_called()
+        self.assertEqual(len(session.responses), 1)
+        self.assertNotIn("13", session.responses[0].response["result"])
 
 
 class TestPersistentMemoryFlow(unittest.TestCase):

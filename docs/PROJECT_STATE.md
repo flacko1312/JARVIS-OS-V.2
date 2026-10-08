@@ -4,7 +4,7 @@ Status: **CANONICAL CURRENT STATE** as of 2026-10-08.
 
 ## Verdict
 
-Machine-verifiable recovery and stabilization are complete on the real Windows checkout. The repository is not eligible for an unconditional production GO because real microphone/Gemini spoken interaction, device audio behavior, and safe owner-operated routine lifecycle remain human gates. JL-A10 therefore remains open; AUT-8 was not started.
+Machine-verifiable recovery and stabilization are complete on the real Windows checkout. The repository is not eligible for an unconditional production GO because owner-operated JL-A10 found a real semantic schedule bug in spoken routine creation: "10 de la noche" was intended as `22:00`, but JARVIS submitted `13:00` to LILITH. JL-A10 therefore remains open pending physical retest of the fix; AUT-8/AUT-9 were not started.
 
 ## Verified done
 
@@ -14,6 +14,7 @@ Machine-verifiable recovery and stabilization are complete on the real Windows c
 - 46 unique declared tools have dispatch paths and schemas.
 - Memory authority guards enforce LILITH persistence versus explicit in-process session storage.
 - Routine guard enforces recurring/one-shot/immediate routing, turn provenance, and duplicate FunctionCall IDs.
+- Routine guard now validates deterministic Spanish time expressions in current-turn routine descriptions before submitting `lilith_routine`, including the JL-A10 `10 de la noche` -> `22:00` regression.
 - LILITH HTTP contract is covered for health/runtime/docs/source/Git/commands/memory/Home/approvals; routine persistence uses the command gateway.
 - Root pytest discovery is deterministic and ignores runtime snapshots under `tmp/`.
 - Automated PyQt offscreen evidence, API/WebSocket tests, secret scan, dependency check, frontend lint/typecheck/build, and production dependency audit run successfully.
@@ -24,12 +25,12 @@ Machine-verifiable recovery and stabilization are complete on the real Windows c
 
 - Real Gemini Live network enumeration was observed from the runtime/test environment, but complete spoken STT/TTS/tool E2E must be owner-operated.
 - Real microphone selection, echo cancellation quality, barge-in, device loss/reconnect, Windows display scaling, and 30-minute soak are not machine-certifiable without hardware use.
-- Real LILITH routine create/list/delete and one safe Home Assistant action require owner approval because they mutate authoritative external state.
-- The active runtime was restarted from `C:\JARVIS\.venv\Scripts\jarvis.exe` after the recovery commits. Its process tree resolves to the same checkout, `import main` resolves to `C:\JARVIS\main.py`, status is online, Gemini model discovery succeeded, and the LILITH monitor reported online. Spoken/audio behavior remains a human gate.
+- JL-A10 physical test is a partial pass / bug found: microphone/runtime active, LILITH connectivity, `lilith_routine` list, recurring routing, create persistence, list after create, delete, and list after delete passed; semantic schedule correctness failed because intended `22:00` was submitted as `13:00`.
+- The fixed build still requires owner physical retest. Do not mark JL-A10 complete from automated tests.
 
 ## Not started / deferred
 
-- AUT-8: not started by this recovery.
+- AUT-8 / AUT-9: not started by this recovery.
 - LILITH-native wake word/STT/TTS: deferred and not part of the JARVIS production voice pipeline.
 - New UI features or redesign: not started.
 

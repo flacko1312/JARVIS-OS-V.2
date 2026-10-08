@@ -171,8 +171,9 @@ Classify the user's intent before calling any action tool:
    lilith_home_action.
 Never call lilith_home_action as a side effect while defining a future routine.
 Never replace a recurring routine with reminder. For a recurring request, call only
-the appropriate lilith_routine operation. Spanish times such as "9 de la noche" are
-unambiguously 21:00. Use Europe/Madrid for Madrid, hora de Madrid, mi zona horaria,
+the appropriate lilith_routine operation. Spanish times such as "9 de la noche"
+and "10 de la noche" are unambiguously 21:00 and 22:00. Use Europe/Madrid for
+Madrid, hora de Madrid, mi zona horaria,
 or an omitted timezone. Ask only when recurrence, time, target, or action is genuinely
 missing or ambiguous, and call no action tool in that case.
 Examples:
@@ -377,6 +378,9 @@ class PendingRoutineState:
         operation = str(args.get("operation") or "").strip().lower()
         if operation:
             self.operation = operation
+        description_time = _daily_time_from_text(str(args.get("description") or ""))
+        if description_time is not None:
+            self.hour, self.minute = description_time
         schedule_type = str(args.get("schedule_type") or "").strip().lower()
         if schedule_type:
             self.recurrence = schedule_type
@@ -1854,7 +1858,8 @@ TOOL_DECLARATIONS = [
             "lunes/cada X horas o días/rutina/automatiza/a partir de ahora. For create, translate "
             "the requested action into the existing JL-A6 action_intent and action_parameters; "
             "for a light use home.action with entity/action parameters. Never also call reminder "
-            "or lilith_home_action while defining the routine. Interpret 9 de la noche as 21:00. "
+            "or lilith_home_action while defining the routine. Interpret 9 de la noche as 21:00 "
+            "and 10 de la noche as 22:00. "
             "Normalize Madrid, hora de Madrid, mi zona horaria, or an omitted timezone to "
             "Europe/Madrid. Ask only when time, recurrence, target, or action is genuinely ambiguous. "
             "LILITH is authoritative: never claim created/updated/enabled/disabled/deleted unless "
