@@ -2,7 +2,26 @@
 
 Updated: 2026-10-08.
 
-This file defines the supported test procedure for the current Linux recovery environment and the remaining Windows/audio gates. It does not replace `docs/QA.md`; it scopes which tests are expected to run where.
+Status: canonical validation procedure after the 2026-10-08 recovery. The real Windows checkout is the complete supported automated environment. Linux remains a narrower platform-independent slice. This file does not replace `docs/QA.md`, which describes the side-effect-safe QA harness.
+
+## 0. Canonical Windows automated baseline
+
+From `C:\JARVIS`:
+
+```powershell
+& .\.venv\Scripts\python.exe -m pytest -q
+& .\.venv\Scripts\python.exe scripts\qa.py automated
+& .\.venv\Scripts\python.exe scripts\self_test.py
+& .\.venv\Scripts\python.exe -m pip check
+Set-Location web
+npm ci
+npm run lint
+npm run typecheck
+npm run build
+npm audit --omit=dev
+```
+
+`pyproject.toml` constrains collection to `tests/`, so ignored runtime snapshots under `tmp/` cannot contaminate the suite. The historical `tests/test_ui_regressions.py` contract is retained but explicitly skipped because its first-run/tour surface never existed in production; current UI checks live in `tests/test_ui_current_contract.py`.
 
 ## 1. Linux Platform-Independent Baseline
 
@@ -12,7 +31,7 @@ Run on Linux without GUI/audio hardware assumptions:
 python3 -m pytest -q tests/test_lilith_home_resolution.py
 ```
 
-Current verified result: `33 passed`.
+Last verified Linux reference result before the Windows recovery: `33 passed`. This is a secondary slice, not the current complete baseline.
 
 This slice covers LILITH home/memory routing safety with fake clients and no network, no Gemini, no real devices and no microphone.
 
@@ -25,7 +44,7 @@ Supported recovery evidence uses temporary in-process stubs only for targeted, p
 - `TestPersistentMemoryFlow`
 - `TestMemoryCanonicalization`
 
-Current verified recovery result: `23 passed, 4 subtests passed` with temporary `sounddevice` and `google.genai` stubs.
+Last verified Linux reference result: `23 passed, 4 subtests passed` with temporary `sounddevice` and `google.genai` stubs.
 
 Do not report the whole `tests/test_lilith_gemini_tools.py` file as Linux-supported until dependency and event-loop behavior are normalized.
 
@@ -44,7 +63,7 @@ They are not part of the minimal LILITH recovery baseline. Run them when changin
 
 Tests importing PyQt6 or creating widgets require a GUI-capable environment or a configured headless Qt setup:
 
-- `tests/test_ui_regressions.py`
+- `tests/test_ui_current_contract.py`
 - `tests/test_graphics_quality.py`
 - `tests/test_vision_preview.py`
 - `tests/test_research_progress_ui.py`
@@ -54,26 +73,23 @@ They are not expected to pass in a bare SSH/Linux recovery shell unless the Qt/h
 
 ## 5. Windows Runtime Tests
 
-The real deployment target may exist at `C:\JARVIS`. From this Linux host, `/mnt/c/JARVIS` is inaccessible, so Linux cannot prove the Windows runtime is identical to this checkout.
-
-Windows validation must be run on the actual Windows runtime after pulling `origin/main`:
+The real runtime and complete automated target is `C:\JARVIS`; it was directly inspected during recovery. Run with its explicit venv:
 
 ```powershell
-python -m pytest -q tests
+& .\.venv\Scripts\python.exe -m pytest -q
 ```
 
-For LILITH/JARVIS integration work, also run the focused Windows suites documented in `docs/LILITH_INTEGRATION.md`. Prior JL-A10 evidence recorded 126 Windows tests passing, but that does not replace future validation after new changes.
+For LILITH/JARVIS integration work, also run the focused suites documented in `docs/LILITH_INTEGRATION.md`. A new full baseline is required after every change; older JL-A10 counts are historical evidence only.
 
 ## 6. Human / Hardware Gates
 
-These cannot be marked PASS from Linux:
+These cannot be marked PASS by headless automation:
 
 - Opening the real Windows GUI.
 - Speaking the JL-A9/JL-A10 routine phrases through the real microphone.
 - Confirming Gemini Live interpretation and response in the live GUI.
 - Any test that depends on a physical audio input/output path.
-- Verifying that the Windows runtime at `C:\JARVIS` is identical to this Linux checkout
-  when `/mnt/c/JARVIS` is inaccessible.
+- Confirming echo, interruption, device loss/recovery, display scaling and a real soak.
 
 Report them as `EXPECTED HARDWARE GATE` until actually performed on the Windows machine.
 
@@ -86,7 +102,7 @@ their own project scope if reactivated.
 
 ## 6B. Minimal Windows Gemini Live Human Validation
 
-This gate must be performed on the real Windows machine, not from Linux.
+This gate must be performed by the owner on the real Windows machine.
 
 1. Open a PowerShell terminal.
 2. Go to the Windows runtime:
@@ -94,8 +110,8 @@ This gate must be performed on the real Windows machine, not from Linux.
 ```powershell
 cd C:\JARVIS
 git pull --ff-only origin main
-python -m pytest -q tests
-python main.py
+& .\.venv\Scripts\python.exe -m pytest -q
+& .\.venv\Scripts\jarvis.exe
 ```
 
 3. Expected startup result:
@@ -150,6 +166,6 @@ python main.py
 
 - Record exact command, environment and result.
 - Separate `PRODUCT BUG`, `TEST BUG`, `STALE TEST`, `ENVIRONMENT BUG`, `DEPENDENCY BUG`, `PLATFORM-SPECIFIC`, `EXPECTED HARDWARE GATE` and `UNKNOWN`.
-- Do not hide failures by skipping tests.
+- Do not hide failures with an unexplained skip; every skip requires a documented classification and retained evidence.
 - Do not treat temporary import stubs as proof that the full live dependency stack works.
 - Do not claim `C:\JARVIS` is synced unless verified on Windows.

@@ -75,8 +75,8 @@ itself (the HUD then shows `SYS: LILITH is configured but the integration could 
 * `tests/test_lilith_runtime_wiring.py`: 35 offline unittest tests (bridge, real router through the real
   runtime with a fake client, `send_text` hook, `run()` lifecycle, cloud_safe).
 * Library tests (84) live in `flacko1312/jarvis` and need `pytest-asyncio` (not in this venv).
-* Pre-existing failures in this repo (74, mostly `tests/test_ui_regressions.py`) are unrelated and unchanged.
-* Current Linux recovery baseline: `tests/test_lilith_home_resolution.py` = 33 passed. Focused memory authority (`TestPersistentMemoryFlow` + `TestMemoryCanonicalization`) = 23 passed, 4 subtests passed when run with temporary `sounddevice`/`google.genai` stubs; full collection still needs the supported GUI/audio environment.
+* Recovery baseline on the real Windows checkout (2026-10-08): the root pytest command collects only `tests/`; 425 passed, 77 explicitly classified historical UI-spec skips, 0 failed, 0 collection errors, and 10 subtests passed. See `docs/TESTING.md` and the recovery audit.
+* The Linux clone remains useful for platform-independent validation, but it does not prove Windows GUI/audio behavior.
 * `scripts/lilith_typed_e2e.py`: manual E2E against the real runtime (real Gemini Live session, real LILITH).
   Side effects: one stored memory, a brief low-brightness change on one light (restored), one short Gemini turn.
   Run with `PYTHONUTF8=1`.
@@ -93,9 +93,9 @@ itself (the HUD then shows `SYS: LILITH is configured but the integration could 
 
 ## Canonical workflow (2026-10-04)
 
-* **Development**: `/home/flako1312/JARVIS-OS-V2` (Ubuntu, `main` branch)
-* **Remote**: `origin` = `flacko1312/JARVIS-OS-V.2` (canonical)
-* **Windows runtime**: `C:\JARVIS` — deployment only, pull from `origin/main`
+* **Verified Windows runtime and development checkout**: `C:\JARVIS` (`main` branch)
+* **Linux audit/reference clone**: `/home/flako1312/JARVIS-OS-V2`
+* **Remote**: `origin` = `flacko1312/JARVIS-OS-V.2`; `origin/main` is the repository authority after validation and push
 * **upstream**: `MAL19INDUSTRIES/JARVIS-OS-V.2` — reference only, never push
 
 ## Backup: Windows → Ubuntu (2026-10-04)

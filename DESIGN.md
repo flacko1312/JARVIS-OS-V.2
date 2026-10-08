@@ -37,8 +37,8 @@ Arc-reactor command interface: a near-black blue-tinted environment designed for
 
 ## Layout
 
-The normal application keeps its existing three-panel console and centered reactor HUD. The first-run introduction temporarily owns the full application viewport, assembles content from the center outward, and then hands off to the centered initialization overlay.
+The current application uses its three-panel console and centered reactor HUD. Earlier first-run introduction and guided-tour concepts were never implemented in `ui.py`; they remain historical design material and are not part of the executable product contract.
 
 ## Motion
 
-Use staged opacity, scale, and position reveals with exponential easing. Avoid bounce, strobing, or continuous decorative movement. The first-run sequence may be cinematic because it occurs once; routine launches should enter the console directly unless the user explicitly enables replay on every launch.
+Use restrained opacity, scale, and position changes with exponential easing. Avoid bounce, strobing, or continuous decorative movement. Routine launches enter the current console directly.

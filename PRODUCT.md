@@ -26,8 +26,8 @@ Do not resemble a generic SaaS dashboard, a conventional chat clone, a cluttered
 2. Treat voice and text as equal input methods.
 3. Use cinematic presentation for meaningful transitions, not routine work.
 4. Show real capabilities and real status rather than fabricated diagnostics.
-5. Keep repeated operator workflows direct after first-run setup.
+5. Keep operator workflows direct after API setup.
 
 ## Accessibility & Inclusion
 
-Target WCAG AA contrast, complete keyboard access, visible focus states, and alternatives for motion-sensitive users during normal operation. The mandatory first-run introduction must avoid flashes, rapid strobing, and disorienting camera movement.
+Target WCAG AA contrast, complete keyboard access, visible focus states, and alternatives for motion-sensitive users during normal operation. No cinematic first-run introduction is part of the current product contract.

@@ -1,5 +1,7 @@
 # JARVIS
 
+Canonical project navigation: [docs/PROJECT_DOCUMENT_INDEX.md](docs/PROJECT_DOCUMENT_INDEX.md). Current architecture and verified state are in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/PROJECT_STATE.md](docs/PROJECT_STATE.md). The 2026-10-08 recovery evidence is in [docs/audits/JARVIS_PROJECT_RECOVERY_2026-10-08.md](docs/audits/JARVIS_PROJECT_RECOVERY_2026-10-08.md).
+
 Local Gemini Live desktop assistant with a PyQt6 interface, voice interaction, detachable panels, and optional browser, file, screen, and messaging tools.
 
 JARVIS also includes a dedicated presentation studio that creates, edits,
