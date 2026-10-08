@@ -1,7 +1,9 @@
 # JARVIS Project Recovery, Audit, Reconciliation and Stabilization
 
-Date: 2026-10-08  
-Scope: real Windows `C:\JARVIS`, Linux clone, integration documentation, remote Git state, runtime, tests, security, dependencies, and active docs.  
+Date: 2026-10-08
+
+Scope: real Windows `C:\JARVIS`, Linux clone, integration documentation, remote Git state, runtime, tests, security, dependencies, and active docs.
+
 Status: machine recovery complete; unconditional production GO withheld pending owner-operated spoken/hardware certification.
 
 ## 1. Executive Summary
@@ -199,16 +201,16 @@ Tracked secret scan passed. Ignored `.env` and private config were not read. Pro
 
 ## 18. Test Infrastructure
 
-A. Pure Python: root pytest.  
-B. JARVIS-LILITH: mocked HTTP/runtime plus optional real safe E2E.  
-C. Gemini mocked: Live FunctionCall/guard tests.  
-D. Gemini real network: model discovery/connect startup; classified external service.  
-E. Windows-only: real venv and local action contracts.  
-F. GUI: offscreen current UI contract and QA screenshots.  
-G. Microphone/audio: mocked streams plus expected hardware gate.  
-H. API/WebSocket: TestClient/tenant/auth/subprotocol coverage.  
-I. Tools: 46 declaration/dispatch contract plus family tests.  
-J. Human: spoken Live, routine lifecycle, HA, display scaling and soak.
+- A. Pure Python: root pytest.
+- B. JARVIS-LILITH: mocked HTTP/runtime plus optional real safe E2E.
+- C. Gemini mocked: Live FunctionCall/guard tests.
+- D. Gemini real network: model discovery/connect startup; classified external service.
+- E. Windows-only: real venv and local action contracts.
+- F. GUI: offscreen current UI contract and QA screenshots.
+- G. Microphone/audio: mocked streams plus expected hardware gate.
+- H. API/WebSocket: TestClient/tenant/auth/subprotocol coverage.
+- I. Tools: 46 declaration/dispatch contract plus family tests.
+- J. Human: spoken Live, routine lifecycle, HA, display scaling and soak.
 
 `pyproject.toml` now limits discovery to `tests` and ignores `tmp`; no data was deleted. `scripts/qa.py automated` runs pytest without globally changing product behavior, and `qa_ui_probe.py` uses only current UI symbols. `self_test.py` uses UTF-8 subprocess capture and does not globally enable QA mode over functional contracts.
 
