@@ -1,6 +1,6 @@
 # LILITH integration — JL-W001 → JL-W006
 
-Status: **JARVIS + Gemini Live is the canonical current primary voice/conversation interface for the combined system.** Typed input, voice tool calling, routines, HOME resolution, and LILITH command tools are integrated. JL-A10 physical routine testing is PARTIAL PASS / BUG FOUND pending retest of the semantic schedule fix.
+Status: **JARVIS + Gemini Live is the canonical current primary voice/conversation interface for the combined system.** Typed input, voice tool calling, routines, HOME resolution, and LILITH command tools are integrated. JL-A10 physical routine testing is PASS / CLOSED.
 Branch: `main` (merged from `feat/lilith-gemini-tools` via fast-forward, 2026-10-04).
 
 ## What it does
@@ -75,7 +75,7 @@ itself (the HUD then shows `SYS: LILITH is configured but the integration could 
 * `tests/test_lilith_runtime_wiring.py`: 35 offline unittest tests (bridge, real router through the real
   runtime with a fake client, `send_text` hook, `run()` lifecycle, cloud_safe).
 * Library tests (84) live in `flacko1312/jarvis` and need `pytest-asyncio` (not in this venv).
-* Recovery baseline on the real Windows checkout (2026-10-08): the root pytest command collects only `tests/`; 425 passed, 77 explicitly classified historical UI-spec skips, 0 failed, 0 collection errors, and 10 subtests passed. See `docs/TESTING.md` and the recovery audit.
+* JL-A10 physical retest baseline on the real Windows checkout (2026-10-08): 429 passed, 77 explicitly classified historical UI-spec skips, 0 failed, 0 errors, 1 warning, and 15 subtests passed. See `docs/TESTING.md` and the recovery audit.
 * The Linux clone remains useful for platform-independent validation, but it does not prove Windows GUI/audio behavior.
 * `scripts/lilith_typed_e2e.py`: manual E2E against the real runtime (real Gemini Live session, real LILITH).
   Side effects: one stored memory, a brief low-brightness change on one light (restored), one short Gemini turn.
@@ -89,7 +89,7 @@ itself (the HUD then shows `SYS: LILITH is configured but the integration could 
 * **JL-S003**: Approval flow for CONSULTATIVE/SENSITIVE actions.
 * **JL-M004**: Deterministic semantic fact identity + context freshness.
 * **JL-A7/JL-A8/JL-A9**: Persistent routines, due execution through LILITH/AUT-5, and natural-language routine tool.
-* **JL-A10**: PARTIAL PASS / BUG FOUND. Passed: microphone/runtime active, LILITH connectivity, `lilith_routine` list, recurring routing to `lilith_routine`, create persistence, list after create, delete, and list after delete. Failed: semantic schedule correctness, where intended `22:00` from "10 de la noche" was submitted as `13:00`. The deterministic JARVIS guard has regression coverage for the fix, but JL-A10 is not complete until the owner physically retests it.
+* **JL-A10**: PASS / CLOSED. Owner physical retest on Git HEAD `bbe95a8d3abcdbbab130e46a3ac336bd47f5c374` confirmed real startup, microphone stream, receive loop, playback, LILITH context, recurring routing to `lilith_routine`, create persistence, list after create, delete, and list after delete. The fixed spoken request "Encender bombilla mueble todos los días a las 10 de la noche" submitted `22:00 Europe/Madrid`, and LILITH confirmed create with correlation ID.
 
 ## Canonical workflow (2026-10-04)
 

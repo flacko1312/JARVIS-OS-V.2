@@ -4,13 +4,19 @@ Status: **CANONICAL ACTIONABLE BACKLOG**. Do not use historical prompts or audit
 
 ## Next task
 
+### AUT-9 — next autonomous work block
+
+Status: NOT STARTED.
+
+Do not start AUT-9 until explicitly requested.
+
+## Closed
+
 ### JL-A10 — owner-operated spoken Gemini Live certification
 
-Status: OPEN / PARTIAL PASS / BUG FOUND.
+Status: PASS / CLOSED.
 
-Owner physical evidence confirmed microphone/runtime activity, LILITH connectivity, `lilith_routine` list routing, create persistence, list after create, delete, and list after delete. It also found a semantic schedule correctness bug: intended `22:00` from "10 de la noche", but JARVIS submitted `13:00` to LILITH. JL-A10 must stay open until the fixed build is retested physically.
-
-Run the exact procedure in `docs/TESTING.md` from the restarted `C:\JARVIS` runtime. Verify spoken Spanish, microphone/audio, routine create/list/delete through `lilith_routine`, and semantic schedule correctness for `10 de la noche` -> `22:00`. Record sanitized log correlation IDs and then close JL-A10 only with owner evidence.
+Owner physical retest on Git HEAD `bbe95a8d3abcdbbab130e46a3ac336bd47f5c374` passed. Windows regression reported `429 passed`, `77 skipped`, `0 failed`, `0 errors`, `1 warning`, and `15 subtests passed`. Real startup reached interface ready, loaded 87 LILITH context facts, connected, opened microphone stream, ran receive loop, and started playback. Spoken routine create for "Encender bombilla mueble todos los días a las 10 de la noche" submitted `schedule.hour=22`, `minute=0`, `timezone=Europe/Madrid`; LILITH confirmed create with correlation ID; list, delete of `routine_id=14`, and final list were confirmed.
 
 ## Stabilization backlog
 

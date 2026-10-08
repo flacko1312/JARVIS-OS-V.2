@@ -4,15 +4,15 @@ Date: 2026-10-08
 
 Scope: real Windows `C:\JARVIS`, Linux clone, integration documentation, remote Git state, runtime, tests, security, dependencies, and active docs.
 
-Status: machine recovery complete; unconditional production GO withheld pending owner-operated spoken/hardware certification.
+Status: machine recovery complete; JL-A10 owner-operated spoken Gemini Live / persistent routine lifecycle certification passed after fix.
 
 ## 1. Executive Summary
 
 The real running JARVIS is the PyQt/Gemini Live application installed from `C:\JARVIS`; the observed process tree used `C:\JARVIS\.venv\Scripts\jarvis.exe` and the same checkout's Python entry point. The Linux `/home/flako1312/JARVIS-OS-V2` directory is a clean clone of the same remote, not proof of Windows behavior. At audit start Windows contained one unpushed code commit (`59c6413`) while `origin/main` contained two documentation commits. They had a common merge base and no file conflict, so both histories were preserved by a normal merge.
 
-The initial root pytest command failed during collection because an ignored `tmp/jl_a10_lilith` snapshot was discovered. The canonical `tests/` run collected 496 and produced 421 passes and 75 failures: 71 were a first-run/tour UI specification whose symbols never existed in `ui.py`; four were stale contract/environment tests. Recovery constrained discovery, retained the historical specification with an explicit reason, moved six valid UI tests into a current contract, repaired QA probes, and fixed real security/consistency defects. Final pytest collects 502: 425 pass, 77 classified skips, zero failures/errors, 10 subtests pass, and one third-party warning remains.
+The initial root pytest command failed during collection because an ignored `tmp/jl_a10_lilith` snapshot was discovered. The canonical `tests/` run collected 496 and produced 421 passes and 75 failures: 71 were a first-run/tour UI specification whose symbols never existed in `ui.py`; four were stale contract/environment tests. Recovery constrained discovery, retained the historical specification with an explicit reason, moved six valid UI tests into a current contract, repaired QA probes, and fixed real security/consistency defects. Final recovery pytest collected 502: 425 pass, 77 classified skips, zero failures/errors, 10 subtests pass, and one third-party warning. JL-A10 owner retest on HEAD `bbe95a8d3abcdbbab130e46a3ac336bd47f5c374` reported 429 passed, 77 skipped, 0 failed, 0 errors, 1 warning, and 15 subtests passed.
 
-No LILITH source was modified. AUT-8 was not started. JL-A10 remains open because microphone, audio, and authoritative routine lifecycle require owner/hardware interaction.
+No LILITH source was modified. AUT-8 and AUT-9 were not started. JL-A10 is PASS / CLOSED after owner-operated Windows retest.
 
 ## 2. Repository / Runtime Identity
 
@@ -270,36 +270,24 @@ The real runtime was restarted after the recovery commits. The new process tree 
 
 ## 24. JL-A10 Physical Test Status
 
-Status: **PARTIAL PASS / BUG FOUND**.
+Status: **PASS / CLOSED**.
 
-Passed:
+Final owner-operated Windows evidence on Git HEAD `bbe95a8d3abcdbbab130e46a3ac336bd47f5c374`:
 
-- Microphone/runtime active.
-- LILITH connectivity.
+- Full Windows regression: 429 passed, 77 skipped, 0 failed, 0 errors, 1 warning, 15 subtests passed.
+- Startup: interface ready, LILITH context loaded with 87 facts, connected, microphone stream open, receive loop running, playback running.
+- Spoken create description: "Encender bombilla mueble todos los días a las 10 de la noche".
+- JARVIS submitted `lilith_routine` create with `timezone=Europe/Madrid`, `schedule_type=daily`, `schedule.hour=22`, `schedule.minute=0`, `action_intent=home.action`, `target=bombilla mueble`, and `action=turn_on`.
+- LILITH confirmed create with correlation ID.
 - `lilith_routine` list.
-- Recurring routing to `lilith_routine`.
-- Create persistence.
-- List after create.
-- Delete.
-- List after delete.
+- Delete of `routine_id=14`.
+- Final `lilith_routine` list.
 
-Failed:
+Conclusion: the previous semantic schedule defect, intended `22:00` from "10 de la noche" submitted as `13:00`, is fixed and physically retested. LILITH correctly executed the structured schedule JARVIS supplied; no LILITH source change was required.
 
-- Semantic schedule correctness: intended `22:00` from "10 de la noche", submitted `13:00`.
+## 25. Non-blocking Operational Validation
 
-Root finding for the fix: LILITH correctly executed the structured schedule JARVIS supplied. The defect was upstream in JARVIS/Gemini Live FunctionCall acceptance: a contradictory `schedule.hour=13` could be accepted when deterministic current-turn routine text was available in the FunctionCall description. JARVIS now validates deterministic Spanish time expressions before routine submission. This does not complete JL-A10; the owner must physically retest the fixed build.
-
-## 25. Human / Hardware Gates
-
-1. Speak: “Hola JARVIS, dime que estás conectado.” Confirm Spanish audio and stable LISTENING/SPEAKING return.
-2. Ask: “¿Qué rutinas tengo programadas?” Confirm `lilith_routine` list.
-3. Speak: “Crea una rutina para encender la bombilla del mueble todos los días a las diez de la noche.” Confirm `classification=recurring`, `decision=allowed`, `TOOL_CALL lilith_routine`, submitted schedule `22:00 Europe/Madrid`, verified LILITH persistence; forbid reminder/Home substitution and forbid `13:00`.
-4. Ask: “Enséñame mis rutinas.” Confirm the created item is authoritative.
-5. Say: “Borra la rutina que acabas de crear.” Confirm verified deletion, then list again.
-6. Optionally perform one safe owner-approved HA on/off action and restore state; never use a dangerous action for certification.
-7. Check mute/unmute, interruption, device loss/reconnect, display scaling and a 30-minute soak.
-
-JL-A10 is not complete. Do not claim the physical retest passed until the owner supplies new evidence from the fixed build.
+The core JL-A10 spoken Gemini Live / persistent routine lifecycle gate is closed. Optional robustness checks such as mute/unmute, deeper interruption/barge-in behavior, device loss/reconnect, display scaling sweeps, and long soak remain useful non-blocking operational validation. Do not claim them unless separately performed.
 
 ## 26. Documentation Hierarchy
 
@@ -307,7 +295,7 @@ JL-A10 is not complete. Do not claim the physical retest passed until the owner 
 
 ## 27. Recovery Definition of Done
 
-All machine-verifiable items are satisfied: identity, architecture, tool inventory, memory authority, routine/HA routing, API/config/dependency/security classification, baseline/final tests, docs hierarchy, debt, and Git reconciliation. Zero unexplained failures, collection errors or tracked dirty files are required at final handoff. Human audio/routine/HA certification is explicitly excluded from machine completion and prevents unconditional GO.
+All machine-verifiable items are satisfied: identity, architecture, tool inventory, memory authority, routine/HA routing, API/config/dependency/security classification, baseline/final tests, docs hierarchy, debt, and Git reconciliation. JL-A10 owner-operated spoken Gemini Live / persistent routine lifecycle certification is now PASS / CLOSED.
 
 ## 28. Exact Current Development Point
 
@@ -315,8 +303,8 @@ JARVIS is at post-recovery stabilization: current code implements Gemini Live de
 
 ## 29. GO / NO-GO
 
-**NO-GO for unconditional production certification.** Reason: JL-A10 owner-operated testing found the semantic routine schedule bug above, and the fixed build has not been physically retested. **GO for machine baseline and owner retest:** automated routine guard evidence covers the fix.
+**GO for the JL-A10 core spoken Gemini Live / persistent routine lifecycle gate.** Optional robustness checks remain non-blocking operational validation.
 
 ## 30. Exact Next JARVIS Task
 
-Run **JL-A10 owner-operated spoken Gemini Live certification** exactly as section 25 and `docs/TESTING.md` specify, capture sanitized correlation/guard evidence, clean up the created routine, and only then decide whether JL-A10 can close. Do not start AUT-8 or AUT-9 from this recovery.
+Next task is **AUT-9**, but it was not started by this documentation update. Start AUT-9 only on explicit owner request.

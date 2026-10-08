@@ -93,6 +93,8 @@ These cannot be marked PASS by headless automation:
 
 Report them as `EXPECTED HARDWARE GATE` until actually performed on the Windows machine.
 
+JL-A10 core spoken Gemini Live / persistent routine lifecycle was owner-operated on Windows and is PASS / CLOSED for Git HEAD `bbe95a8d3abcdbbab130e46a3ac336bd47f5c374`. Optional robustness checks such as mute/unmute, interruption depth, device loss/reconnect, display scaling sweeps, and long soak remain non-blocking unless a later task explicitly promotes them.
+
 ## 6A. Voice Architecture Scope
 
 The current primary voice/conversation interface is JARVIS + Gemini Live. Do not copy
@@ -102,7 +104,7 @@ their own project scope if reactivated.
 
 ## 6B. Minimal Windows Gemini Live Human Validation
 
-This gate must be performed by the owner on the real Windows machine.
+This gate was performed by the owner on the real Windows machine and passed on Git HEAD `bbe95a8d3abcdbbab130e46a3ac336bd47f5c374`.
 
 1. Open a PowerShell terminal.
 2. Go to the Windows runtime:
@@ -137,6 +139,8 @@ git pull --ff-only origin main
 - For the routine create, the submitted schedule is `22:00 Europe/Madrid`; `13:00` is a failure for "diez de la noche".
 - LILITH returns a completed result for create/list/delete before JARVIS claims success.
 - No traceback, reconnect loop, or false success appears.
+
+Owner-retained JL-A10 evidence: Windows regression `429 passed`, `77 skipped`, `0 failed`, `0 errors`, `1 warning`, `15 subtests passed`; startup interface ready, 87 LILITH context facts loaded, connected, microphone stream open, receive loop running, playback running; spoken create submitted `schedule.hour=22`, `minute=0`, `timezone=Europe/Madrid`; LILITH confirmed create, list, delete of `routine_id=14`, and final list.
 
 6. PASS criteria:
 
