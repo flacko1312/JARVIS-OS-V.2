@@ -1,6 +1,6 @@
 # JARVIS Test Matrix
 
-Updated: 2026-10-07.
+Updated: 2026-10-08.
 
 This file defines the supported test procedure for the current Linux recovery environment and the remaining Windows/audio gates. It does not replace `docs/QA.md`; it scopes which tests are expected to run where.
 
@@ -83,6 +83,68 @@ The current primary voice/conversation interface is JARVIS + Gemini Live. Do not
 LILITH-native wake-word, Whisper or local STT parameters into JARVIS test expectations.
 Those LILITH-native components are deferred/future/fallback work and are tested only in
 their own project scope if reactivated.
+
+## 6B. Minimal Windows Gemini Live Human Validation
+
+This gate must be performed on the real Windows machine, not from Linux.
+
+1. Open a PowerShell terminal.
+2. Go to the Windows runtime:
+
+```powershell
+cd C:\JARVIS
+git pull --ff-only origin main
+python -m pytest -q tests
+python main.py
+```
+
+3. Expected startup result:
+
+- The JARVIS GUI opens without traceback.
+- Gemini Live connects after the configured Gemini API key is available.
+- The selected audio output can be heard.
+- The microphone permission prompt, if any, is accepted.
+
+4. Spoken commands to test through the real microphone:
+
+- "Hola JARVIS, dime que estás conectado."
+- "¿Qué rutinas tengo programadas?"
+- "Crea una rutina para encender la bombilla del mueble todos los días a las nueve de la noche."
+- "Enséñame mis rutinas."
+- "Borra la rutina que acabas de crear."
+
+5. Evidence that proves success:
+
+- Console/HUD log shows the spoken transcript.
+- Gemini Live responds audibly and/or with visible transcript.
+- For routine commands, logs show `lilith_routine` or the canonical command path, not `lilith_home_action` for recurring routine creation.
+- LILITH returns a completed result for create/list/delete before JARVIS claims success.
+- No traceback, reconnect loop, or false success appears.
+
+6. PASS criteria:
+
+- GUI opens.
+- Microphone captures speech.
+- Gemini Live understands the spoken phrases.
+- JARVIS calls the correct LILITH tools.
+- LILITH confirms completed results.
+- JARVIS responds naturally after verified results.
+
+7. FAIL criteria:
+
+- GUI cannot start.
+- Microphone/audio is unavailable.
+- Gemini Live does not connect.
+- A recurring routine is routed as an immediate Home Assistant action.
+- JARVIS claims success while LILITH returned blocked/error/offline.
+- Any traceback or unbounded reconnect loop occurs.
+
+8. Evidence to send back:
+
+- Exact command output from PowerShell.
+- Screenshot or copied HUD/console transcript around the test.
+- Any traceback.
+- The spoken command that failed and the observed JARVIS response.
 
 ## 7. Reporting Rules
 
