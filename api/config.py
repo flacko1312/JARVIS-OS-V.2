@@ -14,6 +14,10 @@ def _csv(name: str, default: str) -> tuple[str, ...]:
     )
 
 
+def _bool(name: str, default: str = "0") -> bool:
+    return os.environ.get(name, default).lower() in {"1", "true", "yes", "on"}
+
+
 @dataclass(frozen=True)
 class Settings:
     environment: str = os.environ.get("JARVIS_ENV", "development").lower()
@@ -30,12 +34,11 @@ class Settings:
         "http://localhost:3000,http://127.0.0.1:3000",
     )
     chat_model: str = os.environ.get("JARVIS_CHAT_MODEL", "gemini-2.5-flash")
-    auto_create_tables: bool = os.environ.get("AUTO_CREATE_TABLES", "1").lower() in {
-        "1", "true", "yes", "on",
-    }
-    redis_required: bool = os.environ.get("REDIS_REQUIRED", "0").lower() in {
-        "1", "true", "yes", "on",
-    }
+    auto_create_tables: bool = _bool("AUTO_CREATE_TABLES", "1")
+    redis_required: bool = _bool("REDIS_REQUIRED", "0")
+    lilith_notifications_enabled: bool = _bool("JARVIS_LILITH_NOTIFICATIONS_ENABLED", "0")
+    lilith_voice_notifications_enabled: bool = _bool("JARVIS_LILITH_VOICE_NOTIFICATIONS_ENABLED", "0")
+    lilith_notification_poll_seconds: float = float(os.environ.get("JARVIS_LILITH_NOTIFICATION_POLL_SECONDS", "30"))
 
     def validate_production(self) -> None:
         if self.environment != "production":

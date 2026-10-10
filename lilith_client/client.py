@@ -234,6 +234,48 @@ class LilithClient:
             payload["idempotency_key"] = idempotency_key
         return await self._request("POST", f"{_INTEGRATION}/commands/submit", json=payload)
 
+    async def notifications(
+        self,
+        *,
+        status: str = "pending",
+        limit: int = 20,
+    ) -> list[dict]:
+        """Pull LILITH-owned notification events eligible for JARVIS."""
+        query = urlencode({"status": status, "limit": limit})
+        data = await self._request("GET", f"{_INTEGRATION}/notifications?{query}")
+        return data.get("items", [])
+
+    async def notification_delivery(
+        self,
+        notification_id: str,
+        *,
+        status: str,
+        metadata: dict | None = None,
+        error_code: str | None = None,
+        error_detail: str | None = None,
+    ) -> dict:
+        """Record JARVIS channel delivery status for one LILITH notification."""
+        payload: dict[str, Any] = {"status": status}
+        if metadata:
+            payload["metadata"] = metadata
+        if error_code:
+            payload["error_code"] = error_code
+        if error_detail:
+            payload["error_detail"] = error_detail[:500]
+        return await self._request(
+            "POST",
+            f"{_INTEGRATION}/notifications/{notification_id}/delivery",
+            json=payload,
+        )
+
+    async def notification_ack(self, notification_id: str) -> dict:
+        """Acknowledge one LILITH notification through the JARVIS channel."""
+        return await self._request(
+            "POST",
+            f"{_INTEGRATION}/notifications/{notification_id}/ack",
+            json={},
+        )
+
     async def is_available(self) -> bool:
         """Comprueba si LILITH responde. Nunca lanza excepción."""
         try:

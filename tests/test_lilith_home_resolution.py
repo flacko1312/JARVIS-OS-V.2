@@ -381,6 +381,61 @@ class ClientErrorCodeTests(unittest.TestCase):
             },
         })
 
+    def test_notifications_gets_jarvis_feed(self):
+        seen = {}
+
+        class C(LilithClient):
+            async def _request(self, method, path, *, json=None):
+                seen.update(method=method, path=path, json=json)
+                return {"items": [{"notification_id": "notif_1"}]}
+
+        cfg = LilithConfig(base_url="http://127.0.0.1:9", api_key="test-key")
+        out = asyncio.run(C(cfg).notifications(status="pending", limit=7))
+        self.assertEqual(out, [{"notification_id": "notif_1"}])
+        self.assertEqual(seen, {
+            "method": "GET",
+            "path": "/api/v1/integration/notifications?status=pending&limit=7",
+            "json": None,
+        })
+
+    def test_notification_delivery_posts_channel_status(self):
+        seen = {}
+
+        class C(LilithClient):
+            async def _request(self, method, path, *, json=None):
+                seen.update(method=method, path=path, json=json)
+                return {"delivery": {"status": json["status"]}}
+
+        cfg = LilithConfig(base_url="http://127.0.0.1:9", api_key="test-key")
+        out = asyncio.run(C(cfg).notification_delivery(
+            "notif_1",
+            status="delivered",
+            metadata={"path": "gemini_live"},
+        ))
+        self.assertEqual(out["delivery"]["status"], "delivered")
+        self.assertEqual(seen, {
+            "method": "POST",
+            "path": "/api/v1/integration/notifications/notif_1/delivery",
+            "json": {"status": "delivered", "metadata": {"path": "gemini_live"}},
+        })
+
+    def test_notification_ack_posts_ack_endpoint(self):
+        seen = {}
+
+        class C(LilithClient):
+            async def _request(self, method, path, *, json=None):
+                seen.update(method=method, path=path, json=json)
+                return {"notification": {"status": "acknowledged"}}
+
+        cfg = LilithConfig(base_url="http://127.0.0.1:9", api_key="test-key")
+        out = asyncio.run(C(cfg).notification_ack("notif_1"))
+        self.assertEqual(out["notification"]["status"], "acknowledged")
+        self.assertEqual(seen, {
+            "method": "POST",
+            "path": "/api/v1/integration/notifications/notif_1/ack",
+            "json": {},
+        })
+
 
 if __name__ == "__main__":
     unittest.main()

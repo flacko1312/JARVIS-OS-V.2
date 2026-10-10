@@ -41,6 +41,7 @@ from .secret_service import (
 )
 from .security import create_access_token, hash_password, verify_password
 from .websocket_client import WebSocketClient
+from .lilith_notifications import deliver_lilith_voice_notification
 
 
 class LiveSessionRegistry:
@@ -74,6 +75,15 @@ class LiveSessionRegistry:
             "cloud_safe": True,
         }
 
+    async def active_sessions(self) -> list[tuple[str, Any, WebSocketClient]]:
+        async with self._lock:
+            sessions = [
+                (user_id, engine, client)
+                for user_id, (engine, client, task) in self._sessions.items()
+                if not task.done()
+            ]
+        return sessions
+
     async def close_all(self) -> None:
         async with self._lock:
             sessions = list(self._sessions.values())
@@ -85,17 +95,64 @@ class LiveSessionRegistry:
 
 
 live_sessions = LiveSessionRegistry()
+_lilith_notification_task: asyncio.Task | None = None
+
+
+async def _poll_lilith_notifications() -> None:
+    from lilith_client.client import LilithClient
+
+    if not (
+        settings.lilith_notifications_enabled
+        and settings.lilith_voice_notifications_enabled
+    ):
+        return
+    client = LilithClient()
+    try:
+        while True:
+            sessions = await live_sessions.active_sessions()
+            if sessions:
+                items = await client.notifications(status="pending", limit=20)
+                for item in items:
+                    notification_id = str(item.get("notification_id") or "")
+                    if not notification_id or not bool(item.get("voice_eligible")):
+                        continue
+                    for user_id, engine, _ws_client in sessions:
+                        try:
+                            delivered = await deliver_lilith_voice_notification(engine, item)
+                            await client.notification_delivery(
+                                notification_id,
+                                status="delivered" if delivered else "skipped",
+                                metadata={"user_id": user_id, "path": "gemini_live"},
+                            )
+                        except Exception as exc:
+                            await client.notification_delivery(
+                                notification_id,
+                                status="failed",
+                                error_code=exc.__class__.__name__,
+                                error_detail=str(exc),
+                                metadata={"user_id": user_id, "path": "gemini_live"},
+                            )
+            await asyncio.sleep(max(settings.lilith_notification_poll_seconds, 5.0))
+    finally:
+        await client.close()
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    global _lilith_notification_task
     settings.validate_production()
     if settings.auto_create_tables:
         await asyncio.to_thread(init_db)
     await limiter.connect()
+    if settings.lilith_notifications_enabled and settings.lilith_voice_notifications_enabled:
+        _lilith_notification_task = asyncio.create_task(_poll_lilith_notifications())
     try:
         yield
     finally:
+        if _lilith_notification_task:
+            _lilith_notification_task.cancel()
+            await asyncio.gather(_lilith_notification_task, return_exceptions=True)
+            _lilith_notification_task = None
         await live_sessions.close_all()
         await limiter.close()
 
