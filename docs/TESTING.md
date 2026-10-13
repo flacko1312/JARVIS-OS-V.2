@@ -1,6 +1,6 @@
 # JARVIS Test Matrix
 
-Updated: 2026-10-08.
+Updated: 2026-10-13.
 
 Status: canonical validation procedure after the 2026-10-08 recovery. The real Windows checkout is the complete supported automated environment. Linux remains a narrower platform-independent slice. This file does not replace `docs/QA.md`, which describes the side-effect-safe QA harness.
 
@@ -91,7 +91,7 @@ These cannot be marked PASS by headless automation:
 - Any test that depends on a physical audio input/output path.
 - Confirming echo, interruption, device loss/recovery, display scaling and a real soak.
 
-Report them as `EXPECTED HARDWARE GATE` until actually performed on the Windows machine.
+Report unperformed items as `EXPECTED HARDWARE GATE`. Retain owner evidence for any item promoted to physical PASS.
 
 JL-A10 core spoken Gemini Live / persistent routine lifecycle was owner-operated on Windows and is PASS / CLOSED for Git HEAD `bbe95a8d3abcdbbab130e46a3ac336bd47f5c374`. Optional robustness checks such as mute/unmute, interruption depth, device loss/reconnect, display scaling sweeps, and long soak remain non-blocking unless a later task explicitly promotes them.
 
@@ -166,6 +166,25 @@ Owner-retained JL-A10 evidence: Windows regression `429 passed`, `77 skipped`, `
 - Screenshot or copied HUD/console transcript around the test.
 - Any traceback.
 - The spoken command that failed and the observed JARVIS response.
+
+## 6C. Screen Vision Physical Evidence
+
+Owner-operated validation on 2026-10-13 invoked `screen_process` through the
+real `C:\JARVIS` runtime with "What is on the screen?". The runtime captured
+142,430 bytes, selected `gemini-3.8-flash`, returned a description matching the
+visible ChatGPT browser and AURORA terminal, and spoke the result.
+
+Current classification:
+
+- Screen capture: `PHYSICAL PASS`.
+- Gemini primary vision analysis: `PHYSICAL E2E PASS`.
+- Spoken visual response: `PHYSICAL PASS`.
+- Obsolete `gemini-2.5-flash` regression: `FIXED`.
+- AFC warning regression: `FIXED`.
+- Bounded cloud 503/fallback behavior: `AUTOMATED PASS`.
+- Isolated local Ollama `qwen3-vl:4b` image smoke: `PASS`.
+- Ollama fallback inside the complete real JARVIS provider chain: `EXPECTED HARDWARE GATE`; it was not invoked because Gemini primary succeeded.
+- Camera capture/analysis: `EXPECTED HARDWARE GATE` until separately exercised.
 
 ## 7. Reporting Rules
 

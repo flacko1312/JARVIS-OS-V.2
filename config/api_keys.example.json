@@ -2,6 +2,11 @@
   "os_system": "mac",
   "voice_name": "charon",
   "live_model": "models/gemini-2.0-flash-live-preview-04-09",
+  "vision_model": "gemini-3.8-flash",
+  "vision_fallback_model": "gemini-3.6-flash",
+  "ollama_vision_enabled": true,
+  "ollama_vision_url": "http://127.0.0.1:11434",
+  "ollama_vision_model": "qwen3-vl:4b",
   "tts_provider": "gemini",
   "tts_voice_id": "charon",
   "camera_index": 0

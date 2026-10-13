@@ -1,6 +1,6 @@
 # JARVIS Technical Debt Register
 
-Status: maintained register from the 2026-10-08 recovery.
+Status: maintained register, reconciled with owner validation on 2026-10-13.
 
 | ID | Priority | Description | Evidence | Consequence | Mitigation | Future action | Blocking |
 |---|---|---|---|---|---|---|---|
@@ -15,3 +15,7 @@ Status: maintained register from the 2026-10-08 recovery.
 | TD-009 | P3 | Historical first-run/tour specification is retained as 77 skipped tests. | `tests/test_ui_regressions.py`; Git history proves symbols never existed in `ui.py`. | Skip count can be misread as missing product coverage. | Explicit module skip reason; six valid current checks moved to `test_ui_current_contract.py`. | Archive into a versioned design-test area if repository policy permits. | No |
 | TD-010 | P3 | Test runs write operational-format entries into `logs/jarvis.log`. | Guard regression logs appear beside runtime health entries. | Runtime and test evidence require session/correlation filtering. | Structured session IDs and test FunctionCall IDs distinguish entries. | Configure a test log sink. | No |
 | TD-011 | P3 | Python 3.14 emits a third-party `google.genai` typing deprecation warning. | Full pytest warning from `google/genai/types.py`. | Noise; possible Python 3.17 incompatibility if upstream is not updated. | Classified external dependency warning. | Upgrade supported SDK when verified. | No |
+
+## Resolved validation gate
+
+- **TD-001 / JL-A10:** resolved 2026-10-13 by owner-operated physical E2E. Spoken recurring create/list/delete used `lilith_routine`, persisted `22:00 Europe/Madrid`, and avoided reminder/Home-action misrouting.

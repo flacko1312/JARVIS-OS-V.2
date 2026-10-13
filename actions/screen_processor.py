@@ -12,9 +12,17 @@ import time
 from pathlib import Path
 from typing import Optional
 
+from core.vision_model import (
+    OllamaVisionConfig,
+    configured_ollama_vision,
+    configured_vision_fallback_model,
+    configured_vision_model,
+)
 from memory.config_manager import get_gemini_key
 
 import numpy as np
+import httpx
+import requests
 import sounddevice as sd
 
 def _get_voice_name() -> str:
@@ -44,6 +52,7 @@ except ImportError:
     _PIL = False
 
 from google import genai
+from google.genai import errors as genai_errors
 from google.genai import types as gtypes
 
 def _base_dir() -> Path:
@@ -217,8 +226,146 @@ def _capture_camera() -> tuple[bytes, str]:
     return buf.tobytes(), "image/jpeg"
 
 
+def _vision_http_options() -> gtypes.HttpOptions:
+    """Use the SDK retry loop once for overloaded vision models only."""
+    return gtypes.HttpOptions(
+        retry_options=gtypes.HttpRetryOptions(
+            attempts=2,
+            initial_delay=0.5,
+            max_delay=1.0,
+            exp_base=2,
+            jitter=0.2,
+            http_status_codes=[503],
+        )
+    )
+
+
+def _vision_request_config() -> gtypes.GenerateContentConfig:
+    return gtypes.GenerateContentConfig(
+        # This request never exposes tools. Disabling SDK-side automatic
+        # function calling preserves behavior and avoids its Models API warning.
+        automatic_function_calling=gtypes.AutomaticFunctionCallingConfig(
+            disable=True
+        )
+    )
+
+
+def _vision_error(code: int | None) -> RuntimeError:
+    if code == 503:
+        return RuntimeError(
+            "Vision service unavailable (503) after bounded retries. "
+            "Please try again later."
+        )
+    if code == 429:
+        return RuntimeError(
+            "Vision request was rate-limited or exceeded quota (429). "
+            "No fallback was attempted."
+        )
+    if code in (401, 403):
+        return RuntimeError(
+            f"Vision authentication or authorization failed ({code}). "
+            "No retry or fallback was attempted."
+        )
+    if code is not None and 400 <= code < 500:
+        return RuntimeError(
+            f"Vision model or request configuration failed ({code}). "
+            "No retry or fallback was attempted."
+        )
+    if code is not None:
+        return RuntimeError(f"Vision service failed with HTTP {code}.")
+    return RuntimeError("Vision analysis failed before a valid response was returned.")
+
+
+def _request_vision_answer(client, model: str, contents: list) -> str:
+    response = client.models.generate_content(
+        model=model,
+        contents=contents,
+        config=_vision_request_config(),
+    )
+    text = (getattr(response, "text", "") or "").strip()
+    if not text:
+        raise RuntimeError("Gemini returned no text for the screen image.")
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _provider_unavailable(exc: Exception) -> bool:
+    if isinstance(exc, genai_errors.APIError):
+        return exc.code in {500, 502, 503, 504}
+    return isinstance(exc, (httpx.RequestError, TimeoutError, ConnectionError))
+
+
+def _request_ollama_vision_answer(
+    config: OllamaVisionConfig,
+    image_bytes: bytes,
+    user_text: str,
+) -> str:
+    prompt = (
+        "Analyze the supplied image and answer the user's question. "
+        "Describe only what is actually visible. Only report text or details "
+        "that are clearly legible, and explicitly say when something is unclear. "
+        "Do not invent unreadable text, people, accounts, or UI state.\n\n"
+        f"User question: {user_text}"
+    )
+    response = requests.post(
+        f"{config.url}/api/chat",
+        json={
+            "model": config.model,
+            "stream": False,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": prompt,
+                    "images": [base64.b64encode(image_bytes).decode("ascii")],
+                }
+            ],
+            "options": {"temperature": 0},
+        },
+        timeout=(config.connect_timeout, config.read_timeout),
+    )
+    response.raise_for_status()
+    try:
+        text = str(response.json().get("message", {}).get("content", "")).strip()
+    except (TypeError, ValueError, AttributeError) as exc:
+        raise RuntimeError("Local Ollama vision returned an invalid response.") from exc
+    if not text:
+        raise RuntimeError("Local Ollama vision returned no visual answer.")
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _local_vision_answer(
+    image_bytes: bytes,
+    user_text: str,
+    gemini_failure: Exception,
+) -> str:
+    try:
+        config = configured_ollama_vision(_CONFIG_PATH)
+    except ValueError as exc:
+        raise RuntimeError(
+            f"Gemini vision unavailable; local vision configuration failed: {exc}"
+        ) from exc
+
+    if not config.enabled:
+        raise RuntimeError(
+            "Gemini vision unavailable and local Ollama vision is disabled."
+        ) from gemini_failure
+
+    print(f"[Vision] Gemini providers unavailable; trying local Ollama: {config.model}")
+    try:
+        return _request_ollama_vision_answer(config, image_bytes, user_text)
+    except (requests.RequestException, RuntimeError) as exc:
+        raise RuntimeError(
+            "Gemini vision unavailable and local Ollama vision failed: "
+            f"{type(exc).__name__}."
+        ) from exc
+
+
 def _direct_vision_answer(image_bytes: bytes, mime_type: str, user_text: str) -> str:
-    client = genai.Client(api_key=_get_api_key())
+    client = genai.Client(
+        api_key=_get_api_key(),
+        http_options=_vision_http_options(),
+    )
+    primary_model = configured_vision_model(_CONFIG_PATH)
+    fallback_model = configured_vision_fallback_model(_CONFIG_PATH)
     prompt = (
         f"{_SYSTEM_PROMPT}\n\n"
         "For screen analysis, prioritize visible on-screen text and exact UI state. "
@@ -227,18 +374,39 @@ def _direct_vision_answer(image_bytes: bytes, mime_type: str, user_text: str) ->
         "Answer the user's question directly.\n\n"
         f"User question: {user_text}"
     )
-    response = client.models.generate_content(
-        model="gemini-2.5-flash",
-        contents=[
-            gtypes.Part.from_bytes(data=image_bytes, mime_type=mime_type),
-            prompt,
-        ],
-    )
+    contents = [
+        gtypes.Part.from_bytes(data=image_bytes, mime_type=mime_type),
+        prompt,
+    ]
 
-    text = (getattr(response, "text", "") or "").strip()
-    if not text:
-        raise RuntimeError("Gemini returned no text for the screen image.")
-    return re.sub(r"\s+", " ", text).strip()
+    print(f"[Vision] Primary model: {primary_model}")
+    try:
+        return _request_vision_answer(client, primary_model, contents)
+    except genai_errors.APIError as exc:
+        if exc.code != 503:
+            if _provider_unavailable(exc):
+                return _local_vision_answer(image_bytes, user_text, exc)
+            raise _vision_error(exc.code) from exc
+
+        if not fallback_model or fallback_model == primary_model:
+            return _local_vision_answer(image_bytes, user_text, exc)
+
+        print(
+            "[Vision] Primary unavailable (503); "
+            f"trying fallback: {fallback_model}"
+        )
+        try:
+            return _request_vision_answer(client, fallback_model, contents)
+        except genai_errors.APIError as fallback_exc:
+            if _provider_unavailable(fallback_exc):
+                return _local_vision_answer(
+                    image_bytes, user_text, fallback_exc
+                )
+            raise _vision_error(fallback_exc.code) from fallback_exc
+        except (httpx.RequestError, TimeoutError, ConnectionError) as fallback_exc:
+            return _local_vision_answer(image_bytes, user_text, fallback_exc)
+    except (httpx.RequestError, TimeoutError, ConnectionError) as exc:
+        return _local_vision_answer(image_bytes, user_text, exc)
 
 class _VisionSession:
     def __init__(self):

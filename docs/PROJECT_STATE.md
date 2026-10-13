@@ -1,10 +1,10 @@
 # JARVIS Project State
 
-Status: **CANONICAL CURRENT STATE** as of 2026-10-08.
+Status: **CANONICAL CURRENT STATE** as of 2026-10-13.
 
 ## Verdict
 
-Machine-verifiable recovery and stabilization are complete on the real Windows checkout. JL-A10 owner-operated spoken Gemini Live and persistent routine lifecycle certification is PASS / CLOSED on Git HEAD `bbe95a8d3abcdbbab130e46a3ac336bd47f5c374`. The earlier "10 de la noche" `22:00` -> `13:00` routine defect is fixed and physically retested. AUT-8/AUT-9 were not started.
+Machine-verifiable recovery and stabilization are complete on the real Windows checkout. JL-A10 is closed after owner-operated spoken validation proved correct `lilith_routine` create/list/delete routing and persistence of `22:00 Europe/Madrid`. Real screen capture, Gemini primary image analysis, and the spoken visual response also passed owner validation. AUT-8/AUT-9 were not started.
 
 ## Verified done
 
@@ -15,7 +15,9 @@ Machine-verifiable recovery and stabilization are complete on the real Windows c
 - Memory authority guards enforce LILITH persistence versus explicit in-process session storage.
 - Routine guard enforces recurring/one-shot/immediate routing, turn provenance, and duplicate FunctionCall IDs.
 - Routine guard now validates deterministic Spanish time expressions in current-turn routine descriptions before submitting `lilith_routine`, including the JL-A10 `10 de la noche` -> `22:00` regression.
-- JL-A10 physical retest passed: interface ready, 87 LILITH context facts loaded, connected, microphone stream open, receive loop running, playback running, `lilith_routine` create/list/delete/list confirmed, and the spoken routine create submitted `22:00 Europe/Madrid`.
+- JL-A10 owner validation passed physically: recurring create/list/delete stayed on `lilith_routine`, persisted `22:00 Europe/Madrid`, and did not route to reminders or immediate Home actions.
+- `screen_process` owner validation passed physically for screen capture, `gemini-3.8-flash` analysis, accurate visible-content description, and spoken response.
+- The obsolete `gemini-2.5-flash` model and AFC warning regressions are fixed. Bounded cloud 503 handling and the final Ollama fallback are covered automatically; isolated local `qwen3-vl:4b` vision passed.
 - LILITH HTTP contract is covered for health/runtime/docs/source/Git/commands/memory/Home/approvals; routine persistence uses the command gateway.
 - Root pytest discovery is deterministic and ignores runtime snapshots under `tmp/`.
 - Automated PyQt offscreen evidence, API/WebSocket tests, secret scan, dependency check, frontend lint/typecheck/build, and production dependency audit run successfully.
@@ -24,7 +26,9 @@ Machine-verifiable recovery and stabilization are complete on the real Windows c
 
 ## Non-blocking operational validation
 
-- Optional robustness checks such as mute/unmute, interruption/barge-in depth, device loss/reconnect recovery, display scaling sweeps, and long soak remain useful operational validation. They are not blockers for the core JL-A10 spoken Gemini Live / persistent routine lifecycle gate.
+- Real microphone selection, echo cancellation quality, barge-in, device loss/reconnect, Windows display scaling, and 30-minute soak are not machine-certifiable without hardware use.
+- Camera capture/analysis has not received the same owner-operated physical validation as screen capture.
+- Ollama `qwen3-vl:4b` passed an isolated local image smoke, but its position as final fallback in the complete real JARVIS provider chain has not been physically exercised because Gemini primary succeeded.
 
 ## Not started / deferred
 
@@ -34,7 +38,7 @@ Machine-verifiable recovery and stabilization are complete on the real Windows c
 
 ## Current quality baseline
 
-- Windows pytest at JL-A10 retest HEAD: 429 passed; 77 skipped; 0 failed; 0 errors; 1 warning; 15 subtests passed.
+- Pytest: 526 collected; 449 passed; 77 classified historical-spec skips; 0 failed; 0 errors; 1 third-party Python 3.14 deprecation warning; 19 subtests passed.
 - QA runner: 5/5 checks passed, P0=0, P1=0; three P2 debt findings.
 - Python dependency consistency: clean.
 - Web: ESLint pass, TypeScript pass, Next production build pass, production `npm audit` 0 vulnerabilities. Five high development-only transitive audit findings remain.
