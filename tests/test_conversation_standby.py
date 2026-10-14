@@ -1,4 +1,5 @@
 import asyncio
+import tempfile
 import threading
 import unittest
 from types import SimpleNamespace
@@ -499,7 +500,7 @@ class ConversationStandbyTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(configs[0].session_resumption.handle)
         self.assertEqual(configs[1].session_resumption.handle, "newest")
 
-    async def test_every_nonempty_resumption_handle_is_captured_without_logging_value(self):
+    async def test_every_resumable_nonempty_handle_is_captured_without_logging_value(self):
         jarvis, _ = self.make_jarvis()
         jarvis._conversation_requested.set()
         jarvis.audio_in_queue = asyncio.Queue()
@@ -509,7 +510,7 @@ class ConversationStandbyTests(unittest.IsolatedAsyncioTestCase):
             async def receive(self):
                 yield SimpleNamespace(
                     session_resumption_update=SimpleNamespace(
-                        resumable=False, new_handle="latest-secret-handle"
+                        resumable=True, new_handle="latest-secret-handle"
                     ),
                     go_away=None,
                     server_content=None,
@@ -599,6 +600,9 @@ class ConversationStandbyTests(unittest.IsolatedAsyncioTestCase):
             async def send_realtime_input(self, **_kwargs):
                 return None
 
+            async def send_client_content(self, **_kwargs):
+                return None
+
             async def close(self):
                 return None
 
@@ -623,7 +627,7 @@ class ConversationStandbyTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(configs), 2)
         self.assertEqual(configs[0].session_resumption.handle, "expired-secret")
         self.assertIsNone(configs[1].session_resumption.handle)
-        self.assertIn("[LOCAL CONVERSATION CONTINUITY]", configs[1].system_instruction)
+        self.assertIn("[DURABLE JARVIS CONVERSATION CONTINUITY]", configs[1].system_instruction)
         self.assertIn("seguimos con Helios", configs[1].system_instruction)
 
     async def test_pause_resume_does_not_repeat_the_startup_greeting(self):
@@ -674,6 +678,7 @@ class ConversationStandbyTests(unittest.IsolatedAsyncioTestCase):
         jarvis._session_resumption_handle = "resume-me"
         jarvis._logical_conversation_started = True
         jarvis._remember_conversation_text("user", "contexto importante")
+        jarvis._rolling_conversation_summary = "resumen importante"
         old_id = jarvis._conversation_id
 
         jarvis.request_shutdown()
@@ -692,6 +697,9 @@ class ConversationStandbyTests(unittest.IsolatedAsyncioTestCase):
         observations = {}
         captured_targets = []
         real_thread = threading.Thread
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        store_path = main.Path(temp_dir.name) / "conversation_state.json"
 
         class Root:
             def mainloop(self):
@@ -724,6 +732,7 @@ class ConversationStandbyTests(unittest.IsolatedAsyncioTestCase):
             patch.dict(main.os.environ, {"JARVIS_CLI": "1"}, clear=False),
             patch.object(main, "wait_for_startup_claps", return_value=True),
             patch.object(main, "_load_voice_name", return_value="Puck"),
+            patch.object(main, "default_conversation_store_path", return_value=store_path),
             patch.object(main.threading, "Thread", CapturingThread),
             patch.object(main.JarvisLive, "run", inspect_startup),
             patch.object(main.genai, "Client") as client_factory,

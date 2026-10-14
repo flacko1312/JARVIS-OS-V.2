@@ -24,6 +24,15 @@ from core.lilith_gateway import LilithBridge
 from memory.memory_manager import (
     load_memory, format_memory_for_prompt,
 )
+from memory.conversation_store import (
+    ConversationStore,
+    append_tool_result as append_conversation_tool_result,
+    append_turn as append_conversation_turn,
+    default_store_path as default_conversation_store_path,
+    empty_state as empty_conversation_state,
+    redact_sensitive_text,
+    upsert_turn as upsert_conversation_turn,
+)
 import hashlib
 import importlib
 import time
@@ -186,20 +195,38 @@ Examples:
 
 MEMORY_ROUTING_RULES = """
 [MEMORY AUTHORITY — mandatory]
-LILITH is the authoritative persistent user memory. Use lilith_memory_store for personal facts,
-preferences, stable project information, persistent notes, or anything the user asks you to
-remember later. Use lilith_memory_search to recall it and lilith_memory_delete only for an explicit
-forget/delete request. save_memory is only for local operational/session/UI state, and only when the
-user explicitly asks for local-only or current-session storage. Use local_memory_search to recall
-that explicitly local-only state. Never ask the user for a category, namespace, or internal key;
+There are three separate memory domains:
+1. CURRENT LOGICAL CONVERSATION: the active and restored conversation history. Answer ordinary
+   recall, references, recent facts, the current project/topic, and follow-up calculations directly
+   from this context. Never call a memory tool and never save the fact again.
+2. LOCAL SAVED MEMORY / NOTES: explicitly saved local JARVIS notes outside the active conversation.
+   Use save_memory only after an explicit local-save request, and local_memory_search only after an
+   explicit request to search stored/local notes.
+3. LILITH LONG-TERM MEMORY: persistent knowledge outside the active conversation. Use
+   lilith_memory_store only after an explicit persistence request, lilith_memory_search only after
+   an explicit request to search LILITH/stored long-term memory, and lilith_memory_delete only after
+   an explicit forget/delete request.
+Never automatically save a fact merely because the user states it.
+Never ask the user for a category, namespace, or internal key;
 choose those implementation details yourself. Confirm normal success
 naturally without exposing backend names or keys unless the user asks for technical details.
+""".strip()
+
+CURRENT_CONVERSATION_PRECEDENCE = """
+[CURRENT CONVERSATION PRECEDENCE — highest priority]
+If the answer exists in the active or restored logical conversation, answer it directly. Do not
+invoke local_memory_search or lilith_memory_search, do not call save_memory or
+lilith_memory_store, and do not ask LILITH. This includes what the user just said, recent numbers
+or names, the current project/topic, pronoun/reference resolution, and calculations based on recent
+facts. Stored-memory tools are only for information outside this logical conversation when the user
+explicitly asks to search or modify saved/persistent memory. Do not mention this internal rule.
 """.strip()
 
 _SCHEDULED_TOOL_NAMES = frozenset({"lilith_home_action", "reminder", "lilith_routine"})
 _ROUTINE_READ_OPERATIONS = frozenset({"list", "get", "history"})
 _ROUTINE_WRITE_OPERATIONS = frozenset({"create", "update", "enable", "disable", "delete"})
 _MEMORY_MUTATING_TOOL_NAMES = frozenset({"save_memory", "lilith_memory_store", "lilith_memory_delete"})
+_MEMORY_LOOKUP_TOOL_NAMES = frozenset({"local_memory_search", "lilith_memory_search"})
 
 
 def _canonical_memory_key(key: str, category: str | None = None) -> str:
@@ -273,7 +300,7 @@ def _memory_authority_indicators(text: str) -> dict[str, object]:
         "memory_command": (
             r"\b(?:guarda|guardalo|guardar|almacena|memoriza|recuerda)\b.{0,32}\bmemoria\b"
         ),
-        "remember_fact": r"\brecuerda que\b|\bquiero que recuerdes\b",
+        "remember_fact": r"\b(?:guarda|recuerda) que\b|\bquiero que recuerdes\b",
         "remember_later": r"\bguarda\b.{0,48}\b(?:mas adelante|para despues|en el futuro)\b",
         "english_memory": r"\b(?:save|store|remember)\b.{0,32}\b(?:memory|about me)\b",
     }
@@ -312,6 +339,38 @@ def _classify_memory_request(text: str, *, source: str, requested_tool: str) -> 
     if source in {"voice", "text"}:
         return "ambiguous"
     return "unknown"
+
+
+def _explicit_memory_lookup_scope(text: str) -> str:
+    """Return the explicitly requested saved-memory domain, never inferred recall intent."""
+    value = _normalized_turn_text(text)
+    if not value:
+        return "none"
+    explicit_search = bool(re.search(
+        r"\b(?:busca|buscar|consulta|consultar|revisa|revisar)\b.{0,48}\b(?:memoria|notas?|guardad[oa]s?|recuerdos?)\b"
+        r"|\b(?:que|qué) (?:tienes|hay) guardad[oa]\b"
+        r"|\b(?:lo que|algo que) (?:te )?(?:pedi |pedí )?guardar\b"
+        r"|\brecuerdos? almacenados?\b"
+        r"|\b(?:en|de) (?:tu |la |tus )?(?:memoria|notas?)\b",
+        value,
+    ))
+    if not explicit_search:
+        return "none"
+    if re.search(r"\blilith\b|\b(?:memoria|historial) (?:persistente|de largo plazo)\b", value):
+        return "persistent"
+    if re.search(r"\b(?:local|jarvis|notas?)\b", value):
+        return "local"
+    return "stored"
+
+
+def _has_explicit_memory_write_intent(text: str) -> bool:
+    """Recognize an explicit save command without treating an ordinary fact as one."""
+    value = _normalized_turn_text(text)
+    return bool(re.search(
+        r"\b(?:guarda|guardalo|guardar|almacena|memoriza|anota|apunta|save|store)\b"
+        r"|\brecuerda (?:esto|que)\b|\bquiero que recuerdes\b",
+        value,
+    ))
 
 
 def _memory_key_alias(value: str) -> str:
@@ -532,6 +591,10 @@ class RecoverableLiveDisconnect(ConnectionError):
     """Real Live transport/session failure that should trigger a silent reconnect."""
 
 
+class InitialHistoryRejected(ConnectionError):
+    """Gemini rejected the optional initial-history protocol."""
+
+
 def _is_recoverable_live_disconnect(exc: BaseException) -> bool:
     leaves = list(_exception_leaves(exc))
     return bool(leaves) and all(
@@ -544,6 +607,14 @@ def _is_recoverable_live_disconnect(exc: BaseException) -> bool:
 
 def _live_reconnect_delay(attempt: int) -> float:
     return min(30.0, float(2 ** max(0, int(attempt) - 1)))
+
+
+def _is_invalid_argument_1007(exc: BaseException) -> bool:
+    return any(
+        "1007" in str(leaf)
+        and "invalid argument" in str(leaf).lower()
+        for leaf in _exception_leaves(exc)
+    )
 
 
 def _live_response_audio_bytes(response) -> bytes | None:
@@ -789,6 +860,19 @@ def _clean_transcript(text: str) -> str:
     text = _CTRL_RE.sub("", text)
     text = re.sub(r"[\x00-\x08\x0b-\x1f]", "", text)
     return text.strip()
+
+
+def _merge_transcript_text(current: str, chunk: str) -> str:
+    """Merge incremental or cumulative Live transcription updates safely."""
+    current = " ".join(str(current or "").split()).strip()
+    chunk = " ".join(str(chunk or "").split()).strip()
+    if not current:
+        return chunk
+    if not chunk or chunk == current or current.endswith(chunk):
+        return current
+    if chunk.startswith(current):
+        return chunk
+    return f"{current} {chunk}".strip()
 
 TOOL_DECLARATIONS = [
     {
@@ -1503,13 +1587,15 @@ TOOL_DECLARATIONS = [
     {
         "name": "save_memory",
         "description": (
-            "Save a LOCAL-ONLY operational note (runtime hints, current-session context, temporary flags). "
+            "Save a LOCAL-ONLY operational note outside the active conversation. Call only when the "
+            "user explicitly asks to save something locally; never auto-save an ordinary conversational fact. "
             "For persistent personal facts about the user (name, age, preferences, relationships, "
             "projects, wishes), use lilith_memory_store instead — LILITH is the canonical memory. "
             "Do NOT use this tool to store identity, preferences, relationships, or any personal "
             "knowledge. Those categories are restricted to LILITH. Never use this tool when the user "
             "explicitly asks to save, store, remember, or delete something in persistent memory. "
-            "Use only when the user explicitly requests local-only or current-session storage. "
+            "Do not call for recent numbers, names, the current project/topic, follow-up references, "
+            "or anything already present in the active/restored conversation. "
             "Choose category and key internally; never ask the user for either. "
             "Values must be in English regardless of the conversation language."
         ),
@@ -1532,8 +1618,10 @@ TOOL_DECLARATIONS = [
     {
         "name": "local_memory_search",
         "description": (
-            "Read/search JARVIS LOCAL-ONLY operational memory. Use this only when the user asks "
-            "to recall something they explicitly stored locally/in JARVIS/current-session memory. "
+            "Read/search SAVED JARVIS LOCAL-ONLY notes outside the active conversation. Use only when "
+            "the user explicitly asks to search local memory, saved notes, or something previously stored. "
+            "DO NOT CALL for facts in the active/restored conversation, what the user just said, recent "
+            "numbers or names, the current project/topic, follow-up arithmetic, or pronoun/reference resolution. "
             "Do not use it for normal persistent personal memory; use lilith_memory_search for that. "
             "If you know the internal key from the prior local save, pass it; otherwise omit it and "
             "the tool returns the small local notes/projects set for semantic selection."
@@ -1561,8 +1649,10 @@ TOOL_DECLARATIONS = [
     {
         "name": "lilith_memory_search",
         "description": (
-            "Search the user's persistent memory stored in LILITH. "
-            "Use when the user asks what LILITH knows, remembers, or has stored. "
+            "Search persistent long-term memory stored in LILITH, outside the active conversation. "
+            "Use only when the user explicitly asks to search LILITH, persistent memory, or stored history. "
+            "DO NOT CALL for facts in the active/restored conversation, what the user just said, recent "
+            "numbers or names, the current project/topic, follow-up arithmetic, or pronoun/reference resolution. "
             "Returns real facts from LILITH's semantic memory database."
         ),
         "parameters": {
@@ -1578,6 +1668,8 @@ TOOL_DECLARATIONS = [
         "name": "lilith_memory_store",
         "description": (
             "Store or update a personal fact in LILITH's persistent memory. "
+            "Call only when the user explicitly asks for persistent storage; never auto-save a fact stated "
+            "during ordinary conversation or anything already available in active/restored history. "
             "LILITH is the canonical source for personal knowledge about the user. "
             "Use a stable semantic key for each fact (e.g. favorite_color, birthday, pet_name). "
             "To CORRECT a fact, call this again with the SAME key and the new value — "
@@ -1953,6 +2045,11 @@ class ConversationState(str, Enum):
 
 
 MAX_LIVE_RECONNECT_ATTEMPTS = 5
+_INITIAL_HISTORY_UNSUPPORTED_MODELS = frozenset({
+    # Verified against google-genai 2.25.0 / Gemini Developer API v1beta:
+    # even a two-item user/model history is rejected with API 1007.
+    "gemini-2.5-flash-native-audio-preview-12-2025",
+})
 
 
 class JarvisLive:
@@ -1965,6 +2062,7 @@ class JarvisLive:
         cloud_safe: bool = False,
         api_key: str | None = None,
         external_audio: bool = False,
+        conversation_store_path: Path | str | None = None,
     ):
         # Keep ``ui`` as a compatibility alias for desktop integrations that
         # already inspect JarvisLive.ui. The engine contract is JarvisClient.
@@ -2019,14 +2117,40 @@ class JarvisLive:
         self._shutdown_requested = threading.Event()
         self._conversation_requested = threading.Event()
         self._conversation_state = ConversationState.STANDBY
-        self._conversation_lock = threading.Lock()
+        self._conversation_lock = threading.RLock()
         self._live_runner_lock = threading.Lock()
+        self._conversation_store = (
+            ConversationStore(conversation_store_path)
+            if conversation_store_path is not None and not self.cloud_safe
+            else None
+        )
+        persisted_conversation = (
+            self._conversation_store.load()
+            if self._conversation_store is not None
+            else empty_conversation_state()
+        )
+        self._conversation_id = persisted_conversation["conversation_id"]
+        self._conversation_continuity = list(persisted_conversation["recent_turns"])
+        self._rolling_conversation_summary = persisted_conversation["summary"]
+        self._recent_conversation_tool_results = list(
+            persisted_conversation["recent_tool_results"]
+        )
+        self._conversation_metadata = dict(persisted_conversation["metadata"])
+        # Gemini handles are deliberately process-local transport state. Durable
+        # continuity comes from the local store, never from an opaque token.
         self._session_resumption_handle: str | None = None
-        self._conversation_id = uuid.uuid4().hex
-        self._conversation_continuity: list[dict[str, str]] = []
-        self._rolling_conversation_summary = ""
-        self._logical_conversation_started = False
-        self._resume_from_local_continuity = False
+        self._session_resumption_handle_at: float | None = None
+        self._logical_conversation_started = bool(
+            self._conversation_continuity
+            or self._rolling_conversation_summary
+            or self._recent_conversation_tool_results
+        )
+        self._resume_from_local_continuity = self._logical_conversation_started
+        if self._logical_conversation_started:
+            print(
+                "[JARVIS] Durable conversation loaded: "
+                f"{len(self._conversation_continuity)} turns, logical conversation preserved."
+            )
         self._tour_active = False
         # JL-W003: optional LILITH bridge for typed input (None when not configured).
         self._lilith: LilithBridge | None = None
@@ -2094,40 +2218,205 @@ class JarvisLive:
         with self._conversation_lock:
             if self._conversation_requested.is_set() or self.session is not None:
                 return False
-            self._conversation_id = uuid.uuid4().hex
-            self._conversation_continuity.clear()
-            self._rolling_conversation_summary = ""
+            try:
+                new_state = (
+                    self._conversation_store.new_conversation()
+                    if self._conversation_store is not None
+                    else empty_conversation_state()
+                )
+            except (OSError, ValueError, TypeError) as exc:
+                print(
+                    "[JARVIS] ⚠️ New conversation was not created because the "
+                    f"continuity store could not be replaced: {type(exc).__name__}"
+                )
+                return False
+            self._conversation_id = new_state["conversation_id"]
+            self._conversation_continuity = list(new_state["recent_turns"])
+            self._rolling_conversation_summary = new_state["summary"]
+            self._recent_conversation_tool_results = list(new_state["recent_tool_results"])
+            self._conversation_metadata = dict(new_state["metadata"])
             self._session_resumption_handle = None
+            self._session_resumption_handle_at = None
             self._logical_conversation_started = False
             self._resume_from_local_continuity = False
         return True
 
-    def _remember_conversation_text(self, role: str, text: str) -> None:
-        clean = " ".join(str(text or "").split()).strip()
+    def _conversation_store_state(self) -> dict:
+        return {
+            "schema_version": 1,
+            "conversation_id": self._conversation_id,
+            "summary": self._rolling_conversation_summary,
+            "recent_turns": list(self._conversation_continuity),
+            "recent_tool_results": list(self._recent_conversation_tool_results),
+            "metadata": dict(self._conversation_metadata),
+        }
+
+    def _persist_conversation_state(self) -> None:
+        if self._conversation_store is None:
+            return
+        with self._conversation_lock:
+            try:
+                saved = self._conversation_store.save(self._conversation_store_state())
+            except (OSError, ValueError, TypeError) as exc:
+                print(
+                    "[JARVIS] ⚠️ Conversation continuity save failed: "
+                    f"{type(exc).__name__}"
+                )
+                return
+            self._conversation_id = saved["conversation_id"]
+            self._conversation_continuity = list(saved["recent_turns"])
+            self._rolling_conversation_summary = saved["summary"]
+            self._recent_conversation_tool_results = list(saved["recent_tool_results"])
+            self._conversation_metadata = dict(saved["metadata"])
+
+    def _remember_conversation_text(
+        self,
+        role: str,
+        text: str,
+        *,
+        expected_conversation_id: str | None = None,
+        turn_id: str | None = None,
+    ) -> None:
+        clean = redact_sensitive_text(text)
         if not clean:
             return
-        entry = {"role": role, "text": clean}
-        self._conversation_continuity.append(entry)
-        label = "User" if role == "user" else "Jarvis"
-        line = f"{label}: {clean}"
-        self._rolling_conversation_summary = "\n".join(
-            part for part in (self._rolling_conversation_summary, line) if part
-        )
+        with self._conversation_lock:
+            if (
+                expected_conversation_id is not None
+                and expected_conversation_id != self._conversation_id
+            ):
+                return
+            updated = (
+                upsert_conversation_turn(
+                    self._conversation_store_state(),
+                    role,
+                    clean,
+                    turn_id=turn_id,
+                )
+                if turn_id
+                else append_conversation_turn(
+                    self._conversation_store_state(), role, clean
+                )
+            )
+            self._conversation_continuity = list(updated["recent_turns"])
+            self._rolling_conversation_summary = updated["summary"]
+            self._conversation_metadata = dict(updated["metadata"])
+            self._persist_conversation_state()
+
+    def _remember_conversation_tool_result(
+        self,
+        tool: str,
+        result,
+        *,
+        expected_conversation_id: str | None = None,
+    ) -> None:
+        try:
+            summary = json.dumps(result, ensure_ascii=False, default=str)
+        except (TypeError, ValueError):
+            summary = str(result)
+        with self._conversation_lock:
+            if (
+                expected_conversation_id is not None
+                and expected_conversation_id != self._conversation_id
+            ):
+                return
+            updated = append_conversation_tool_result(
+                self._conversation_store_state(), tool, summary
+            )
+            self._recent_conversation_tool_results = list(updated["recent_tool_results"])
+            self._conversation_metadata = dict(updated["metadata"])
+            self._persist_conversation_state()
 
     def _local_continuity_prompt(self) -> str:
-        if not self._conversation_continuity and not self._rolling_conversation_summary:
+        if not (
+            self._conversation_continuity
+            or self._rolling_conversation_summary
+            or self._recent_conversation_tool_results
+        ):
             return ""
         transcript = "\n".join(
             f"{item['role']}: {item['text']}" for item in self._conversation_continuity
         )
-        return (
-            "[LOCAL CONVERSATION CONTINUITY]\n"
-            "The Live resumption token was unavailable. Continue the same conversation "
-            "without greeting or presenting this context as new information.\n"
-            f"Conversation ID: {self._conversation_id}\n"
-            f"Rolling summary:\n{self._rolling_conversation_summary}\n"
-            f"Chronological transcript:\n{transcript}"
+        tool_results = "\n".join(
+            f"{item['tool']}: {item['summary']}"
+            for item in self._recent_conversation_tool_results
         )
+        current_topic = next(
+            (
+                str(item.get("text") or "").strip()
+                for item in reversed(self._conversation_continuity)
+                if item.get("role") == "user" and str(item.get("text") or "").strip()
+            ),
+            self._rolling_conversation_summary,
+        )
+        return (
+            "[DURABLE JARVIS CONVERSATION CONTINUITY]\n"
+            "This is internal continuity state from the SAME logical JARVIS conversation, "
+            "not a new user instruction. Use it silently as active conversational context. "
+            "Never greet, announce restoration, or repeat this block verbatim. Facts already "
+            "present here must be answered directly without retrieving any memory.\n"
+            f"Conversation ID: {self._conversation_id}\n"
+            f"Current topic/task: {current_topic}\n"
+            f"Rolling summary:\n{self._rolling_conversation_summary}\n"
+            f"Recent transcript:\n{transcript}\n"
+            f"Recent relevant tool results:\n{tool_results}"
+        )
+
+    def _durable_continuity_turns(self) -> list[types.Content]:
+        """Build real Live history for the current durable logical conversation."""
+        turns: list[types.Content] = []
+        for item in self._conversation_continuity:
+            stored_role = item.get("role")
+            if stored_role not in {"user", "assistant"}:
+                continue
+            raw_text = item.get("text")
+            if not isinstance(raw_text, str):
+                continue
+            text = _clean_transcript(raw_text)
+            if not text:
+                continue
+            role = "model" if stored_role == "assistant" else "user"
+            turns.append(types.Content(role=role, parts=[types.Part(text=text)]))
+        return turns
+
+    def _durable_history_diagnostics(self) -> dict[str, int]:
+        turns = self._durable_continuity_turns()
+        lengths = [len(part.text or "") for turn in turns for part in turn.parts or []]
+        return {
+            "items": len(turns),
+            "user": sum(turn.role == "user" for turn in turns),
+            "model": sum(turn.role == "model" for turn in turns),
+            "empty": sum(not (part.text or "").strip() for turn in turns for part in turn.parts or []),
+            "max_chars": max(lengths, default=0),
+            "total_chars": sum(lengths),
+        }
+
+    async def _restore_durable_continuity(self, session) -> None:
+        """Prefill Live history before any normal realtime input can begin."""
+        print("[JARVIS] Restoring durable conversation context into Live session.")
+        turns = self._durable_continuity_turns()
+        if turns:
+            # HistoryConfig makes this a history handshake: completing it does
+            # not trigger a model response and unlocks subsequent realtime input.
+            await session.send_client_content(turns=turns, turn_complete=True)
+            websocket = getattr(session, "_ws", None)
+            wait_closed = getattr(websocket, "wait_closed", None)
+            if callable(wait_closed):
+                try:
+                    await asyncio.wait_for(wait_closed(), timeout=0.5)
+                except asyncio.TimeoutError:
+                    pass
+                else:
+                    code = getattr(websocket, "close_code", None)
+                    reason = str(getattr(websocket, "close_reason", "") or "")
+                    if code == 1007 or "invalid argument" in reason.lower():
+                        raise InitialHistoryRejected(
+                            "Gemini API 1007 rejected initial history"
+                        )
+                    raise RecoverableLiveDisconnect(
+                        f"Live transport closed during initial history ({code})"
+                    )
+        print("[JARVIS] Durable conversation context restored.")
 
     async def _close_live_session(self) -> None:
         out_queue = self.out_queue
@@ -2313,6 +2602,10 @@ class JarvisLive:
             shutdown_requested = self._shutdown_requested
         if shutdown_requested.is_set():
             return
+        try:
+            self._persist_conversation_state()
+        except Exception as exc:
+            print(f"[JARVIS] ⚠️ Conversation continuity save failed: {type(exc).__name__}")
         shutdown_requested.set()
         conversation_requested = getattr(self, "_conversation_requested", None)
         if conversation_requested is not None:
@@ -2466,6 +2759,7 @@ class JarvisLive:
         lilith_context: dict | None = None,
         resumption_handle: str | None = None,
         local_continuity: str = "",
+        initial_history: bool = False,
     ) -> types.LiveConnectConfig:
         from datetime import datetime
 
@@ -2494,10 +2788,13 @@ class JarvisLive:
             mem_str = format_memory_for_prompt(stripped)
         if mem_str:
             parts.append(mem_str)
-        if local_continuity:
-            parts.append(local_continuity)
         parts.append(sys_prompt)
-        parts.append(LANGUAGE_RULE)  # repeated last: recency keeps the rule in force
+        if local_continuity:
+            # Keep active-conversation continuity after generic routing rules so
+            # immediate history wins without disabling either memory tool.
+            parts.append(local_continuity)
+        parts.append(LANGUAGE_RULE)  # repeated near the end: recency keeps the rule in force
+        parts.append(CURRENT_CONVERSATION_PRECEDENCE)
 
         return types.LiveConnectConfig(
             response_modalities=["AUDIO"],
@@ -2522,6 +2819,11 @@ class JarvisLive:
             session_resumption=types.SessionResumptionConfig(handle=resumption_handle),
             context_window_compression=types.ContextWindowCompressionConfig(
                 sliding_window=types.SlidingWindow(),
+            ),
+            history_config=(
+                types.HistoryConfig(initial_history_in_client_content=True)
+                if initial_history
+                else None
             ),
             speech_config=types.SpeechConfig(
                 voice_config=types.VoiceConfig(
@@ -3611,6 +3913,25 @@ class JarvisLive:
                 response={"result": "JARVIS blocked a duplicate memory FunctionCall; no second write occurred."},
             )
 
+        if (
+            name in {"save_memory", "lilith_memory_store"}
+            and classification == "ambiguous"
+            and not _has_explicit_memory_write_intent(turn_text)
+        ):
+            self._memory_call_turns[fc_id] = self._schedule_turn_id
+            self._memory_consumed_call_ids.add(fc_id)
+            self._memory_guard_log(
+                fc_id=fc_id, requested_tool=name, classification=classification,
+                routed_tool=name, canonical_key="", decision="suppressed_no_explicit_save",
+            )
+            return types.FunctionResponse(
+                id=fc.id, name=name,
+                response={"result": (
+                    "Automatic memory save suppressed. Keep this fact only in the active logical "
+                    "conversation unless the user explicitly requests saved memory."
+                )},
+            )
+
         if classification in {"ambiguous", "unknown"}:
             decision = "blocked_ambiguous_authority" if classification == "ambiguous" else "blocked_unknown_authority"
             self._memory_call_turns[fc_id] = self._schedule_turn_id
@@ -3729,10 +4050,39 @@ class JarvisLive:
             return response
         return types.FunctionResponse(id=fc.id, name=name, response=response.response)
 
+    async def _execute_memory_lookup_guarded(self, fc) -> types.FunctionResponse:
+        """Allow saved-memory lookup only for an explicit request in the current user turn."""
+        name = str(getattr(fc, "name", "") or "")
+        scope = _explicit_memory_lookup_scope(self._schedule_guard_text())
+        allowed = (
+            scope == "stored"
+            or (name == "local_memory_search" and scope == "local")
+            or (name == "lilith_memory_search" and scope == "persistent")
+        )
+        if allowed:
+            return await self._execute_tool(fc)
+        print(
+            "[JARVIS] Persistent-memory lookup suppressed: "
+            "active conversation context has precedence."
+        )
+        logger.info(
+            "MEMORY_LOOKUP_GUARD  tool=%s  scope=%s  decision=suppressed_current_conversation",
+            name, scope,
+        )
+        return types.FunctionResponse(
+            id=getattr(fc, "id", None), name=name,
+            response={"result": (
+                "Persistent-memory lookup suppressed. Answer directly from the active/restored "
+                "logical conversation. Use saved-memory tools only after an explicit user request."
+            )},
+        )
+
     async def _execute_tool_guarded(self, fc) -> types.FunctionResponse:
         name = getattr(fc, "name", "")
         if name in _MEMORY_MUTATING_TOOL_NAMES:
             return await self._execute_memory_tool_guarded(fc)
+        if name in _MEMORY_LOOKUP_TOOL_NAMES:
+            return await self._execute_memory_lookup_guarded(fc)
         if name not in _SCHEDULED_TOOL_NAMES:
             return await self._execute_tool(fc)
         fc_id = str(getattr(fc, "id", "") or "").strip()
@@ -4002,24 +4352,33 @@ class JarvisLive:
 
     async def _receive_audio(self):
         print("[JARVIS] 👂 Recv started")
-        out_buf, in_buf = [], []
-        _new_turn = True
-        turn_had_audio = False
+        receive_conversation_id = self._conversation_id
 
         try:
             while True:
                 if self._shutdown_requested.is_set() or not self._conversation_requested.is_set():
                     return
+                out_buf, in_buf = [], []
+                live_turn_id = uuid.uuid4().hex
+                _new_turn = True
+                turn_had_audio = False
                 received_message = False
                 async for response in self.session.receive():
                     received_message = True
 
                     resumption = getattr(response, "session_resumption_update", None)
                     handle = getattr(resumption, "new_handle", None)
-                    if isinstance(handle, str) and handle.strip():
+                    if (
+                        getattr(resumption, "resumable", None) is True
+                        and isinstance(handle, str)
+                        and handle.strip()
+                    ):
                         with self._conversation_lock:
                             if self._conversation_requested.is_set():
+                                if receive_conversation_id != self._conversation_id:
+                                    return
                                 self._session_resumption_handle = handle.strip()
+                                self._session_resumption_handle_at = time.monotonic()
                                 print("[JARVIS] Session resumption handle updated.")
 
                     if getattr(response, "go_away", None) is not None:
@@ -4038,8 +4397,17 @@ class JarvisLive:
                         if sc.output_transcription and sc.output_transcription.text:
                             txt = _clean_transcript(sc.output_transcription.text)
                             if txt:
-                                out_buf.append(txt)
-                                self._interrupted_text = " ".join(out_buf)
+                                merged_output = _merge_transcript_text(
+                                    " ".join(out_buf), txt
+                                )
+                                out_buf = [merged_output]
+                                self._interrupted_text = merged_output
+                                self._remember_conversation_text(
+                                    "assistant",
+                                    self._interrupted_text,
+                                    expected_conversation_id=receive_conversation_id,
+                                    turn_id=live_turn_id,
+                                )
                                 if not self.ui.muted:
                                     if _new_turn:
                                         self.ui.clear_subtitle()
@@ -4051,8 +4419,17 @@ class JarvisLive:
                             if txt:
                                 if not in_buf:
                                     self._begin_schedule_turn("", "voice")
-                                in_buf.append(txt)
-                                self._update_schedule_turn(" ".join(in_buf).strip())
+                                current_input = _merge_transcript_text(
+                                    " ".join(in_buf), txt
+                                )
+                                in_buf = [current_input]
+                                self._update_schedule_turn(current_input)
+                                self._remember_conversation_text(
+                                    "user",
+                                    current_input,
+                                    expected_conversation_id=receive_conversation_id,
+                                    turn_id=live_turn_id,
+                                )
                                 if (
                                     not getattr(self, "_pending_self_quit", False)
                                     and self._is_explicit_self_quit_transcript(self._current_input_transcript)
@@ -4075,13 +4452,23 @@ class JarvisLive:
                                 ):
                                     self._queue_self_quit_after_farewell()
                                 self.ui.write_log(f"You: {full_in}")
-                                self._remember_conversation_text("user", full_in)
+                                self._remember_conversation_text(
+                                    "user",
+                                    full_in,
+                                    expected_conversation_id=receive_conversation_id,
+                                    turn_id=live_turn_id,
+                                )
                             in_buf = []
 
                             full_out = " ".join(out_buf).strip()
                             if full_out:
                                 self.ui.write_log(f"Jarvis: {full_out}")
-                                self._remember_conversation_text("assistant", full_out)
+                                self._remember_conversation_text(
+                                    "assistant",
+                                    full_out,
+                                    expected_conversation_id=receive_conversation_id,
+                                    turn_id=live_turn_id,
+                                )
                             if (
                                 getattr(self, "_pending_self_quit", False)
                                 and (full_out or turn_had_audio)
@@ -4095,6 +4482,12 @@ class JarvisLive:
                     if response.tool_call:
                         function_calls = list(response.tool_call.function_calls)
                         fn_responses = await self._execute_tool_batch(function_calls)
+                        for function_call, function_response in zip(function_calls, fn_responses):
+                            self._remember_conversation_tool_result(
+                                str(getattr(function_call, "name", "tool")),
+                                getattr(function_response, "response", function_response),
+                                expected_conversation_id=receive_conversation_id,
+                            )
                         await self.session.send_tool_response(
                             function_responses=fn_responses
                         )
@@ -4209,6 +4602,7 @@ class JarvisLive:
                 if not self._shutdown_requested.is_set():
                     self._set_conversation_state(ConversationState.STANDBY)
         finally:
+            self._persist_conversation_state()
             await self._close_live_session()
             bridge, self._lilith = self._lilith, None
             if bridge is not None:
@@ -4237,6 +4631,10 @@ class JarvisLive:
         start_time = time.time()
         reconnect_attempt = 0
         ever_connected = False
+        goaway_resume_attempted = False
+        clean_goaway_fallback_used = False
+        initial_history_disabled = live_model_id in _INITIAL_HISTORY_UNSUPPORTED_MODELS
+        initial_history_fallback_logged = False
         while self._conversation_requested.is_set():
             if self._shutdown_requested.is_set():
                 return
@@ -4271,6 +4669,7 @@ class JarvisLive:
                     print(f"[JARVIS] 🔒 Locked path check error: {e}")
                     time.sleep(1)
                     continue
+            attempt_initial_history = False
             try:
                 if not self._conversation_requested.is_set():
                     return
@@ -4290,36 +4689,72 @@ class JarvisLive:
                             print(f"[JARVIS] LILITH context loaded: {n} facts")
                     except Exception as exc:
                         print(f"[JARVIS] LILITH context fetch skipped: {exc}")
+                native_resumption = self._session_resumption_handle is not None
+                restore_durable_context = bool(
+                    not native_resumption
+                    and (
+                        self._resume_from_local_continuity
+                        or self._logical_conversation_started
+                    )
+                )
+                attempt_initial_history = bool(
+                    restore_durable_context
+                    and self._conversation_continuity
+                    and not initial_history_disabled
+                )
+                if (
+                    restore_durable_context
+                    and initial_history_disabled
+                    and not initial_history_fallback_logged
+                ):
+                    print(
+                        "[JARVIS] Initial history rejected by Gemini; using compact "
+                        "durable continuity fallback."
+                    )
+                    initial_history_fallback_logged = True
                 config = self._build_config(
                     lilith_context=lilith_ctx,
                     resumption_handle=self._session_resumption_handle,
                     local_continuity=(
                         self._local_continuity_prompt()
-                        if self._resume_from_local_continuity
-                        or (
-                            self._logical_conversation_started
-                            and self._session_resumption_handle is None
-                        )
+                        if restore_durable_context
                         else ""
                     ),
+                    initial_history=attempt_initial_history,
                 )
 
                 if not self._conversation_requested.is_set():
                     return
 
-                async with (
-                    client.aio.live.connect(model=live_model_id, config=config) as session,
-                    asyncio.TaskGroup() as tg,
-                ):
+                async with client.aio.live.connect(
+                    model=live_model_id, config=config
+                ) as session:
                     if not self._conversation_requested.is_set():
                         await session.close()
                         return
                     first_connection = not self._logical_conversation_started
-                    self.session        = session
-                    self._loop          = asyncio.get_event_loop()
                     self.audio_in_queue = asyncio.Queue()
                     self.out_queue      = asyncio.Queue(maxsize=10)
                     self._turn_done_event = asyncio.Event()
+
+                    # A clean Live transport has no server-side history. Prefill
+                    # durable turns before exposing the session to typed or
+                    # microphone input and before publishing LISTENING.
+                    if attempt_initial_history:
+                        stats = self._durable_history_diagnostics()
+                        print(
+                            "[JARVIS] Durable history structure: "
+                            f"items={stats['items']} user={stats['user']} "
+                            f"model={stats['model']} empty={stats['empty']} "
+                            f"max_chars={stats['max_chars']} total_chars={stats['total_chars']}."
+                        )
+                        await self._restore_durable_continuity(session)
+                    if not self._conversation_requested.is_set():
+                        await session.close()
+                        return
+
+                    self.session        = session
+                    self._loop          = asyncio.get_event_loop()
 
                     print("[JARVIS] ✅ Connected.")
                     connected_at = time.monotonic()
@@ -4339,29 +4774,58 @@ class JarvisLive:
                         except Exception:
                             pass
 
-                    tg.create_task(self._send_realtime())
-                    if not self.external_audio:
-                        tg.create_task(self._listen_audio())
-                    tg.create_task(self._receive_audio())
-                    tg.create_task(self._play_audio())
-                    if first_connection:
-                        tg.create_task(self._announce_startup())
+                    async with asyncio.TaskGroup() as tg:
+                        tg.create_task(self._send_realtime())
+                        if not self.external_audio:
+                            tg.create_task(self._listen_audio())
+                        tg.create_task(self._receive_audio())
+                        tg.create_task(self._play_audio())
+                        if first_connection:
+                            tg.create_task(self._announce_startup())
 
             except Exception as e:
                 if self._shutdown_requested.is_set() or not self._conversation_requested.is_set():
                     return
                 actual = next(_exception_leaves(e), e)
 
+                if attempt_initial_history and (
+                    isinstance(actual, InitialHistoryRejected)
+                    or _is_invalid_argument_1007(e)
+                ):
+                    initial_history_disabled = True
+                    initial_history_fallback_logged = True
+                    print(
+                        "[JARVIS] Initial history rejected by Gemini; using compact "
+                        "durable continuity fallback."
+                    )
+                    continue
                 if (
                     self._session_resumption_handle is not None
                     and _is_resumption_handle_rejected(e)
                 ):
                     self._session_resumption_handle = None
+                    self._session_resumption_handle_at = None
                     self._resume_from_local_continuity = True
                     print(
                         "[JARVIS] Live resumption was rejected; rebuilding from local continuity."
                     )
                 elif _is_recoverable_live_disconnect(e):
+                    is_goaway = isinstance(actual, RecoverableLiveDisconnect) and str(actual) == "server GoAway"
+                    if is_goaway and self._session_resumption_handle is not None:
+                        if goaway_resume_attempted:
+                            self._session_resumption_handle = None
+                            self._session_resumption_handle_at = None
+                            self._resume_from_local_continuity = True
+                            clean_goaway_fallback_used = True
+                            print(
+                                "[JARVIS] Repeated GoAway; falling back to local continuity."
+                            )
+                        else:
+                            goaway_resume_attempted = True
+                    elif is_goaway and clean_goaway_fallback_used:
+                        self._session_resumption_handle = None
+                        self._session_resumption_handle_at = None
+                        self._resume_from_local_continuity = True
                     print(
                         "[JARVIS] Live transport disconnected; resuming session. "
                         f"({actual})"
@@ -4433,7 +4897,11 @@ def main():
     def runner():
         ui.wait_for_api_key()
         voice_name = _load_voice_name()
-        jarvis = JarvisLive(ui, voice_name)
+        jarvis = JarvisLive(
+            ui,
+            voice_name,
+            conversation_store_path=default_conversation_store_path(),
+        )
         ui.on_quit_requested = jarvis.request_shutdown
         ui.on_conversation_toggle = jarvis.toggle_conversation
 

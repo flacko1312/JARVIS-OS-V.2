@@ -20,6 +20,16 @@ Do not start AUT-9 until explicitly requested and the transport-recovery gate ab
 
 ## Closed
 
+### Persistent logical conversation continuity
+
+Status: **CLOSED / PHYSICAL RESTART ACCEPTANCE PASS**.
+
+Durable text continuity now survives F8/standby, transport reconnects, `go_away`, rejected or expired native resumption handles, process restart, and crash recovery. State is written atomically with bounded recent turns, tool-result summaries, and a rolling summary; raw audio and opaque Gemini handles are never persisted. Only explicit `new_conversation()` clears/replaces this logical conversation.
+
+Physical acceptance across real restarts confirmed STANDBY startup, normal Live/audio operation, compact continuity restoration without greeting or API 1007/1008 failure, direct recall from the active conversation without memory-search tools, and preserved explicit `local_memory_search` behavior. The current `google-genai 2.25.0` plus tested Native Audio preview model/API rejects initial-history replay with API 1007, so this configuration uses compact durable context in `system_instruction` after native resumption is unavailable or rejected.
+
+The full-suite baseline retains three unrelated UI localization-contract failures already reproducible on clean `HEAD`; they are not part of this block.
+
 ### JL-A10 — owner-operated spoken Gemini Live certification
 
 Status: **CLOSED / PHYSICAL E2E PASS**.

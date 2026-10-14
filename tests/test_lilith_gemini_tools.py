@@ -1124,7 +1124,9 @@ class TestPersistentMemoryFlow(unittest.TestCase):
         reminder_action.assert_not_called()
 
         jarvis._shutdown_requested.clear()
-        jarvis._begin_schedule_turn("¿Cuál es mi código temporal de prueba?", "voice")
+        jarvis._begin_schedule_turn(
+            "Busca en la memoria de LILITH mi código temporal de prueba.", "voice"
+        )
         found = _run(jarvis._execute_tool_batch([_fake_fc(
             "lilith_memory_search", {"query": "código temporal de prueba"}
         )]))[0]
@@ -1142,7 +1144,9 @@ class TestPersistentMemoryFlow(unittest.TestCase):
         )
         self.assertIn("notes/codigo_temporal_pruebas", deleted.response["result"])
 
-        jarvis._begin_schedule_turn("¿Cuál es mi código temporal de prueba?", "voice")
+        jarvis._begin_schedule_turn(
+            "Busca en la memoria de LILITH mi código temporal de prueba.", "voice"
+        )
         missing = _run(jarvis._execute_tool_batch([_fake_fc(
             "lilith_memory_search", {"query": "código temporal de prueba"}
         )]))[0]
@@ -1246,7 +1250,9 @@ class TestPersistentMemoryFlow(unittest.TestCase):
         self.assertEqual(stored_value, "Prefiere la luz al 40%.")
 
         jarvis._shutdown_requested.clear()
-        jarvis._begin_schedule_turn("¿Qué recuerdas sobre mi luz?", "voice")
+        jarvis._begin_schedule_turn(
+            "Busca en la memoria de LILITH qué sabes sobre mi luz.", "voice"
+        )
         found = _run(jarvis._execute_tool_batch([_fake_fc(
             "lilith_memory_search", {"query": "¿Qué recuerdas sobre mi luz?"},
         )]))[0]
@@ -1419,6 +1425,80 @@ class TestPersistentMemoryFlow(unittest.TestCase):
         self.assertEqual(tools["save_memory"]["parameters"]["required"], ["value"])
         self.assertEqual(tools["lilith_memory_store"]["parameters"]["required"], ["value"])
         self.assertEqual(tools["lilith_memory_delete"]["parameters"]["required"], [])
+
+    def test_current_conversation_recall_suppresses_all_memory_tools(self):
+        client = self._client()
+        jarvis = _make_jarvis(lilith_client=client)
+        jarvis._conversation_continuity = [
+            {"role": "user", "text": "Mi código es 6427 y la palabra es NEBULA."},
+            {"role": "assistant", "text": "Entendido."},
+        ]
+        with patch.object(jarvis, "_execute_tool", wraps=jarvis._execute_tool) as execute:
+            for text in (
+                "¿Cuál era mi código y palabra?",
+                "Multiplica el código por dos.",
+            ):
+                jarvis._begin_schedule_turn(text, "voice")
+                for index, tool in enumerate(("local_memory_search", "lilith_memory_search")):
+                    call = _fake_fc(tool, {"query": text})
+                    call.id = f"lookup-{jarvis._schedule_turn_sequence}-{index}"
+                    response = _run(jarvis._execute_tool_guarded(call))
+                    self.assertIn("suppressed", response.response["result"].lower())
+                save_call = _fake_fc("save_memory", {"value": "6427 / NEBULA"})
+                save_call.id = f"save-{jarvis._schedule_turn_sequence}"
+                save = _run(jarvis._execute_tool_guarded(save_call))
+                self.assertIn("suppressed", save.response["result"].lower())
+        execute.assert_not_called()
+        client.search_memory.assert_not_awaited()
+        client.store_memory.assert_not_awaited()
+
+    def test_explicit_local_memory_lookup_is_allowed(self):
+        jarvis = _make_jarvis()
+        jarvis._local_session_memory["notes"]["printer"] = {"value": "Brother"}
+        jarvis._begin_schedule_turn(
+            "Busca en tu memoria local qué tengo guardado sobre impresoras.", "voice"
+        )
+        response = _run(jarvis._execute_tool_guarded(_fake_fc(
+            "local_memory_search", {"key": "printer"},
+        )))
+        self.assertIn("Brother", response.response["result"])
+
+    def test_explicit_lilith_memory_lookup_is_allowed(self):
+        client = self._client()
+        client.search_memory.side_effect = None
+        client.search_memory.return_value = [
+            {"key": "jarvis:notes/x", "text": "stored X", "score": 1.0}
+        ]
+        jarvis = _make_jarvis(lilith_client=client)
+        jarvis._begin_schedule_turn(
+            "Busca en la memoria de LILITH qué sabes sobre X.", "voice"
+        )
+        response = _run(jarvis._execute_tool_guarded(_fake_fc(
+            "lilith_memory_search", {"query": "X"},
+        )))
+        self.assertIn("stored X", response.response["result"])
+        client.search_memory.assert_awaited_once()
+
+    def test_normal_fact_cannot_trigger_automatic_save(self):
+        client = self._client()
+        jarvis = _make_jarvis(lilith_client=client)
+        jarvis._begin_schedule_turn("Mi impresora es Brother.", "voice")
+        response = _run(jarvis._execute_tool_guarded(_fake_fc(
+            "save_memory", {"category": "notes", "key": "printer", "value": "Brother"},
+        )))
+        self.assertIn("suppressed", response.response["result"].lower())
+        self.assertFalse(jarvis._local_session_memory["notes"])
+        client.store_memory.assert_not_awaited()
+
+    def test_explicit_save_remains_allowed_by_existing_policy(self):
+        client = self._client()
+        jarvis = _make_jarvis(lilith_client=client)
+        jarvis._begin_schedule_turn("Guarda que mi impresora es Brother.", "voice")
+        response = _run(jarvis._execute_tool_guarded(_fake_fc(
+            "save_memory", {"category": "notes", "key": "printer", "value": "Brother"},
+        )))
+        self.assertNotIn("suppressed", response.response["result"].lower())
+        client.store_memory.assert_awaited_once()
 
 
 # ── 3. lilith_memory_search ─────────────────────────────────────────────
