@@ -1491,7 +1491,7 @@ def build_presentation(
     qa: dict[str, Any] = {}
 
     try:
-        _progress(progress_callback, 3, "Validating presentation request")
+        _progress(progress_callback, 3, "Validando solicitud de presentación")
         _check_cancel(cancel_flag)
         bundle = ingest_sources(request, progress_callback, workspace)
         warnings.extend(bundle.warnings)
@@ -1516,7 +1516,7 @@ def build_presentation(
                 "3D models. Attach a PPTX with the model, or continue without 3D."
             )
 
-        _progress(progress_callback, 24, "Planning narrative and evidence")
+        _progress(progress_callback, 24, "Planificando narrativa y evidencias")
         _check_cancel(cancel_flag)
         ai_quota_exhausted = False
         if _presentation_quota_cooldown_active() and mode in {"create", "redesign"}:
@@ -1587,7 +1587,7 @@ def build_presentation(
                     + "; ".join(preflight_issues[:3])
                 )
 
-        _progress(progress_callback, 43, "Preparing visual assets")
+        _progress(progress_callback, 43, "Preparando recursos visuales")
         _check_cancel(cancel_flag)
         needs_generated_images = any(
             str(slide.get("image_prompt") or "").strip() and not slide.get("asset_ref")
@@ -1606,7 +1606,7 @@ def build_presentation(
         if any("quota" in warning.lower() for warning in asset_warnings):
             ai_quota_exhausted = True
 
-        _progress(progress_callback, 58, "Building editable PowerPoint")
+        _progress(progress_callback, 58, "Creando PowerPoint editable")
         _check_cancel(cancel_flag)
         if mode == "edit":
             edited_base = workspace / "edited-base.pptx"
@@ -1639,7 +1639,7 @@ def build_presentation(
                 theme_colors=theme_colors,
             )
 
-        _progress(progress_callback, 70, "Verifying PowerPoint package")
+        _progress(progress_callback, 70, "Verificando paquete PowerPoint")
         _check_cancel(cancel_flag)
         deleted_slides = len({
             int(edit.get("slide_number", 0))
@@ -1679,7 +1679,7 @@ def build_presentation(
             )
 
         if request.export_pdf:
-            _progress(progress_callback, 76, "Exporting presentation PDF")
+            _progress(progress_callback, 76, "Exportando PDF de la presentación")
             pdf_candidate = output.with_suffix(".pdf")
             pdf_path, export_warning = export_pdf(output, pdf_candidate)
             if export_warning and export_warning not in warnings:
@@ -1690,7 +1690,7 @@ def build_presentation(
         # This replaces the previous multi-round critique loop that could burn
         # several Gemini requests on a single deck.
         if pdf_path and request.quality != "fast":
-            _progress(progress_callback, 82, "Rendering slides for visual QA")
+            _progress(progress_callback, 82, "Renderizando diapositivas para control visual")
             preview_dir = workspace / "preview-final"
             renders, render_warning = render_pdf(pdf_path, preview_dir)
             if render_warning:
@@ -1716,7 +1716,7 @@ def build_presentation(
                         blocking = critique.get("blocking_issues") if isinstance(critique, dict) else []
                         score = int(critique.get("score", 0) or 0) if isinstance(critique, dict) else 0
                         if blocking or score < 80:
-                            _progress(progress_callback, 88, "Applying one premium visual repair")
+                            _progress(progress_callback, 88, "Aplicando una reparación visual avanzada")
                             _check_cancel(cancel_flag)
                             try:
                                 plan = _revise_plan(plan, critique, request)
@@ -1841,7 +1841,7 @@ def queue_presentation(
         on_cancel = None
         if player and hasattr(player, "finish_presentation_progress"):
             on_cancel = lambda: player.finish_presentation_progress(
-                "cancelled", "Presentation task cancelled"
+                "cancelled", "Tarea de presentación cancelada"
             )
         task_id = get_queue().submit_job(
             goal=f"Create presentation: {request.title}",

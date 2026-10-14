@@ -249,6 +249,32 @@ UI_TEXT: dict[str, str] = {
 
     # Tool progress
     "EXECUTING...": "EJECUTANDO...",
+    "Open Application": "Abrir aplicación",
+    "Web Search": "Búsqueda web",
+    "Deep Research": "Investigación profunda",
+    "Weather Report": "Informe meteorológico",
+    "Browser Control": "Control del navegador",
+    "File Controller": "Control de archivos",
+    "Send Message": "Enviar mensaje",
+    "Set Reminder": "Crear recordatorio",
+    "Vision Analysis": "Análisis visual",
+    "System Settings": "Ajustes del sistema",
+    "Desktop Control": "Control del escritorio",
+    "Media Control": "Control multimedia",
+    "Code Assistant": "Asistente de código",
+    "Dev Agent": "Agente de desarrollo",
+    "File Processor": "Procesador de archivos",
+    "Computer Control": "Control del equipo",
+    "Game Updater": "Actualizador de juegos",
+    "Flight Finder": "Buscador de vuelos",
+    "Tool error": "Error de herramienta",
+    "Deep research": "Investigación profunda",
+    "Researching": "Investigando",
+    "Building presentation": "Creando presentación",
+    "Preparing sources": "Preparando fuentes",
+    "Collecting sources": "Recopilando fuentes",
+    "Synthesizing report": "Sintetizando informe",
+    "Finalizing report": "Finalizando informe",
 
     # Vision preview
     "VISION LINK": "ENLACE DE VISIÓN",
@@ -258,6 +284,10 @@ UI_TEXT: dict[str, str] = {
     "ANALYSIS COMPLETE": "ANÁLISIS COMPLETADO",
     "VISION LINK UNAVAILABLE": "ENLACE DE VISIÓN NO DISPONIBLE",
     "FEED ERROR": "ERROR DE SEÑAL",
+    "CAMERA FEED": "SEÑAL DE CÁMARA",
+    "Drop file here  or  Click to Browse": "Arrastra un archivo aquí o haz clic para buscar",
+    "Images · Video · Audio · PDF · Docs · Code · Data": "Imágenes · Vídeo · Audio · PDF · Documentos · Código · Datos",
+    "Release to load": "Suelta para cargar",
 
     # Startup sequence
     "SYS: INITIATING SYSTEMS, SIR...": "SYS: INICIANDO SISTEMAS...",
@@ -333,6 +363,10 @@ UI_TEXT: dict[str, str] = {
     "LOW": "BAJO",
     "MEDIUM": "MEDIO",
     "HIGH": "ALTO",
+    "graphics quality active": "Calidad gráfica activa",
+    "CHANGE VOICE": "CAMBIAR VOZ",
+    "e.g. Tony, Mirsab, Alex...": "p. ej. Tony, Mirsab, Alex...",
+    "e.g.  Tony,  Mirsab,  Alex …": "p. ej. Tony, Mirsab, Alex…",
 
     # Startup / key validation log messages
     "ERR: Setup blocked because the Gemini API key was not verified.":
@@ -343,6 +377,9 @@ UI_TEXT: dict[str, str] = {
         "SYS: Clave API de Gemini configurada para esta sesión (no guardada).",
     "JARVIS: All systems nominal. How may I assist you today?":
         "AURORA: Todos los sistemas operativos. ¿En qué puedo asistirte hoy?",
+    "SYS: LILITH is configured but the integration could not be loaded.":
+        "SYS: LILITH está configurada, pero no se pudo cargar la integración.",
+    "SYS: AURORA online.": "SYS: AURORA en línea.",
 }
 
 

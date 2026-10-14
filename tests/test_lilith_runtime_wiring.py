@@ -410,7 +410,7 @@ class RunLifecycleTests(unittest.TestCase):
         self.assertEqual(seen, {"started_during": True, "attached": True})
         self.assertTrue(bridge.stopped)
         self.assertIsNone(jarvis._lilith)
-        self.assertTrue(any("LILITH integration online" in l for l in client.logs))
+        self.assertTrue(any("Integración con LILITH en línea" in l for l in client.logs))
 
     def test_bridge_is_stopped_even_if_the_live_loop_fails(self):
         bridge = FakeBridge()
@@ -440,7 +440,7 @@ class RunLifecycleTests(unittest.TestCase):
         env = {"LILITH_API_URL": "http://x:8000", "LILITH_API_KEY": "k"}
         with patch.dict(os.environ, env):
             self._run(jarvis, None)
-        self.assertTrue(any("could not be loaded" in l for l in client.logs))
+        self.assertTrue(any("no se pudo cargar" in l for l in client.logs))
 
     def test_cloud_safe_never_starts_the_bridge(self):
         bridge = FakeBridge()

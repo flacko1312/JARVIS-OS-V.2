@@ -24,22 +24,22 @@ class ResearchProgressWidgetTests(unittest.TestCase):
         widget.update_progress(
             "Battery recycling economics",
             42,
-            "Researching evidence thread 3/6",
+            "Investigando línea de evidencia 3/6",
         )
         self.app.processEvents()
         self.assertEqual(widget._bar.value(), 42)
-        self.assertEqual(widget._status.text(), "RUNNING IN THE BACKGROUND  ·  42%")
-        self.assertEqual(widget._phase.text(), "Researching evidence thread 3/6")
+        self.assertEqual(widget._status.text(), "EJECUTANDO EN SEGUNDO PLANO  ·  42%")
+        self.assertEqual(widget._phase.text(), "Investigando línea de evidencia 3/6")
 
         widget.update_progress(
             "Battery recycling economics",
             100,
-            "Deep research complete",
+            "Investigación profunda completada",
             artifacts=["/tmp/battery-report.md"],
         )
         self.app.processEvents()
-        self.assertEqual(widget._status.text(), "COMPLETE  ·  100%")
-        self.assertEqual(widget._phase.text(), "Report ready: battery-report.md")
+        self.assertEqual(widget._status.text(), "COMPLETADO  ·  100%")
+        self.assertEqual(widget._phase.text(), "Informe preparado: battery-report.md")
         widget.deleteLater()
 
     def test_widget_uses_project_typography(self):

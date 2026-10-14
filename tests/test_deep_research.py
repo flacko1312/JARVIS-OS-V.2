@@ -78,7 +78,7 @@ class DeepResearchTests(unittest.TestCase):
             self.assertEqual(result.evidence["queries"], ["primary evidence", "benchmarks"])
             self.assertEqual(len(result.evidence["evidence"]), 2)
             self.assertEqual(progress[-1]["percent"], 100)
-            self.assertEqual(progress[-1]["phase"], "Deep research complete")
+            self.assertEqual(progress[-1]["phase"], "Investigación profunda completada")
 
     def test_cancelled_request_never_creates_api_client(self):
         cancel_flag = threading.Event()

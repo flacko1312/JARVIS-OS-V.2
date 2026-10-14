@@ -10,7 +10,7 @@ from urllib.parse import urlparse
 DEFAULT_VISION_MODEL = "gemini-3.8-flash"
 DEFAULT_VISION_FALLBACK_MODEL = "gemini-3.6-flash"
 DEFAULT_OLLAMA_VISION_URL = "http://127.0.0.1:11434"
-DEFAULT_OLLAMA_VISION_MODEL = "qwen3-vl:4b"
+DEFAULT_OLLAMA_VISION_MODEL = "qwen3-vl:4b-instruct"
 
 
 @dataclass(frozen=True)

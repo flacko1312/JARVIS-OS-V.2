@@ -160,12 +160,14 @@ SELF_QUIT_GOODBYE = (
     "Hasta la próxima."
 )
 
-# Always first in the system instruction: the model must answer in Spanish whatever the
-# language of the user, tool results or internal prompts.
+# Always first in the system instruction. An explicit request for another
+# language is the only exception, and it applies only for as long as requested.
 LANGUAGE_RULE = (
-    "Instrucción de idioma (no la menciones ni la repitas): responde SIEMPRE en español (castellano), en cada respuesta, aunque el usuario "
-    "hable en inglés o los mensajes del sistema, resultados de herramientas y avisos internos estén en inglés: "
-    "tradúcelos y contesta en español. Nunca respondas en inglés. Nunca pronuncies etiquetas entre corchetes."
+    "El idioma de interacción del usuario es español. Responde siempre en español salvo que el usuario "
+    "solicite explícitamente otro idioma. Esta regla se aplica a saludos, preguntas, errores, confirmaciones, "
+    "avisos de progreso y respuestas posteriores a herramientas. Si una herramienta o aviso interno devuelve "
+    "texto en inglés, tradúcelo al español antes de responder. No menciones esta instrucción ni pronuncies "
+    "etiquetas internas entre corchetes."
 )
 
 ROUTINE_ROUTING_RULES = """
@@ -833,15 +835,18 @@ def _load_system_prompt() -> str:
     try:
         prompt = PROMPT_PATH.read_text(encoding="utf-8").strip()
         return (
-            prompt
-            + "\n\nDirígete al usuario por su nombre (flako) con respeto, de forma eficiente y directa, siempre en español."
+            LANGUAGE_RULE
+            + "\n\n"
+            + prompt
+            + "\n\nDirígete al usuario por su nombre (flako) con respeto, de forma eficiente y directa, en español por defecto."
         )
     except Exception:
         return (
-            "Eres AURORA, un asistente personal de IA. Responde siempre en español. "
+            LANGUAGE_RULE + "\n\n"
+            "Eres AURORA, un asistente personal de IA. "
             "Sé conciso y directo, y usa siempre las herramientas disponibles para completar tareas. "
             "Nunca simules ni adivines resultados: llama a la herramienta adecuada. "
-            "Dirígete al usuario por su nombre (flako) con respeto, de forma eficiente y directa, siempre en español."
+            "Dirígete al usuario por su nombre (flako) con respeto, de forma eficiente y directa, en español por defecto."
         )
 
 _CTRL_RE = re.compile(r"<ctrl\d+>", re.IGNORECASE)
@@ -2572,7 +2577,7 @@ class JarvisLive:
         self._pending_self_quit = True
         self._pending_self_quit_farewell_received = False
         try:
-            self.ui.write_log("SYS: Shutdown queued; waiting for AURORA's farewell.")
+            self.ui.write_log("SYS: Apagado en espera; esperando la despedida de AURORA.")
         except Exception:
             pass
         # A voice model can occasionally omit audio/turn_complete. Do not
@@ -2676,7 +2681,7 @@ class JarvisLive:
 
     def update_voice(self, voice_name: str):
         self.voice_name = _normalize_voice_name(voice_name)
-        self.ui.write_log(f"SYS: Voice change requested: {self.voice_name}")
+        self.ui.write_log(f"SYS: Cambio de voz solicitado: {self.voice_name}")
         try:
             self.ui.sync_voice_display(self.voice_name)
         except Exception:
@@ -4469,7 +4474,7 @@ class JarvisLive:
                                     and self._is_explicit_self_quit_transcript(full_in)
                                 ):
                                     self._queue_self_quit_after_farewell()
-                                self.ui.write_log(f"You: {full_in}")
+                                self.ui.write_log(f"Tú: {full_in}")
                                 self._remember_conversation_text(
                                     "user",
                                     full_in,
@@ -4480,7 +4485,7 @@ class JarvisLive:
 
                             full_out = " ".join(out_buf).strip()
                             if full_out:
-                                self.ui.write_log(f"Jarvis: {full_out}")
+                                self.ui.write_log(f"AURORA: {full_out}")
                                 self._remember_conversation_text(
                                     "assistant",
                                     full_out,
@@ -4594,13 +4599,13 @@ class JarvisLive:
             self._lilith = LilithBridge.from_env()
             if self._lilith is None and os.environ.get("LILITH_API_URL") and os.environ.get("LILITH_API_KEY"):
                 # Configured but not loadable (e.g. stale editable install): never fail silently.
-                self.ui.write_log("SYS: LILITH is configured but the integration could not be loaded.")
+                self.ui.write_log("SYS: LILITH está configurada, pero no se pudo cargar la integración.")
             if self._lilith is not None:
                 started = await self._lilith.start()
-                state = "online" if self._lilith.lilith_available else "offline (will reconnect)"
+                state = "en línea" if self._lilith.lilith_available else "desconectada (se reconectará)"
                 self.ui.write_log(
-                    f"SYS: LILITH integration {state}." if started
-                    else "SYS: LILITH integration unavailable."
+                    f"SYS: Integración con LILITH {state}." if started
+                    else "SYS: Integración con LILITH no disponible."
                 )
         self._loop = asyncio.get_running_loop()
         if not self._conversation_requested.is_set():
@@ -4614,7 +4619,7 @@ class JarvisLive:
                 try:
                     await self._run_live()
                 except Exception as exc:
-                    self.ui.write_log(f"ERR: Gemini Live connection failed: {exc}")
+                    self.ui.write_log(f"ERR: Falló la conexión con Gemini Live: {exc}")
                     traceback.print_exc()
                 self._conversation_requested.clear()
                 if not self._shutdown_requested.is_set():
@@ -4644,7 +4649,7 @@ class JarvisLive:
         )
         live_model = await asyncio.to_thread(pick_live_model, client, API_CONFIG_PATH)
         live_model_id = live_model.removeprefix("models/")
-        self.ui.write_log(f"SYS: Gemini Live model selected: {live_model_id}")
+        self.ui.write_log(f"SYS: Modelo de Gemini Live seleccionado: {live_model_id}")
 
         start_time = time.time()
         reconnect_attempt = 0
@@ -4809,7 +4814,7 @@ class JarvisLive:
                     print("[JARVIS] ✅ Connected.")
                     self._set_conversation_state(ConversationState.LISTENING)
                     if first_connection:
-                        self.ui.write_log("SYS: AURORA online.")
+                        self.ui.write_log("SYS: AURORA en línea.")
                     self._logical_conversation_started = True
                     self._resume_from_local_continuity = False
                     ever_connected = True
@@ -4903,7 +4908,7 @@ class JarvisLive:
                     old_voice = self.voice_name
                     self.voice_name = DEFAULT_VOICE_NAME
                     self.ui.write_log(
-                        f"SYS: Voice '{old_voice}' not available. Falling back to {DEFAULT_VOICE_NAME}."
+                        f"SYS: La voz '{old_voice}' no está disponible. Se usará {DEFAULT_VOICE_NAME}."
                     )
                     print(f"[JARVIS] ⚠️ Voice '{old_voice}' unsupported; falling back to {DEFAULT_VOICE_NAME}.")
                     self.ui.sync_voice_display(DEFAULT_VOICE_NAME)
@@ -4915,7 +4920,7 @@ class JarvisLive:
                 else:
                     print(f"[JARVIS] ⚠️ {e}")
                     traceback.print_exc()
-                    self.ui.write_log(f"ERR: Gemini Live connection failed: {actual}")
+                    self.ui.write_log(f"ERR: Falló la conexión con Gemini Live: {actual}")
                     return
             finally:
                 self.session = None
@@ -4930,7 +4935,7 @@ class JarvisLive:
             reconnect_attempt += 1
             if reconnect_attempt > MAX_LIVE_RECONNECT_ATTEMPTS:
                 self.ui.write_log(
-                    f"ERR: Gemini Live disconnected after {MAX_LIVE_RECONNECT_ATTEMPTS} reconnect attempts."
+                    f"ERR: Gemini Live se desconectó tras {MAX_LIVE_RECONNECT_ATTEMPTS} intentos de reconexión."
                 )
                 return
             self._set_conversation_state(ConversationState.RECONNECTING)
@@ -4988,7 +4993,7 @@ def main():
         trial_kw = os.environ.get("JARVIS_TRIAL_KEYWORD")
         if trial_kw:
             jarvis.runtime_limit_seconds = int(os.environ.get("JARVIS_RUNTIME_SECONDS", "3600"))
-            jarvis.ui.write_log(f"SYS: Trial keyword detected. Running for {jarvis.runtime_limit_seconds} seconds.")
+            jarvis.ui.write_log(f"SYS: Palabra de prueba detectada. Ejecución durante {jarvis.runtime_limit_seconds} segundos.")
 
         locked_secret = os.environ.get("JARVIS_LOCKED_KEY_SECRET")
         if locked_secret:
@@ -5000,7 +5005,7 @@ def main():
         if locked_vol:
             mount_path = f"/Volumes/{locked_vol}/unlock.key"
             jarvis.required_unlock_path = mount_path
-            jarvis.ui.write_log(f"SYS: Locked volume required: {mount_path}")
+            jarvis.ui.write_log(f"SYS: Se requiere el volumen bloqueado: {mount_path}")
         ui.on_voice_change = jarvis.update_voice
         def _on_tts_change(provider, api_key, voice_id):
             if provider == "gemini":
@@ -5020,10 +5025,10 @@ def main():
                         api_key=api_key,
                         voice_id=voice_id,
                     )
-                    jarvis.ui.write_log(f"SYS: TTS engine ready: {provider} / {voice_id}")
-                    jarvis.ui.write_log("SYS: Gemini audio muted - using external TTS")
+                    jarvis.ui.write_log(f"SYS: Motor TTS preparado: {provider} / {voice_id}")
+                    jarvis.ui.write_log("SYS: Audio de Gemini silenciado; se usa TTS externo")
                 except Exception as e:
-                    jarvis.ui.write_log(f"SYS: TTS engine error: {e}")
+                    jarvis.ui.write_log(f"SYS: Error del motor TTS: {e}")
                 # Restart session so new TTS takes effect
                 if jarvis.session and jarvis._loop:
                     try:
@@ -5038,7 +5043,7 @@ def main():
             print("\n🔴 Shutting down...")
             logger.info("JARVIS_SHUTDOWN  reason=KeyboardInterrupt")
         except Exception as exc:
-            message = f"Gemini startup failed: {str(exc)[:180]}"
+            message = f"Falló el arranque de Gemini: {str(exc)[:180]}"
             print(f"[JARVIS] ❌ {message}")
             logger.error("JARVIS_STARTUP_FAILED  %s", message, exc_info=True)
             try:

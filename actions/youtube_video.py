@@ -169,11 +169,11 @@ def _summarize_with_gemini(transcript: str, video_url: str) -> str:
     model = genai.GenerativeModel(
         model_name="gemini-2.5-flash",
         system_instruction=(
-            "You are JARVIS, an AI assistant. "
+            "El idioma de interacción del usuario es español. Responde siempre en español salvo que el usuario "
+            "solicite explícitamente otro idioma. Eres AURORA, un asistente de IA. "
             "Summarize YouTube video transcripts clearly and concisely. "
             "Structure: 1-sentence overview, then 3-5 key points. "
-            "Be direct. Address the user as 'sir'. "
-            "Match the language of the transcript."
+            "Be direct. Resume en español aunque la transcripción esté en otro idioma, salvo petición explícita."
         )
     )
 

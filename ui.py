@@ -1048,7 +1048,7 @@ class ResearchProgressWidget(QWidget):
         self._update_sig.emit({
             "question": str(question or self._question or self._task_title.title()),
             "percent": max(0, min(100, int(percent or 0))),
-            "phase": str(phase or "Researching"),
+            "phase": str(phase or t("Researching")),
             "state": "completed" if int(percent or 0) >= 100 else "running",
             "artifacts": list(artifacts or []),
             "warnings": list(warnings or []),
@@ -1071,7 +1071,7 @@ class ResearchProgressWidget(QWidget):
         self._state = str(update.get("state") or "running")
         self._visible_mode = bool(update.get("visible", self._visible_mode))
         percent = max(0, min(100, int(update.get("percent", 0) or 0)))
-        phase = str(update.get("phase") or "Researching")
+        phase = t(str(update.get("phase") or "Researching"))
         artifacts = update.get("artifacts") or []
         warnings = update.get("warnings") or []
 
@@ -1082,17 +1082,17 @@ class ResearchProgressWidget(QWidget):
         self._question_lbl.setToolTip(self._question)
         self._bar.setValue(percent)
         if self._state == "completed":
-            status_label = "COMPLETE"
+            status_label = "COMPLETADO"
             if artifacts:
-                phase = f"Report ready: {Path(str(artifacts[0])).name}"
+                phase = f"Informe preparado: {Path(str(artifacts[0])).name}"
             if warnings:
-                phase += f"  ·  {len(warnings)} warning{'s' if len(warnings) != 1 else ''}"
+                phase += f"  ·  {len(warnings)} aviso{'s' if len(warnings) != 1 else ''}"
         elif self._state == "failed":
-            status_label = "FAILED"
+            status_label = "FALLIDO"
         elif self._state == "cancelled":
-            status_label = "CANCELLED"
+            status_label = "CANCELADO"
         else:
-            status_label = "WORKING LIVE" if self._visible_mode else "RUNNING IN THE BACKGROUND"
+            status_label = "TRABAJANDO EN VIVO" if self._visible_mode else "EJECUTANDO EN SEGUNDO PLANO"
         self._status.setText(f"{status_label}  ·  {percent}%")
         self._phase.setText(phase)
         self.refresh_theme()
@@ -1305,7 +1305,7 @@ class ToolProgressWidget(QWidget):
         self._hide_sig.emit()
 
     def _on_show(self, name: str):
-        self._tool_lbl.setText(f"EXECUTING: {name.upper()}")
+        self._tool_lbl.setText(f"EJECUTANDO: {t(name).upper()}")
         self._start_time = time.time()
         self._spinner_idx = 0
         self._tmr.start(200)
@@ -3889,7 +3889,7 @@ class AgentGridWidget(QWidget):
         hdr.setStyleSheet(f"color: {C.PRI}; background: transparent; letter-spacing: 3px;")
         hdr_row.addWidget(hdr)
         hdr_row.addStretch()
-        self._active_count_lbl = QLabel(f"{len(self._AGENTS)} ACTIVE")
+        self._active_count_lbl = QLabel(f"{len(self._AGENTS)} {t('ACTIVE')}")
         self._active_count_lbl.setFont(QFont("Courier New", 7))
         self._active_count_lbl.setStyleSheet(
             f"color: {C.TEXT_DIM}; background: transparent; letter-spacing: 1px;"
@@ -5060,11 +5060,11 @@ class _DropCanvas(QWidget):
         p.setFont(QFont("Courier New", 8))
         p.setPen(QPen(qcol(C.PRI_DIM if not hover else C.TEXT), 1))
         p.drawText(QRectF(0, cy + 8, W, 16), Qt.AlignmentFlag.AlignCenter,
-                   "Drop file here  or  Click to Browse")
+                   t("Drop file here  or  Click to Browse"))
         p.setFont(QFont("Courier New", 7))
         p.setPen(QPen(qcol(C.BORDER_B), 1))
         p.drawText(QRectF(0, cy + 24, W, 14), Qt.AlignmentFlag.AlignCenter,
-                   "Images · Video · Audio · PDF · Docs · Code · Data")
+                   t("Images · Video · Audio · PDF · Docs · Code · Data"))
 
     def _paint_drag_over(self, p, W, H):
         cx, cy = W / 2, H / 2
@@ -5073,7 +5073,7 @@ class _DropCanvas(QWidget):
         p.drawText(QRectF(0, cy - 24, W, 32), Qt.AlignmentFlag.AlignCenter, "⬇")
         p.setFont(QFont("Courier New", 8, QFont.Weight.Bold))
         p.setPen(QPen(qcol(C.PRI), 1))
-        p.drawText(QRectF(0, cy + 12, W, 16), Qt.AlignmentFlag.AlignCenter, "Release to load")
+        p.drawText(QRectF(0, cy + 12, W, 16), Qt.AlignmentFlag.AlignCenter, t("Release to load"))
 
     def _paint_file(self, p, W, H):
         path = Path(self._z._current_file)
@@ -5711,7 +5711,7 @@ class SettingsOverlay(_OverlayBase):
                               align=Qt.AlignmentFlag.AlignLeft))
         self._s_name_input = QLineEdit()
         self._s_name_input.setText(current_name)
-        self._s_name_input.setPlaceholderText("e.g. Tony, Mirsab, Alex...")
+        self._s_name_input.setPlaceholderText(t("e.g. Tony, Mirsab, Alex..."))
         self._s_name_input.setFont(QFont(UI_FONT, 10))
         self._s_name_input.setFixedHeight(32)
         self._s_name_input.setStyleSheet(f"""
@@ -5843,7 +5843,7 @@ class SettingsOverlay(_OverlayBase):
         value = _normalize_graphics_quality(quality)
         self._current_graphics = value
         self._highlight_graphics(value)
-        self._graphics_note.setText(f"{value.upper()} quality active.")
+        self._graphics_note.setText(f"{t(value.upper())}: {t('graphics quality active').lower()}.")
         self.graphics_changed.emit(value)
 
     def _highlight_graphics(self, quality: str):
@@ -5940,7 +5940,7 @@ class NameSignInOverlay(_OverlayBase):
                                align=Qt.AlignmentFlag.AlignLeft))
 
         self._name_input = QLineEdit()
-        self._name_input.setPlaceholderText("e.g.  Tony,  Mirsab,  Alex …")
+        self._name_input.setPlaceholderText(t("e.g.  Tony,  Mirsab,  Alex …"))
         if existing_name:
             self._name_input.setText(existing_name)
             self._name_input.selectAll()
@@ -6948,7 +6948,7 @@ class VisionPreviewWindow(QWidget):
         self._hide_timer.stop()
         self._release_source()
         self._source = "camera" if str(source).lower().strip() == "camera" else "screen"
-        self._source_label.setText(f"{self._source.upper()} FEED")
+        self._source_label.setText(t(f"{self._source.upper()} FEED"))
         self._status.setText(t("LIVE // ANALYZING"))
         self._frame.setText(t("INITIALIZING VISION LINK"))
         self._frame.setPixmap(QPixmap())
@@ -8008,7 +8008,7 @@ class MainWindow(QMainWindow):
                 sm = int((se % 3600) // 60)
                 ss = int(se % 60)
                 if hasattr(self, "_session_lbl"):
-                    self._session_lbl.setText(f"SESSION  {sh:02d}:{sm:02d}:{ss:02d}")
+                    self._session_lbl.setText(f"{t('SESSION')}  {sh:02d}:{sm:02d}:{ss:02d}")
                 self._bar_sess.set_value(0, f"{sh:02d}:{sm:02d}:{ss:02d}")
         except Exception:
             pass
@@ -8194,7 +8194,7 @@ class MainWindow(QMainWindow):
     def _update_theme_btn(self):
         if hasattr(self, "_theme_btn"):
             display = ThemeManager.theme_display_name(ThemeManager.current_name())
-            self._theme_btn.setText(f"THEME  ·  {display}")
+            self._theme_btn.setText(f"{t('THEME')}  ·  {display}")
 
     def _build_header(self) -> QWidget:
         w = QWidget()
@@ -8304,9 +8304,12 @@ class MainWindow(QMainWindow):
     def _tick_clock(self):
         _colon = ":" if int(time.time()) % 2 == 0 else " "
         self._clock_lbl.setText(time.strftime("%H") + _colon + time.strftime("%M") + _colon + time.strftime("%S"))
-        self._date_lbl.setText(time.strftime("%a %d %b %Y").upper())
+        import datetime
+        _now = datetime.datetime.now()
+        _days = ("LUN", "MAR", "MIÉ", "JUE", "VIE", "SÁB", "DOM")
+        _months = ("ENE", "FEB", "MAR", "ABR", "MAY", "JUN", "JUL", "AGO", "SEP", "OCT", "NOV", "DIC")
+        self._date_lbl.setText(f"{_days[_now.weekday()]} {_now.day:02d} {_months[_now.month - 1]} {_now.year}")
         if hasattr(self, "_utc_lbl"):
-            import datetime
             _off = datetime.datetime.now(datetime.timezone.utc).strftime("%z")
             self._utc_lbl.setText(f"UTC {_off[:3]}:{_off[3:]}")
 
@@ -8463,7 +8466,7 @@ class MainWindow(QMainWindow):
         self._bar_net = MetricBar("NETWORK", C.PRI)
         self._bar_tmp = MetricBar("TEMP", C.PRI)
         self._bar_up = MetricBar("UPTIME", C.PRI)
-        self._bar_sess = MetricBar("SESSION", C.PRI)
+        self._bar_sess = MetricBar(t("SESSION"), C.PRI)
         # _bar_cog is intentionally gone: it was driven by random numbers.
         for b in [self._bar_cpu, self._bar_mem, self._bar_gpu, self._bar_vram,
                   self._bar_net, self._bar_tmp, self._bar_up, self._bar_sess]:
@@ -9093,6 +9096,7 @@ class MainWindow(QMainWindow):
         }
         for key, label in TOOL_MAP.items():
             if key in tl:
+                label = t(label)
                 if "📞" in text or "🔧" in text:
                     status = "calling"
                     # Show tool progress indicator
@@ -9107,7 +9111,7 @@ class MainWindow(QMainWindow):
                     status = "error"
                     if hasattr(self, "_tool_progress"):
                         self._tool_progress.hide_tool()
-                    self._show_toast(f"Tool error: {label}", "error")
+                    self._show_toast(f"Error de herramienta: {label}", "error")
                 else:
                     status = "active"
                 try:
@@ -9433,7 +9437,7 @@ class MainWindow(QMainWindow):
         try:
             voice_val = self._get_selected_voice()
             label = VOICE_VALUE_TO_LABEL.get(voice_val, voice_val.title())
-            self._voice_btn.setText(f"◈  {label.upper()}  ·  CHANGE VOICE")
+            self._voice_btn.setText(f"◈  {label.upper()}  ·  {t('CHANGE VOICE')}")
         except Exception:
             self._voice_btn.setText(t("◈  CHANGE VOICE"))
 
@@ -9658,6 +9662,7 @@ class JarvisUI:
         self._win.hud.set_output_audio_level(level)
 
     def write_log(self, text: str):
+        text = t(str(text or ""))
         if str(text or "").lstrip().upper().startswith("ERR"):
             self._win.hud.flag_error()
         self._win._log_sig.emit(text)
@@ -9714,9 +9719,9 @@ class JarvisUI:
     def show_research_progress(self, question: str):
         """Open the compact background Deep Research status surface."""
         self._win._research_progress_sig.emit({
-            "question": str(question or "Deep research"),
+            "question": str(question or "Investigación profunda"),
             "percent": 0,
-            "phase": "Queued",
+            "phase": t("Queued"),
             "artifacts": [],
             "warnings": [],
         })
@@ -9733,7 +9738,7 @@ class JarvisUI:
         self._win._research_progress_sig.emit({
             "question": str(question or "Deep research"),
             "percent": max(0, min(100, int(percent or 0))),
-            "phase": str(phase or "Researching"),
+            "phase": str(phase or "Investigando"),
             "artifacts": list(artifacts or []),
             "warnings": list(warnings or []),
         })
@@ -9748,9 +9753,9 @@ class JarvisUI:
     def show_presentation_progress(self, title: str, visible: bool = False):
         """Show the chosen foreground or background presentation status surface."""
         self._win._presentation_progress_sig.emit({
-            "question": str(title or "Presentation"),
+            "question": str(title or "Presentación"),
             "percent": 0,
-            "phase": "Queued",
+            "phase": t("Queued"),
             "artifacts": [],
             "warnings": [],
             "visible": bool(visible),
@@ -9769,7 +9774,7 @@ class JarvisUI:
         self._win._presentation_progress_sig.emit({
             "question": str(title or "Presentation"),
             "percent": max(0, min(100, int(percent or 0))),
-            "phase": str(phase or "Building presentation"),
+            "phase": str(phase or "Creando presentación"),
             "artifacts": list(artifacts or []),
             "warnings": list(warnings or []),
             "visible": bool(visible),

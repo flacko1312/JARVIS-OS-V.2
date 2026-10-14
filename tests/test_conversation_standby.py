@@ -195,7 +195,7 @@ class ConversationStandbyTests(unittest.IsolatedAsyncioTestCase):
         jarvis._announce_startup.assert_awaited_once()
         self.assertEqual(jarvis._session_resumption_handle, "resume-1")
         self.assertIn("RECONNECTING", ui.states)
-        self.assertTrue(any("reconnect attempts" in line for line in ui.logs))
+        self.assertTrue(any("intentos de reconexión" in line for line in ui.logs))
         print_traceback.assert_not_called()
 
     async def test_stop_during_reconnect_backoff_cancels_without_new_connect(self):

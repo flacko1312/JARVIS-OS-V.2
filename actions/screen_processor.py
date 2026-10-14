@@ -104,13 +104,15 @@ _last_capture_time = 0.0
 _MIN_CAPTURE_INTERVAL = 0.5  # seconds
 
 _SYSTEM_PROMPT = (
-    "You are JARVIS, an advanced AI assistant. "
+    "El idioma de interacción del usuario es español. Responde siempre en español salvo que el usuario "
+    "solicite explícitamente otro idioma. Eres AURORA, un asistente avanzado de IA. "
     "Analyze the provided image with precision and intelligence. "
     "Be concise and direct — maximum two sentences unless the user's question "
     "requires more detail. "
     "Address the user respectfully. "
     "Only state text, names, buttons, or UI details that are legible in the image. "
-    "If something is unclear, say that it is unclear instead of guessing."
+    "If something is unclear, say that it is unclear instead of guessing. "
+    "Presenta el resultado final en español por defecto."
 )
 
 
@@ -318,11 +320,19 @@ def _request_ollama_vision_answer(
                     "images": [base64.b64encode(image_bytes).decode("ascii")],
                 }
             ],
-            "options": {"temperature": 0},
+            "options": {"temperature": 0, "num_ctx": 4096, "num_predict": 512},
         },
         timeout=(config.connect_timeout, config.read_timeout),
     )
-    response.raise_for_status()
+    if not response.ok:
+        detail = ""
+        try:
+            detail = response.json().get("error", response.text[:200])
+        except Exception:
+            detail = response.text[:200] if response.text else ""
+        raise RuntimeError(
+            f"Ollama vision HTTP {response.status_code}: {detail}"
+        )
     try:
         text = str(response.json().get("message", {}).get("content", "")).strip()
     except (TypeError, ValueError, AttributeError) as exc:

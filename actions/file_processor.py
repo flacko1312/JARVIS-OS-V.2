@@ -33,6 +33,10 @@ from core.text_model import configured_text_model
 
 
 _CONFIG_PATH = Path(__file__).resolve().parent.parent / "config" / "api_keys.json"
+_LANGUAGE_RULE = (
+    "El idioma de interacción del usuario es español. Responde en español salvo que la propia tarea "
+    "solicite explícitamente otro idioma.\n\n"
+)
 
 
 def _get_api_key() -> str:
@@ -54,6 +58,14 @@ def _gemini_client():
 
 def _generate_content(contents, model: str | None = None) -> str:
     selected_model = model or configured_text_model(_CONFIG_PATH)
+    if isinstance(contents, str):
+        contents = _LANGUAGE_RULE + contents
+    elif isinstance(contents, (list, tuple)):
+        contents = list(contents)
+        if contents and isinstance(contents[0], str):
+            contents[0] = _LANGUAGE_RULE + contents[0]
+        else:
+            contents.insert(0, _LANGUAGE_RULE)
     response = _gemini_client().models.generate_content(
         model=selected_model,
         contents=contents,

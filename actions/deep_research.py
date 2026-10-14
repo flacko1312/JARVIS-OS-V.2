@@ -107,7 +107,7 @@ class ResearchResult:
 
     def __str__(self) -> str:
         return (
-            f"Deep research complete. Reviewed {len(self.sources)} sources. "
+            f"Investigación profunda completada. Se revisaron {len(self.sources)} fuentes. "
             "The report is held in memory and has not been saved."
         )
 
@@ -615,7 +615,7 @@ def build_deep_research(
     _check_cancel(cancel_flag)
     client = genai.Client(api_key=_api_key())
     warnings = []
-    _progress(progress_callback, 4, "Planning research questions")
+    _progress(progress_callback, 4, "Planificando preguntas de investigación")
     queries = _plan_queries(client, request)
     if player and hasattr(player, "write_log"):
         player.write_log(f"deep_research: Planned {len(queries)} evidence threads for {request.question[:70]}")
@@ -626,7 +626,7 @@ def build_deep_research(
     for index, query in enumerate(queries, start=1):
         _check_cancel(cancel_flag)
         percent = 8 + int((index - 1) / max(1, len(queries)) * 62)
-        _progress(progress_callback, percent, f"Researching evidence thread {index}/{len(queries)}")
+        _progress(progress_callback, percent, f"Investigando línea de evidencia {index}/{len(queries)}")
         if player and hasattr(player, "write_log"):
             player.write_log(f"deep_research [{index}/{len(queries)}]: {query}")
         try:
@@ -642,7 +642,7 @@ def build_deep_research(
             evidence.append({"query": query, "findings": findings, "sources": sources})
             all_sources.extend(sources)
         except Exception as exc:
-            warnings.append(f"Evidence thread failed ({query}): {exc}")
+            warnings.append(f"Falló la línea de evidencia ({query}): {exc}")
 
     _check_cancel(cancel_flag)
     if not evidence:
@@ -655,7 +655,7 @@ def build_deep_research(
     if not sources:
         warnings.append("Grounding metadata contained no extractable source URLs.")
 
-    _progress(progress_callback, 76, "Synthesizing findings and contradictions", warnings=warnings)
+    _progress(progress_callback, 76, "Sintetizando hallazgos y contradicciones", warnings=warnings)
     try:
         report = _synthesize(client, request, evidence, sources)
     except Exception as exc:
@@ -682,7 +682,7 @@ def build_deep_research(
         "warnings": warnings,
     }
     _progress(
-        progress_callback, 100, "Deep research complete",
+        progress_callback, 100, "Investigación profunda completada",
         artifacts=[], warnings=warnings,
     )
     if player and hasattr(player, "write_log"):
@@ -728,13 +728,13 @@ def queue_deep_research(
             return result
         except ResearchCancelled:
             if show_background_status and player and hasattr(player, "finish_research_progress"):
-                player.finish_research_progress("cancelled", "Research cancelled")
+                player.finish_research_progress("cancelled", "Investigación cancelada")
             raise
         except Exception as exc:
             if show_background_status and player and hasattr(player, "finish_research_progress"):
                 player.finish_research_progress("failed", str(exc)[:160])
             if speak:
-                speak(f"Deep Research failed before completion: {str(exc)[:300]}")
+                speak(f"La investigación profunda falló antes de completarse: {str(exc)[:300]}")
             raise
 
     if show_background_status and player and hasattr(player, "show_research_progress"):
@@ -742,7 +742,7 @@ def queue_deep_research(
     try:
         on_cancel = None
         if show_background_status and player and hasattr(player, "finish_research_progress"):
-            on_cancel = lambda: player.finish_research_progress("cancelled", "Research cancelled")
+            on_cancel = lambda: player.finish_research_progress("cancelled", "Investigación cancelada")
         task_id = get_queue().submit_job(
             goal=f"Deep research: {request.question}",
             runner=runner,
@@ -853,4 +853,4 @@ def deep_research(parameters: dict, response=None, player=None, session_memory=N
     try:
         return request_deep_research(parameters or {}, player=player)
     except Exception as exc:
-        return f"Deep research failed: {exc}"
+        return f"La investigación profunda falló: {exc}"
