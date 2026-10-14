@@ -385,10 +385,14 @@ class SendTextHookTests(unittest.TestCase):
 class RunLifecycleTests(unittest.TestCase):
     def _run(self, jarvis, bridge, live=None):
         async def fake_live(self_):
-            if live:
-                await live()
+            try:
+                if live:
+                    await live()
+            finally:
+                self_.request_shutdown()
         with patch.object(main.JarvisLive, "_run_live", fake_live), \
              patch.object(main.LilithBridge, "from_env", return_value=bridge) as from_env:
+            jarvis.start_conversation()
             try:
                 asyncio.run(jarvis.run())
             finally:
@@ -414,9 +418,9 @@ class RunLifecycleTests(unittest.TestCase):
 
         async def live():
             raise RuntimeError("gemini down")
-        with self.assertRaises(RuntimeError):
-            self._run(jarvis, bridge, live)
+        self._run(jarvis, bridge, live)
         self.assertTrue(bridge.stopped)
+        self.assertTrue(any("gemini down" in line for line in jarvis.ui.logs))
 
     def test_unconfigured_lilith_leaves_run_untouched(self):
         jarvis, client = _live()

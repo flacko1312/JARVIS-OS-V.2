@@ -9,7 +9,7 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -79,6 +79,18 @@ class CurrentUIContractTests(unittest.TestCase):
         self.assertEqual(button.accessibleName(), "Quit AURORA")
         self.assertEqual(button.toolTip(), "Quit AURORA")
         self.assertFalse(button.isHidden())
+
+    def test_conversation_button_starts_in_standby_and_toggles_callback(self):
+        button = self.window._conversation_btn
+        self.window._apply_state("STANDBY")
+        self.assertEqual(button.text(), "▶ INICIAR CONVERSACIÓN")
+        callback = Mock()
+        self.window.on_conversation_toggle = callback
+        button.click()
+        callback.assert_called_once_with()
+        self.window._apply_state("LISTENING")
+        self.assertEqual(button.text(), "■ TERMINAR CONVERSACIÓN")
+        self.assertIn("F8", button.toolTip())
 
     def test_dock_mute_state_reuses_command_rail_style(self):
         original = self.window._muted

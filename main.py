@@ -29,6 +29,7 @@ import importlib
 import time
 import logging
 import logging.handlers
+from enum import Enum
 
 from core.live_model import pick_live_model
 
@@ -513,6 +514,31 @@ def _is_transient_live_connection_error(exc: BaseException) -> bool:
         isinstance(leaf, (ConnectionResetError, ConnectionAbortedError, TimeoutError))
         or any(marker in str(leaf).lower() for marker in transient_markers)
         for leaf in _exception_leaves(exc)
+    )
+
+
+def _is_resumption_handle_rejected(exc: BaseException) -> bool:
+    markers = (
+        "session resumption", "resumption handle", "resume handle",
+        "invalid handle", "expired handle", "handle expired",
+    )
+    return any(
+        any(marker in str(leaf).lower() for marker in markers)
+        for leaf in _exception_leaves(exc)
+    )
+
+
+class RecoverableLiveDisconnect(ConnectionError):
+    """Real Live transport/session failure that should trigger a silent reconnect."""
+
+
+def _is_recoverable_live_disconnect(exc: BaseException) -> bool:
+    leaves = list(_exception_leaves(exc))
+    return bool(leaves) and all(
+        isinstance(leaf, RecoverableLiveDisconnect)
+        or _is_normal_live_close_error(leaf)
+        or _is_transient_live_connection_error(leaf)
+        for leaf in leaves
     )
 
 
@@ -1918,6 +1944,17 @@ def get_tool_declarations(*, cloud_safe: bool = False) -> list[dict]:
     ]
 
 
+class ConversationState(str, Enum):
+    STANDBY = "STANDBY"
+    CONNECTING = "CONNECTING"
+    LISTENING = "LISTENING"
+    RECONNECTING = "RECONNECTING"
+    STOPPING = "STOPPING"
+
+
+MAX_LIVE_RECONNECT_ATTEMPTS = 5
+
+
 class JarvisLive:
 
     def __init__(
@@ -1980,9 +2017,131 @@ class JarvisLive:
         self._pending_self_quit_farewell_received = False
         self._self_quit_timer = None
         self._shutdown_requested = threading.Event()
+        self._conversation_requested = threading.Event()
+        self._conversation_state = ConversationState.STANDBY
+        self._conversation_lock = threading.Lock()
+        self._live_runner_lock = threading.Lock()
+        self._session_resumption_handle: str | None = None
+        self._conversation_id = uuid.uuid4().hex
+        self._conversation_continuity: list[dict[str, str]] = []
+        self._rolling_conversation_summary = ""
+        self._logical_conversation_started = False
+        self._resume_from_local_continuity = False
         self._tour_active = False
         # JL-W003: optional LILITH bridge for typed input (None when not configured).
         self._lilith: LilithBridge | None = None
+        self.ui.on_conversation_toggle = self.toggle_conversation
+        self.ui.set_state(ConversationState.STANDBY.value)
+
+    @property
+    def conversation_state(self) -> ConversationState:
+        with self._conversation_lock:
+            return self._conversation_state
+
+    def _set_conversation_state(self, state: ConversationState) -> bool:
+        with self._conversation_lock:
+            if (
+                self._conversation_state == ConversationState.STOPPING
+                and state != ConversationState.STANDBY
+            ):
+                return False
+            self._conversation_state = state
+        self.ui.set_state(state.value)
+        return True
+
+    def toggle_conversation(self) -> bool:
+        if self._conversation_requested.is_set():
+            return self.stop_conversation()
+        return self.start_conversation()
+
+    def start_conversation(self) -> bool:
+        """Resume the current logical conversation without blocking the UI."""
+        with self._conversation_lock:
+            if (
+                self._shutdown_requested.is_set()
+                or self._conversation_requested.is_set()
+                or self._conversation_state != ConversationState.STANDBY
+            ):
+                return False
+            self._conversation_requested.set()
+            self._conversation_state = ConversationState.CONNECTING
+        self.ui.set_state(ConversationState.CONNECTING.value)
+        return True
+
+    def stop_conversation(self) -> bool:
+        """Cooperatively stop only the active Gemini session and its tasks."""
+        with self._conversation_lock:
+            if (
+                not self._conversation_requested.is_set()
+                and self._conversation_state == ConversationState.STANDBY
+                and self.session is None
+            ):
+                return False
+            # Stop wins: publish the inactive request before touching the session.
+            self._conversation_requested.clear()
+            self._conversation_state = ConversationState.STOPPING
+        self.ui.set_state(ConversationState.STOPPING.value)
+        loop = self._loop
+        if loop is not None:
+            try:
+                asyncio.run_coroutine_threadsafe(self._close_live_session(), loop)
+            except RuntimeError:
+                pass
+        return True
+
+    def new_conversation(self) -> bool:
+        """Explicitly replace the logical conversation and its local continuity."""
+        with self._conversation_lock:
+            if self._conversation_requested.is_set() or self.session is not None:
+                return False
+            self._conversation_id = uuid.uuid4().hex
+            self._conversation_continuity.clear()
+            self._rolling_conversation_summary = ""
+            self._session_resumption_handle = None
+            self._logical_conversation_started = False
+            self._resume_from_local_continuity = False
+        return True
+
+    def _remember_conversation_text(self, role: str, text: str) -> None:
+        clean = " ".join(str(text or "").split()).strip()
+        if not clean:
+            return
+        entry = {"role": role, "text": clean}
+        self._conversation_continuity.append(entry)
+        label = "User" if role == "user" else "Jarvis"
+        line = f"{label}: {clean}"
+        self._rolling_conversation_summary = "\n".join(
+            part for part in (self._rolling_conversation_summary, line) if part
+        )
+
+    def _local_continuity_prompt(self) -> str:
+        if not self._conversation_continuity and not self._rolling_conversation_summary:
+            return ""
+        transcript = "\n".join(
+            f"{item['role']}: {item['text']}" for item in self._conversation_continuity
+        )
+        return (
+            "[LOCAL CONVERSATION CONTINUITY]\n"
+            "The Live resumption token was unavailable. Continue the same conversation "
+            "without greeting or presenting this context as new information.\n"
+            f"Conversation ID: {self._conversation_id}\n"
+            f"Rolling summary:\n{self._rolling_conversation_summary}\n"
+            f"Chronological transcript:\n{transcript}"
+        )
+
+    async def _close_live_session(self) -> None:
+        out_queue = self.out_queue
+        if out_queue is not None:
+            try:
+                out_queue.put_nowait(None)
+            except asyncio.QueueFull:
+                pass
+        session = self.session
+        if session is not None:
+            try:
+                await session.close()
+            except Exception as exc:
+                print(f"[JARVIS] ⚠️ Conversation close failed: {exc}")
 
     def _on_text_command(self, text: str):
         if not self._loop or not self.session:
@@ -1999,6 +2158,7 @@ class JarvisLive:
         self._begin_schedule_turn(self._current_input_transcript, "text")
         self._last_input_transcript = self._current_input_transcript
         self._last_input_transcript_at = time.monotonic()
+        self._remember_conversation_text("user", self._current_input_transcript)
         outgoing_text = self._current_input_transcript
         if (
             not getattr(self, "_pending_self_quit", False)
@@ -2154,6 +2314,9 @@ class JarvisLive:
         if shutdown_requested.is_set():
             return
         shutdown_requested.set()
+        conversation_requested = getattr(self, "_conversation_requested", None)
+        if conversation_requested is not None:
+            conversation_requested.clear()
         try:
             session = getattr(self, "session", None)
             loop = getattr(self, "_loop", None)
@@ -2171,7 +2334,10 @@ class JarvisLive:
 
     async def _wait_before_reconnect(self, delay: float) -> None:
         deadline = time.monotonic() + max(0.0, float(delay))
-        while not self._shutdown_requested.is_set():
+        while (
+            not self._shutdown_requested.is_set()
+            and self._conversation_requested.is_set()
+        ):
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 return
@@ -2294,7 +2460,13 @@ class JarvisLive:
             budget -= len(block) + 1
         return "\n".join(lines)
 
-    def _build_config(self, *, lilith_context: dict | None = None) -> types.LiveConnectConfig:
+    def _build_config(
+        self,
+        *,
+        lilith_context: dict | None = None,
+        resumption_handle: str | None = None,
+        local_continuity: str = "",
+    ) -> types.LiveConnectConfig:
         from datetime import datetime
 
         memory     = load_memory()
@@ -2322,6 +2494,8 @@ class JarvisLive:
             mem_str = format_memory_for_prompt(stripped)
         if mem_str:
             parts.append(mem_str)
+        if local_continuity:
+            parts.append(local_continuity)
         parts.append(sys_prompt)
         parts.append(LANGUAGE_RULE)  # repeated last: recency keeps the rule in force
 
@@ -2345,7 +2519,10 @@ class JarvisLive:
                 )
             ),
             thinking_config=types.ThinkingConfig(thinking_budget=0),
-            session_resumption=types.SessionResumptionConfig(),
+            session_resumption=types.SessionResumptionConfig(handle=resumption_handle),
+            context_window_compression=types.ContextWindowCompressionConfig(
+                sliding_window=types.SlidingWindow(),
+            ),
             speech_config=types.SpeechConfig(
                 voice_config=types.VoiceConfig(
                     prebuilt_voice_config=types.PrebuiltVoiceConfig(
@@ -3783,10 +3960,10 @@ class JarvisLive:
 
     async def _send_realtime(self):
         while True:
-            if self._shutdown_requested.is_set():
+            if self._shutdown_requested.is_set() or not self._conversation_requested.is_set():
                 return
             msg = await self.out_queue.get()
-            if msg is None or self._shutdown_requested.is_set():
+            if msg is None or self._shutdown_requested.is_set() or not self._conversation_requested.is_set():
                 return
             await self.session.send_realtime_input(media=msg)
 
@@ -3814,7 +3991,10 @@ class JarvisLive:
                 callback=callback,
             ):
                 print("[JARVIS] 🎤 Mic stream open")
-                while not self._shutdown_requested.is_set():
+                while (
+                    not self._shutdown_requested.is_set()
+                    and self._conversation_requested.is_set()
+                ):
                     await asyncio.sleep(0.1)
         except Exception as e:
             print(f"[JARVIS] ❌ Mic: {e}")
@@ -3828,9 +4008,22 @@ class JarvisLive:
 
         try:
             while True:
-                if self._shutdown_requested.is_set():
+                if self._shutdown_requested.is_set() or not self._conversation_requested.is_set():
                     return
+                received_message = False
                 async for response in self.session.receive():
+                    received_message = True
+
+                    resumption = getattr(response, "session_resumption_update", None)
+                    handle = getattr(resumption, "new_handle", None)
+                    if isinstance(handle, str) and handle.strip():
+                        with self._conversation_lock:
+                            if self._conversation_requested.is_set():
+                                self._session_resumption_handle = handle.strip()
+                                print("[JARVIS] Session resumption handle updated.")
+
+                    if getattr(response, "go_away", None) is not None:
+                        raise RecoverableLiveDisconnect("server GoAway")
 
                     response_audio = _live_response_audio_bytes(response)
                     if response_audio:
@@ -3867,6 +4060,7 @@ class JarvisLive:
                                     self._queue_self_quit_after_farewell()
 
                         if sc.turn_complete:
+                            print("[JARVIS] Turn complete; Live session remains open.")
                             if self._turn_done_event:
                                 self._turn_done_event.set()
 
@@ -3881,11 +4075,13 @@ class JarvisLive:
                                 ):
                                     self._queue_self_quit_after_farewell()
                                 self.ui.write_log(f"You: {full_in}")
+                                self._remember_conversation_text("user", full_in)
                             in_buf = []
 
                             full_out = " ".join(out_buf).strip()
                             if full_out:
                                 self.ui.write_log(f"Jarvis: {full_out}")
+                                self._remember_conversation_text("assistant", full_out)
                             if (
                                 getattr(self, "_pending_self_quit", False)
                                 and (full_out or turn_had_audio)
@@ -3902,14 +4098,25 @@ class JarvisLive:
                         await self.session.send_tool_response(
                             function_responses=fn_responses
                         )
-                    if self._shutdown_requested.is_set():
+                    if self._shutdown_requested.is_set() or not self._conversation_requested.is_set():
                         return
+                # AsyncSession.receive() covers one complete model turn. Normal
+                # exhaustion means that turn ended, not that the Live transport did.
+                if not received_message:
+                    await asyncio.sleep(0.05)
+                else:
+                    await asyncio.sleep(0)
         except Exception as e:
-            if isinstance(e, genai.errors.APIError) and "1000" in str(e):
-                print("[JARVIS] 🔌 Session closed normally.")
+            if not self._conversation_requested.is_set() or self._shutdown_requested.is_set():
                 return
+            if isinstance(e, RecoverableLiveDisconnect):
+                raise
+            if isinstance(e, genai.errors.APIError) and "1000" in str(e):
+                print("[JARVIS] Live session closed by the server; reconnecting.")
+                raise RecoverableLiveDisconnect("Gemini Live session expired") from e
+            if _is_transient_live_connection_error(e):
+                raise RecoverableLiveDisconnect(str(e)) from e
             print(f"[JARVIS] ❌ Recv: {e}")
-            traceback.print_exc()
             raise
 
 
@@ -3929,7 +4136,7 @@ class JarvisLive:
 
         try:
             while True:
-                if self._shutdown_requested.is_set():
+                if self._shutdown_requested.is_set() or not self._conversation_requested.is_set():
                     return
                 try:
                     chunk = await asyncio.wait_for(
@@ -3984,14 +4191,40 @@ class JarvisLive:
                     f"SYS: LILITH integration {state}." if started
                     else "SYS: LILITH integration unavailable."
                 )
+        self._loop = asyncio.get_running_loop()
+        if not self._conversation_requested.is_set():
+            self._set_conversation_state(ConversationState.STANDBY)
+            print("[JARVIS] STANDBY; waiting for F8 or conversation button.")
         try:
-            await self._run_live()
+            while not self._shutdown_requested.is_set():
+                if not self._conversation_requested.is_set():
+                    await asyncio.sleep(0.05)
+                    continue
+                try:
+                    await self._run_live()
+                except Exception as exc:
+                    self.ui.write_log(f"ERR: Gemini Live connection failed: {exc}")
+                    traceback.print_exc()
+                self._conversation_requested.clear()
+                if not self._shutdown_requested.is_set():
+                    self._set_conversation_state(ConversationState.STANDBY)
         finally:
+            await self._close_live_session()
             bridge, self._lilith = self._lilith, None
             if bridge is not None:
                 await bridge.stop()
 
     async def _run_live(self):
+        """Own the single Gemini lifecycle runner for this JarvisLive instance."""
+        if not self._live_runner_lock.acquire(blocking=False):
+            print("[JARVIS] ⚠️ Duplicate Live runner request ignored.")
+            return
+        try:
+            await self._run_live_session_loop()
+        finally:
+            self._live_runner_lock.release()
+
+    async def _run_live_session_loop(self):
         api_key = self._api_key or _get_api_key()
         client = genai.Client(
             api_key=api_key,
@@ -4002,7 +4235,9 @@ class JarvisLive:
         self.ui.write_log(f"SYS: Gemini Live model selected: {live_model_id}")
 
         start_time = time.time()
-        while True:
+        reconnect_attempt = 0
+        ever_connected = False
+        while self._conversation_requested.is_set():
             if self._shutdown_requested.is_set():
                 return
             # enforce runtime limit if configured
@@ -4037,8 +4272,13 @@ class JarvisLive:
                     time.sleep(1)
                     continue
             try:
+                if not self._conversation_requested.is_set():
+                    return
                 print("[JARVIS] 🔌 Connecting...")
-                self.ui.set_state("THINKING")
+                self._set_conversation_state(
+                    ConversationState.RECONNECTING if ever_connected
+                    else ConversationState.CONNECTING
+                )
                 # JL-M003: fetch LILITH personal knowledge for system-prompt injection.
                 lilith_ctx = None
                 bridge = getattr(self, "_lilith", None)
@@ -4050,12 +4290,31 @@ class JarvisLive:
                             print(f"[JARVIS] LILITH context loaded: {n} facts")
                     except Exception as exc:
                         print(f"[JARVIS] LILITH context fetch skipped: {exc}")
-                config = self._build_config(lilith_context=lilith_ctx)
+                config = self._build_config(
+                    lilith_context=lilith_ctx,
+                    resumption_handle=self._session_resumption_handle,
+                    local_continuity=(
+                        self._local_continuity_prompt()
+                        if self._resume_from_local_continuity
+                        or (
+                            self._logical_conversation_started
+                            and self._session_resumption_handle is None
+                        )
+                        else ""
+                    ),
+                )
+
+                if not self._conversation_requested.is_set():
+                    return
 
                 async with (
                     client.aio.live.connect(model=live_model_id, config=config) as session,
                     asyncio.TaskGroup() as tg,
                 ):
+                    if not self._conversation_requested.is_set():
+                        await session.close()
+                        return
+                    first_connection = not self._logical_conversation_started
                     self.session        = session
                     self._loop          = asyncio.get_event_loop()
                     self.audio_in_queue = asyncio.Queue()
@@ -4063,8 +4322,13 @@ class JarvisLive:
                     self._turn_done_event = asyncio.Event()
 
                     print("[JARVIS] ✅ Connected.")
-                    self.ui.set_state("LISTENING")
-                    self.ui.write_log("SYS: AURORA online.")
+                    connected_at = time.monotonic()
+                    self._set_conversation_state(ConversationState.LISTENING)
+                    if first_connection:
+                        self.ui.write_log("SYS: AURORA online.")
+                    self._logical_conversation_started = True
+                    self._resume_from_local_continuity = False
+                    ever_connected = True
                     if not self.cloud_safe:
                         try:
                             jarvis_status.write_status({
@@ -4080,16 +4344,29 @@ class JarvisLive:
                         tg.create_task(self._listen_audio())
                     tg.create_task(self._receive_audio())
                     tg.create_task(self._play_audio())
-                    tg.create_task(self._announce_startup())
+                    if first_connection:
+                        tg.create_task(self._announce_startup())
 
             except Exception as e:
-                if self._shutdown_requested.is_set():
+                if self._shutdown_requested.is_set() or not self._conversation_requested.is_set():
                     return
-                actual = e
-                if isinstance(e, ExceptionGroup) and len(e.exceptions) == 1:
-                    actual = e.exceptions[0]
+                actual = next(_exception_leaves(e), e)
 
-                if _is_unsupported_voice_error(actual) and self.voice_name != DEFAULT_VOICE_NAME:
+                if (
+                    self._session_resumption_handle is not None
+                    and _is_resumption_handle_rejected(e)
+                ):
+                    self._session_resumption_handle = None
+                    self._resume_from_local_continuity = True
+                    print(
+                        "[JARVIS] Live resumption was rejected; rebuilding from local continuity."
+                    )
+                elif _is_recoverable_live_disconnect(e):
+                    print(
+                        "[JARVIS] Live transport disconnected; resuming session. "
+                        f"({actual})"
+                    )
+                elif _is_unsupported_voice_error(actual) and self.voice_name != DEFAULT_VOICE_NAME:
                     old_voice = self.voice_name
                     self.voice_name = DEFAULT_VOICE_NAME
                     self.ui.write_log(
@@ -4102,16 +4379,31 @@ class JarvisLive:
                             jarvis_status.write_status({"state": "voice_fallback", "voice": DEFAULT_VOICE_NAME})
                         except Exception:
                             pass
-                elif isinstance(actual, genai.errors.APIError) and "1000" in str(actual):
-                    print("[JARVIS] 🔌 Session ended normally.")
-                    if not self.cloud_safe:
-                        try:
-                            jarvis_status.write_status({"state": "offline"})
-                        except Exception:
-                            pass
                 else:
                     print(f"[JARVIS] ⚠️ {e}")
                     traceback.print_exc()
+                    self.ui.write_log(f"ERR: Gemini Live connection failed: {actual}")
+                    return
+            finally:
+                self.session = None
+                self.audio_in_queue = None
+                self.out_queue = None
+                self._turn_done_event = None
+
+            if not self._conversation_requested.is_set():
+                return
+            if "connected_at" in locals() and time.monotonic() - connected_at >= 30.0:
+                reconnect_attempt = 0
+            reconnect_attempt += 1
+            if reconnect_attempt > MAX_LIVE_RECONNECT_ATTEMPTS:
+                self.ui.write_log(
+                    f"ERR: Gemini Live disconnected after {MAX_LIVE_RECONNECT_ATTEMPTS} reconnect attempts."
+                )
+                return
+            self._set_conversation_state(ConversationState.RECONNECTING)
+            await self._wait_before_reconnect(_live_reconnect_delay(reconnect_attempt))
+            if not self._conversation_requested.is_set():
+                return
 
 def main():
     import sys
@@ -4143,6 +4435,7 @@ def main():
         voice_name = _load_voice_name()
         jarvis = JarvisLive(ui, voice_name)
         ui.on_quit_requested = jarvis.request_shutdown
+        ui.on_conversation_toggle = jarvis.toggle_conversation
 
         # Trial/keyword runtime limiting: set via env `JARVIS_TRIAL_KEYWORD`.
         # If set to any non-empty string, jarvis will run for 3600 seconds (1 hour).
@@ -4204,7 +4497,7 @@ def main():
             logger.error("JARVIS_STARTUP_FAILED  %s", message, exc_info=True)
             try:
                 ui.write_log(f"ERR: {message}")
-                ui.set_state("LISTENING")
+                ui.set_state("STANDBY")
             except Exception:
                 pass
 

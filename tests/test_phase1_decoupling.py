@@ -94,7 +94,7 @@ class PhaseOneDecouplingTests(unittest.TestCase):
         response = asyncio.run(jarvis._execute_tool(call))
 
         self.assertIn("unavailable in cloud-safe mode", response.response["result"])
-        self.assertEqual(client.events, [])
+        self.assertEqual(client.events, [("state", "STANDBY")])
 
 
 if __name__ == "__main__":

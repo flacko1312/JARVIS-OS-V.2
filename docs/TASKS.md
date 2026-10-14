@@ -4,11 +4,19 @@ Status: **CANONICAL ACTIONABLE BACKLOG**. Do not use historical prompts or audit
 
 ## Current validation state
 
-### AUT-9 — next autonomous work block
+### Gemini Live transport recovery — next required physical validation
 
-Status: NOT STARTED.
+Status: **PENDING / NOT PHYSICALLY FORCED**.
 
-Do not start AUT-9 until explicitly requested.
+F8 pause/resume and immediate conversational continuity are physically validated. The owner established `88`, paused and resumed with F8, and JARVIS correctly answered `176` when asked for the previous number multiplied by two. Normal multi-turn operation stays on one Live connection and resume produces no new greeting.
+
+The next task is to establish context in an active conversation, force a real recoverable network/Live interruption, observe `RECONNECTING` and return to `LISTENING`, then verify the prior immediate context without a greeting, traceback, or LILITH-memory workaround. Do not mark session resumption as physically passed until this succeeds. Do not start JL-A10 work or the 24-hour soak before this validation is complete.
+
+### AUT-9 — subsequent autonomous work block
+
+Status: **NOT STARTED / NOT AUTHORIZED**.
+
+Do not start AUT-9 until explicitly requested and the transport-recovery gate above is complete.
 
 ## Closed
 
@@ -24,7 +32,7 @@ Status: **SCREEN PHYSICAL E2E PASS; CAMERA AND OLLAMA FAILOVER STILL HUMAN-GATED
 
 The owner invoked `screen_process` through the real runtime. JARVIS captured a 142,430-byte screen image, selected `gemini-3.8-flash`, produced a description matching the visible ChatGPT and AURORA windows, and spoke the result. The obsolete `gemini-2.5-flash` and AFC warning regressions are fixed. Automated tests cover bounded Gemini 503 handling and the final local Ollama fallback; an isolated `qwen3-vl:4b` image smoke passed. The complete real provider chain has not physically exercised Ollama because Gemini primary succeeded.
 
-There is no open P1 feature task. Continue only with the stabilization backlog or a separately authorized supervised validation; do not infer authorization to start deferred work.
+There is no open P1 feature task. Perform the transport-recovery validation above before any soak; otherwise continue only with the stabilization backlog or a separately authorized supervised validation.
 
 ## Stabilization backlog
 

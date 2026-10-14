@@ -7142,6 +7142,7 @@ class MainWindow(QMainWindow):
         self.on_name_change         = None
         self.on_tts_provider_change = None
         self.on_quit_requested      = None
+        self.on_conversation_toggle = None
         self._muted                 = False
         self._current_file: str | None = None
         self._tts_overlay: TTSProviderOverlay | None = None
@@ -7362,6 +7363,8 @@ class MainWindow(QMainWindow):
 
         sc_mute = QShortcut(QKeySequence("F4"), self)
         sc_mute.activated.connect(self._toggle_mute)
+        sc_conversation = QShortcut(QKeySequence("F8"), self)
+        sc_conversation.activated.connect(self._toggle_conversation)
         sc_full = QShortcut(QKeySequence("F11"), self)
         sc_full.activated.connect(self._toggle_fullscreen)
         sc_min = QShortcut(QKeySequence(Qt.Key.Key_F6), self)
@@ -7389,6 +7392,7 @@ class MainWindow(QMainWindow):
         sc_show_left.activated.connect(self._show_left_panel_popup)
         sc_show_right = QShortcut(QKeySequence("R"), self)
         sc_show_right.activated.connect(self._show_right_panel_popup)
+        self._apply_state("STANDBY")
     def closeEvent(self, event):
         # Minimize to tray instead of quitting (if tray is available)
         try:
@@ -8663,6 +8667,13 @@ class MainWindow(QMainWindow):
         track_lay.addWidget(self._mute_btn)
         track_lay.addWidget(_track_separator())
 
+        self._conversation_btn = _ctrl_btn("▶ INICIAR CONVERSACIÓN", 210)
+        self._conversation_btn.setToolTip("Iniciar o terminar conversación (F8)")
+        self._conversation_btn.setAccessibleName("Iniciar conversación")
+        self._conversation_btn.clicked.connect(self._toggle_conversation)
+        track_lay.addWidget(self._conversation_btn)
+        track_lay.addWidget(_track_separator())
+
         self._tts_btn = _ctrl_btn("VOICE", 142)
         self._tts_btn.setToolTip("Change AURORA voice")
         self._tts_btn.setAccessibleName("Change AURORA voice")
@@ -8843,12 +8854,24 @@ class MainWindow(QMainWindow):
         self._muted = not self._muted
         self.hud.muted = self._muted
         self._style_mute_btn()
+        current_state = str(getattr(self.hud, "state", "STANDBY") or "STANDBY")
         if self._muted:
-            self._apply_state("MUTED")
+            if current_state != "STANDBY":
+                self._apply_state("MUTED")
             self._log.append_log("SYS: Microphone muted.")
         else:
-            self._apply_state("LISTENING")
+            self._apply_state("STANDBY" if current_state == "STANDBY" else "LISTENING")
             self._log.append_log("SYS: Microphone active.")
+
+    def _toggle_conversation(self):
+        """Delegate conversation lifecycle work without blocking Qt's thread."""
+        callback = self.on_conversation_toggle
+        if callback is None:
+            return
+        try:
+            callback()
+        except Exception as exc:
+            self._log.append_log(f"ERR: Conversation control failed: {exc}")
 
     def _get_selected_voice(self) -> str:
         idx = self._voice_combo.currentIndex()
@@ -8955,6 +8978,15 @@ class MainWindow(QMainWindow):
     def _apply_state(self, state: str):
         self.hud.state    = state
         self.hud.speaking = (state == "SPEAKING")
+        if hasattr(self, "_conversation_btn"):
+            active = state not in ("STANDBY", "STOPPING")
+            self._conversation_btn.setText(
+                "■ TERMINAR CONVERSACIÓN" if active else "▶ INICIAR CONVERSACIÓN"
+            )
+            self._conversation_btn.setAccessibleName(
+                "Terminar conversación" if active else "Iniciar conversación"
+            )
+            self._conversation_btn.setEnabled(state != "STOPPING")
         if hasattr(self, "_rail_mode_lbl"):
             self._rail_mode_lbl.setText(f"LOCAL  /  {state}")
             rail_color = {
@@ -8963,6 +8995,10 @@ class MainWindow(QMainWindow):
                 "PROCESSING": C.ACC2,
                 "SPEAKING": C.PRI,
                 "LISTENING": C.GREEN,
+                "STANDBY": C.TEXT_DIM,
+                "CONNECTING": C.ACC2,
+                "RECONNECTING": C.ACC2,
+                "STOPPING": C.TEXT_DIM,
             }.get(state, C.TEXT_DIM)
             self._rail_mode_lbl.setStyleSheet(
                 f"color: {rail_color}; background: transparent; letter-spacing: 1px;"
@@ -8979,6 +9015,10 @@ class MainWindow(QMainWindow):
                 "PROCESSING": C.ACC2,
                 "SPEAKING": C.PRI,
                 "LISTENING": C.TEXT_MED,
+                "STANDBY": C.TEXT_DIM,
+                "CONNECTING": C.ACC2,
+                "RECONNECTING": C.ACC2,
+                "STOPPING": C.TEXT_DIM,
             }.get(state, C.TEXT_MED)
             self._header_mode_lbl.setStyleSheet(
                 f"color: {state_color}; background: transparent; letter-spacing: 1px;"
@@ -9183,14 +9223,14 @@ class MainWindow(QMainWindow):
         if self._overlay:
             self._overlay.hide()
             self._overlay = None
-        self._apply_state("LISTENING")
+        self._apply_state("STANDBY")
         self._log.append_log("SYS: INITIATING SYSTEMS, SIR...")
         self._log.append_log("SYS: CORE SYSTEMS ONLINE")
         self._log.append_log("SYS: NEURAL NETWORK ACTIVE  [OK]")
         self._log.append_log("SYS: PARALLAX UI COMPLETE   [OK]")
-        self._log.append_log("SYS: VOICE SYNTHESIS READY  [OK]")
+        self._log.append_log("SYS: VOICE SYSTEM STANDBY  [OK]")
         self._log.append_log(f"SYS: PLATFORM {os_name.upper()} DETECTED")
-        self._log.append_log("SYS: AURORA online.")
+        self._log.append_log("SYS: AURORA standby. Press F8 to start a conversation.")
         # After setup: show voice popup first, then name popup
         self._show_voice_select_then_name()
 
@@ -9565,6 +9605,14 @@ class JarvisUI:
     def _voice_combo(self):
         """Expose the legacy selector used by the live engine voice fallback."""
         return self._win._voice_combo
+
+    @property
+    def on_conversation_toggle(self):
+        return self._win.on_conversation_toggle
+
+    @on_conversation_toggle.setter
+    def on_conversation_toggle(self, cb):
+        self._win.on_conversation_toggle = cb
 
     @property
     def on_text_command(self):

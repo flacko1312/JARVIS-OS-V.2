@@ -70,6 +70,8 @@ def _make_jarvis(*, lilith_client=None) -> main.JarvisLive:
     """Build a ``JarvisLive`` with a fake UI client and optional mock LILITH."""
     client = StubClient()
     jarvis = main.JarvisLive(client, "puck")
+    # These tests exercise the receive/tool path of an already active Live session.
+    jarvis._conversation_requested.set()
 
     if lilith_client is not None:
         runtime = SimpleNamespace(client=lilith_client, lilith_available=True)
