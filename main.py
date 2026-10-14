@@ -601,6 +601,8 @@ def _is_recoverable_live_disconnect(exc: BaseException) -> bool:
         isinstance(leaf, RecoverableLiveDisconnect)
         or _is_normal_live_close_error(leaf)
         or _is_transient_live_connection_error(leaf)
+        or _is_session_not_found_1008(leaf)
+        or _is_invalid_argument_1007(leaf)
         for leaf in leaves
     )
 
@@ -615,6 +617,17 @@ def _is_invalid_argument_1007(exc: BaseException) -> bool:
         and "invalid argument" in str(leaf).lower()
         for leaf in _exception_leaves(exc)
     )
+
+
+def _is_session_not_found_1008(exc: BaseException) -> bool:
+    return any(
+        "1008" in str(leaf)
+        and "session not found" in str(leaf).lower()
+        for leaf in _exception_leaves(exc)
+    )
+
+
+_SESSION_RESUMPTION_HANDLE_MAX_AGE = 600.0  # 10 minutes
 
 
 def _live_response_audio_bytes(response) -> bytes | None:
@@ -2393,6 +2406,11 @@ class JarvisLive:
 
     async def _restore_durable_continuity(self, session) -> None:
         """Prefill Live history before any normal realtime input can begin."""
+        logger.info(
+            "LIVE_SESSION context_restore turns=%d summary_len=%d",
+            len(self._conversation_continuity),
+            len(self._rolling_conversation_summary or ""),
+        )
         print("[JARVIS] Restoring durable conversation context into Live session.")
         turns = self._durable_continuity_turns()
         if turns:
@@ -4673,7 +4691,14 @@ class JarvisLive:
             try:
                 if not self._conversation_requested.is_set():
                     return
-                print("[JARVIS] 🔌 Connecting...")
+                connect_kind = "reconnect" if ever_connected else "connect"
+                logger.info(
+                    "LIVE_SESSION %s attempt=%d handle=%s local_continuity=%s",
+                    connect_kind, reconnect_attempt,
+                    bool(self._session_resumption_handle),
+                    bool(self._resume_from_local_continuity or self._logical_conversation_started),
+                )
+                print(f"[JARVIS] 🔌 {'Reconnecting' if ever_connected else 'Connecting'}...")
                 self._set_conversation_state(
                     ConversationState.RECONNECTING if ever_connected
                     else ConversationState.CONNECTING
@@ -4689,6 +4714,26 @@ class JarvisLive:
                             print(f"[JARVIS] LILITH context loaded: {n} facts")
                     except Exception as exc:
                         print(f"[JARVIS] LILITH context fetch skipped: {exc}")
+                # Expire stale resumption handles to avoid 1008 errors.
+                if (
+                    self._session_resumption_handle is not None
+                    and self._session_resumption_handle_at is not None
+                    and (time.monotonic() - self._session_resumption_handle_at)
+                    > _SESSION_RESUMPTION_HANDLE_MAX_AGE
+                ):
+                    handle_age = time.monotonic() - self._session_resumption_handle_at
+                    logger.info(
+                        "LIVE_SESSION handle_expired age=%.1fs max=%.0fs",
+                        handle_age, _SESSION_RESUMPTION_HANDLE_MAX_AGE,
+                    )
+                    print(
+                        f"[JARVIS] 🔌 Resumption handle expired ({handle_age:.0f}s old); "
+                        "rebuilding from local continuity."
+                    )
+                    self._session_resumption_handle = None
+                    self._session_resumption_handle_at = None
+                    self._resume_from_local_continuity = True
+
                 native_resumption = self._session_resumption_handle is not None
                 restore_durable_context = bool(
                     not native_resumption
@@ -4756,8 +4801,12 @@ class JarvisLive:
                     self.session        = session
                     self._loop          = asyncio.get_event_loop()
 
-                    print("[JARVIS] ✅ Connected.")
                     connected_at = time.monotonic()
+                    logger.info(
+                        "LIVE_SESSION connected model=%s resumption=%s initial_history=%s",
+                        live_model_id, native_resumption, attempt_initial_history,
+                    )
+                    print("[JARVIS] ✅ Connected.")
                     self._set_conversation_state(ConversationState.LISTENING)
                     if first_connection:
                         self.ui.write_log("SYS: AURORA online.")
@@ -4799,17 +4848,37 @@ class JarvisLive:
                         "durable continuity fallback."
                     )
                     continue
-                if (
-                    self._session_resumption_handle is not None
-                    and _is_resumption_handle_rejected(e)
-                ):
+                if _is_session_not_found_1008(e):
+                    logger.warning(
+                        "LIVE_SESSION session_not_found_1008 handle=%s",
+                        bool(self._session_resumption_handle),
+                    )
                     self._session_resumption_handle = None
                     self._session_resumption_handle_at = None
                     self._resume_from_local_continuity = True
                     print(
-                        "[JARVIS] Live resumption was rejected; rebuilding from local continuity."
+                        "[JARVIS] 🔌 Session not found (1008); "
+                        "discarding stale handle, rebuilding from local continuity."
+                    )
+                elif (
+                    self._session_resumption_handle is not None
+                    and _is_resumption_handle_rejected(e)
+                ):
+                    logger.warning(
+                        "LIVE_SESSION resumption_rejected handle_age=%.1fs",
+                        (time.monotonic() - (self._session_resumption_handle_at or 0)),
+                    )
+                    self._session_resumption_handle = None
+                    self._session_resumption_handle_at = None
+                    self._resume_from_local_continuity = True
+                    print(
+                        "[JARVIS] 🔌 Live resumption was rejected; rebuilding from local continuity."
                     )
                 elif _is_recoverable_live_disconnect(e):
+                    logger.info(
+                        "LIVE_SESSION disconnect recoverable error=%s handle=%s",
+                        type(actual).__name__, bool(self._session_resumption_handle),
+                    )
                     is_goaway = isinstance(actual, RecoverableLiveDisconnect) and str(actual) == "server GoAway"
                     if is_goaway and self._session_resumption_handle is not None:
                         if goaway_resume_attempted:
@@ -4865,7 +4934,16 @@ class JarvisLive:
                 )
                 return
             self._set_conversation_state(ConversationState.RECONNECTING)
-            await self._wait_before_reconnect(_live_reconnect_delay(reconnect_attempt))
+            delay = _live_reconnect_delay(reconnect_attempt)
+            logger.info(
+                "LIVE_SESSION reconnect_wait attempt=%d/%d delay=%.1fs",
+                reconnect_attempt, MAX_LIVE_RECONNECT_ATTEMPTS, delay,
+            )
+            print(
+                f"[JARVIS] 🔌 Reconnecting in {delay:.0f}s "
+                f"(attempt {reconnect_attempt}/{MAX_LIVE_RECONNECT_ATTEMPTS})..."
+            )
+            await self._wait_before_reconnect(delay)
             if not self._conversation_requested.is_set():
                 return
 

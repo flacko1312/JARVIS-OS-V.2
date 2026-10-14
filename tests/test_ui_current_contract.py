@@ -77,7 +77,7 @@ class CurrentUIContractTests(unittest.TestCase):
         button = self.window._quit_btn
         self.assertEqual(button.objectName(), "JarvisQuitButton")
         self.assertEqual(button.accessibleName(), "Quit AURORA")
-        self.assertEqual(button.toolTip(), "Quit AURORA")
+        self.assertEqual(button.toolTip(), "Cerrar AURORA")
         self.assertFalse(button.isHidden())
 
     def test_conversation_button_starts_in_standby_and_toggles_callback(self):
@@ -97,7 +97,7 @@ class CurrentUIContractTests(unittest.TestCase):
         try:
             self.window._muted = True
             self.window._style_mute_btn()
-            self.assertIn("MUTED", self.window._mute_btn.text())
+            self.assertIn("SILENCIADO", self.window._mute_btn.text())
             self.assertEqual(self.window._mute_btn.accessibleName(), "Microphone muted")
             self.assertIn("border-radius: 5px", self.window._mute_btn.styleSheet())
             self.assertNotIn("border-radius: 17px", self.window._mute_btn.styleSheet())

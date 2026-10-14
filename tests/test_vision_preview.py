@@ -34,7 +34,7 @@ class VisionPreviewTests(unittest.TestCase):
                 self.assertTrue(preview._frame_timer.isActive())
 
                 preview.finish(2500)
-                self.assertEqual(preview._status.text(), "ANALYSIS COMPLETE")
+                self.assertEqual(preview._status.text(), "ANÁLISIS COMPLETADO")
                 self.assertTrue(preview._hide_timer.isActive())
 
                 preview.stop()

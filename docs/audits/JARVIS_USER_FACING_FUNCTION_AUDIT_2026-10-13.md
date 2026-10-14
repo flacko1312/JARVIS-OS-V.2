@@ -4,7 +4,7 @@ Date: 2026-10-13
 
 Repository: `C:\JARVIS`
 
-Baseline: `bbe95a8d3abcdbbab130e46a3ac336bd47f5c374` (`HEAD == origin/main`)
+Baseline before this uncommitted fix: `72483e3039adb28d29117218ccf62279cec83909` (`origin/main` remains `bbe95a8`)
 Scope: current user-facing functions, validation state, actual missing functionality, and remaining roadmap boundaries.
 
 ## 1. Executive verdict
@@ -38,7 +38,8 @@ There is no newly discovered missing function inside the advertised 46-tool surf
 - Verified required local packages for screen capture, camera, vision, computer control, Playwright, web retrieval, HTML parsing, and HTTP requests.
 - Verified Google Chrome exists at `C:\Program Files\Google\Chrome\Application\chrome.exe`.
 - After the local Ollama vision fallback, ran the focused vision/action/UI slice: **59 passed, 4 subtests passed, 0 failed**.
-- Ran the complete Windows Python suite: **449 passed, 77 skipped, 19 subtests passed, 0 failed**, with one third-party Python 3.14 deprecation warning.
+- After the `file_processor` text-model fix, ran its focused slice: **42 passed, 0 failed**.
+- Ran the complete Windows Python suite: **455 passed, 77 skipped, 19 subtests passed, 0 failed**, with one third-party Python 3.14 deprecation warning.
 - Ran automated QA: **5/5 checks passed**, P0=0, P1=0, P2=3.
 - Ran capability self-test: **7 PASS, 1 WARN, 0 FAIL**. The warning is the missing live Gemini check in the test process; no Gemini API key was exposed or read by this audit.
 - Ran `pip check`: no broken requirements.
@@ -68,7 +69,7 @@ The 77 skips are the documented historical first-run/tour specification, not 77 
 
 | Functions | Evidence boundary |
 |---|---|
-| `file_controller`, `file_processor` | Scoped path checks, file-type handling, real isolated filesystem operations, recoverable deletion and dispatcher coverage. |
+| `file_controller`, `file_processor` | Scoped path checks, file-type handling, real isolated filesystem operations, recoverable deletion and dispatcher coverage. `file_processor extract_text` is live PASS; AI `explain` is source-fixed but requires owner retest. |
 | `graphics_quality`, `jarvis_ui_control` | Enum/action validation plus current offscreen UI contract tests. |
 | `agent_task`, `task_status` | Real task queue IDs, state, cancellation and failure handling. |
 | `create_presentation` | Background workflow, editable PPTX production, source handling, progress/cancel semantics and output validation have dedicated tests. Microsoft PowerPoint PDF export remains environment-dependent. |
@@ -81,6 +82,17 @@ The 77 skips are the documented historical first-run/tour specification, not 77 
 | `lilith_command_submit` | Correlation/idempotency fields and authoritative completion semantics are implemented. |
 
 These LILITH tools are code-complete, but only `lilith_routine` received new owner-operated physical certification in the present acceptance report. Backend availability remains an operational dependency.
+
+`file_processor` has a split live-validation state. Owner testing proved
+`extract_text` can access and parse the real Markdown file. The same file with
+`action=explain` failed twice with `404 NOT_FOUND` because its AI branch still
+selected retired `gemini-2.5-flash`; it also emitted the no-tools AFC warning.
+The source now resolves a dedicated non-Live text model through
+`GEMINI_TEXT_MODEL` -> `config/api_keys.json:text_model` ->
+`gemini-3.8-flash`, which the configured API enumerated with
+`generateContent`. File-processing requests explicitly disable AFC. Automated
+regressions pass, but `file_processor explain` remains **RETEST REQUIRED** until
+the owner repeats the real file test.
 
 ## 5. Implemented but awaiting supervised human/live validation
 

@@ -21,6 +21,22 @@ ROOT = Path(__file__).resolve().parent.parent
 ARTIFACT_ROOT = ROOT / ".qa-artifacts"
 
 
+def _load_runtime_environment() -> None:
+    """Use the same local environment source as the desktop entry point."""
+
+    try:
+        from dotenv import load_dotenv
+
+        load_dotenv(ROOT / ".env")
+    except ImportError:
+        # Packaged deployments may supply configuration through the process
+        # environment or the platform secret store instead of python-dotenv.
+        pass
+
+
+_load_runtime_environment()
+
+
 @dataclass
 class CapabilityResult:
     name: str
