@@ -3,6 +3,9 @@ import sys
 import json
 import re
 import time
+import difflib
+import hashlib
+import uuid
 from pathlib import Path
 
 from actions.jarvis_file_stamp import mark_created_file, write_text_with_stamp
@@ -18,21 +21,23 @@ API_CONFIG_PATH    = BASE_DIR / "config" / "api_keys.json"
 DESKTOP            = Path.home() / "Desktop"
 MAX_BUILD_ATTEMPTS = 3
 GEMINI_MODEL       = "gemini-2.5-flash"
+_PENDING_SCREEN_FIXES: dict[str, dict] = {}
+_SCREEN_FIX_TTL_SECONDS = 900
 
 
 def _get_api_key() -> str:
-    from memory.config_manager import get_gemini_key
-
-    key = get_gemini_key()
-    if not key:
-        raise ValueError("Gemini API key is not configured.")
-    return key
+    from core.gemini_config import gemini_api_key
+    return gemini_api_key()
 
 
-def _get_gemini(model: str = GEMINI_MODEL):
-    import google.generativeai as genai
-    genai.configure(api_key=_get_api_key())
-    return genai.GenerativeModel(model)
+def _get_gemini(model: str | None = None):
+    from core.gemini_config import component_model_client
+    return component_model_client(
+        "code_helper",
+        explicit_model=model,
+        default_model=GEMINI_MODEL,
+        config_path=API_CONFIG_PATH,
+    )
 
 
 def _clean_code(text: str) -> str:
@@ -501,9 +506,34 @@ Be specific and actionable. If you see an error message, quote it exactly."""
             if code_match:
                 fixed_code = code_match.group(1).strip()
                 save_path  = Path(file_path)
-                _save_file(save_path, fixed_code)
-                analysis += f"\n\n✅ Fixed code has been saved to: {file_path}"
-                print(f"[Code] ✅ Fixed code saved: {file_path}")
+                token = f"fix_{uuid.uuid4().hex[:12]}"
+                digest = hashlib.sha256(file_content.encode("utf-8")).hexdigest()
+                diff = "".join(difflib.unified_diff(
+                    file_content.splitlines(keepends=True),
+                    fixed_code.splitlines(keepends=True),
+                    fromfile=str(save_path),
+                    tofile=str(save_path),
+                ))
+                proposal_dir = save_path.parent / ".jarvis-proposals"
+                proposal_dir.mkdir(parents=True, exist_ok=True)
+                proposal_path = proposal_dir / f"{save_path.name}.{token}.patch"
+                write_text_with_stamp(
+                    proposal_path,
+                    diff,
+                    "Proposed by JARVIS screen-debug; source file was not modified.",
+                )
+                _PENDING_SCREEN_FIXES[token] = {
+                    "path": str(save_path.resolve()),
+                    "original_sha256": digest,
+                    "fixed_code": fixed_code,
+                    "created_at": time.monotonic(),
+                    "proposal_path": str(proposal_path),
+                }
+                analysis += (
+                    f"\n\nProposed patch saved to: {proposal_path}. "
+                    f"The source was NOT modified. To approve, use action=apply_screen_fix "
+                    f"and approval_token={token}."
+                )
 
         return analysis
 
@@ -514,6 +544,24 @@ Be specific and actionable. If you see an error message, quote it exactly."""
         except Exception:
             pass
         return f"Screen analysis failed: {e}"
+
+
+def _apply_screen_fix(approval_token: str) -> str:
+    pending = _PENDING_SCREEN_FIXES.pop(str(approval_token or "").strip(), None)
+    if pending is None:
+        return "Invalid or expired screen-fix approval token. No file was changed."
+    if time.monotonic() - pending["created_at"] > _SCREEN_FIX_TTL_SECONDS:
+        return "Screen-fix approval expired. No file was changed."
+    path = Path(pending["path"])
+    try:
+        current = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        return f"Could not read the approved source file: {exc}"
+    digest = hashlib.sha256(current.encode("utf-8")).hexdigest()
+    if digest != pending["original_sha256"]:
+        return "The source changed after analysis. The proposed fix was not applied."
+    _save_file(path, pending["fixed_code"])
+    return f"Approved screen-debug fix applied to: {path}"
 
 
 def code_helper(
@@ -574,6 +622,9 @@ def code_helper(
 
     elif action == "screen_debug":
         return _screen_debug_action(description, file_path, player, speak)
+
+    elif action == "apply_screen_fix":
+        return _apply_screen_fix(str(p.get("approval_token") or ""))
 
     else:
         return f"Unknown action: '{action}'. Use write, edit, explain, run, build, optimize, or screen_debug."

@@ -123,10 +123,14 @@ class ResearchResult:
 
 
 def _api_key() -> str:
-    key = str(get_gemini_key() or os.environ.get("GEMINI_API_KEY", "")).strip()
-    if not key:
-        raise RuntimeError("A valid Gemini API key is required for deep research.")
-    return key
+    from core.gemini_config import gemini_api_key
+    return gemini_api_key()
+
+
+def _research_models() -> tuple[str, ...]:
+    from core.gemini_config import component_model
+    selected = component_model("deep_research", default=SYNTHESIS_MODELS[0])
+    return (selected, *(model for model in SYNTHESIS_MODELS if model != selected))
 
 
 def _check_cancel(cancel_flag) -> None:
@@ -469,7 +473,7 @@ VERIFIED SOURCE CATALOG
 {source_catalog}
 """.strip()
     errors = []
-    for model in SYNTHESIS_MODELS:
+    for model in _research_models():
         try:
             response = client.models.generate_content(model=model, contents=prompt)
             report = _response_text(response)

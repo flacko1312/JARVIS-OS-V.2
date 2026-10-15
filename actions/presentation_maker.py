@@ -111,12 +111,17 @@ _IMAGE_LED_TOPIC_RE = re.compile(
 
 
 def _api_key() -> str:
-    from memory.config_manager import get_gemini_key
+    from core.gemini_config import gemini_api_key
+    return gemini_api_key()
 
-    key = str(get_gemini_key() or "").strip()
-    if not key:
-        raise RuntimeError("GEMINI_API_KEY is not configured.")
-    return key
+
+def _presentation_model() -> str:
+    from core.gemini_config import component_model
+    return component_model(
+        "presentation",
+        default=DEFAULT_MODEL,
+        config_path=API_CONFIG_PATH,
+    )
 
 
 def _is_quota_error(error: Exception) -> bool:
@@ -351,7 +356,7 @@ Return JSON only in this shape:
                 bundle.warnings.append(f"Could not analyze media source {media_path.name}: {exc}")
     try:
         response = client.models.generate_content(
-            model=DEFAULT_MODEL,
+            model=_presentation_model(),
             contents=contents,
             config={"response_mime_type": "application/json"},
         )
@@ -1432,7 +1437,7 @@ def _revise_plan(
     )
     client = genai.Client(api_key=_api_key())
     response = client.models.generate_content(
-        model=DEFAULT_MODEL,
+        model=_presentation_model(),
         contents=prompt,
         config={"response_mime_type": "application/json"},
     )

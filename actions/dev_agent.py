@@ -6,6 +6,7 @@ import time
 from pathlib import Path
 
 from actions.jarvis_file_stamp import write_text_with_stamp
+from core.dev_workspace import contained_path, git_operation
 
 
 def get_base_dir():
@@ -22,14 +23,17 @@ MODEL_PLANNER    = "gemini-2.5-flash"
 MODEL_WRITER     = "gemini-2.5-flash"
 
 def _get_api_key() -> str:
-    with open(API_CONFIG_PATH, "r", encoding="utf-8") as f:
-        return json.load(f)["gemini_api_key"]
+    from core.gemini_config import gemini_api_key
+    return gemini_api_key()
 
 
 def _get_model(model_name: str):
-    import google.generativeai as genai
-    genai.configure(api_key=_get_api_key())
-    return genai.GenerativeModel(model_name)
+    from core.gemini_config import component_model_client
+    return component_model_client(
+        "dev_agent",
+        default_model=model_name,
+        config_path=API_CONFIG_PATH,
+    )
 
 
 def _strip_fences(text: str) -> str:
@@ -62,12 +66,12 @@ def _classify_error(output: str) -> str:
 
     low = output.lower()
 
-    if any(x in low for x in ("no module named", "modulenotfounderror", "importerror")):
+    if any(x in low for x in ("no module named", "modulenotfounderror")):
         return "dependency_error"
 
     if "syntaxerror" in low or "invalid syntax" in low:
         return "syntax_error"
-    
+
     if "cannot import" in low or "importerror" in low:
         return "import_error"
 
@@ -82,7 +86,7 @@ def _classify_error(output: str) -> str:
 
 
 def _has_error(output: str, run_command: str) -> bool:
-    
+
     low = output.lower()
 
     if "timed out" in low:
@@ -123,6 +127,7 @@ Return ONLY valid JSON — no markdown, no explanation:
     }}
   ],
   "run_command": "python main.py",
+  "test_command": "python -m pytest -q",
   "dependencies": ["requests"]
 }}
 
@@ -133,6 +138,7 @@ Critical rules:
 4. Entry point must be in the files list.
 5. Use relative paths only (e.g. "utils/helpers.py", not absolute paths).
 6. Standard library modules (os, sys, json, etc.) do NOT go in "dependencies".
+7. Include at least one focused automated test file and a bounded test command.
 
 JSON:"""
 
@@ -219,7 +225,7 @@ Code for {file_path}:"""
         response = model.generate_content(prompt)
         code = _strip_fences(response.text)
 
-        full_path = project_dir / file_path
+        full_path = contained_path(project_dir, file_path)
         full_path.parent.mkdir(parents=True, exist_ok=True)
         write_text_with_stamp(
             full_path,
@@ -421,7 +427,7 @@ Fixed code for {fix_path}:"""
             response = model.generate_content(prompt)
             fixed = _strip_fences(response.text)
 
-            full_path = project_dir / fix_path
+            full_path = contained_path(project_dir, fix_path)
             full_path.parent.mkdir(parents=True, exist_ok=True)
             write_text_with_stamp(
                 full_path,
@@ -473,6 +479,7 @@ def _build_project(
     files        = plan.get("files", [])
     entry_point  = plan.get("entry_point", "main.py")
     run_command  = plan.get("run_command", f"python {entry_point}")
+    test_command = str(plan.get("test_command", "")).strip()
     dependencies = plan.get("dependencies", [])
 
     log(f"Project: {proj_name} | Files: {len(files)} | Entry: {entry_point}")
@@ -525,7 +532,7 @@ def _build_project(
     _open_vscode(project_dir)
 
     last_output   = ""
-    auto_installs = 0  
+    auto_installs = 0
 
     for attempt in range(1, MAX_FIX_ATTEMPTS + 1):
         log(f"Running project (attempt {attempt}/{MAX_FIX_ATTEMPTS})...")
@@ -533,13 +540,19 @@ def _build_project(
         log(f"Output preview: {last_output[:150]}")
 
         if not _has_error(last_output, run_command):
+            test_output = _run_project(test_command, project_dir, timeout) if test_command else "No test command supplied."
+            if test_command and _has_error(test_output, test_command):
+                last_output = f"Generated project tests failed:\n{test_output}"
+                if attempt < MAX_FIX_ATTEMPTS:
+                    continue
+                break
             msg = (
                 f"Project '{proj_name}' is working, sir. "
                 f"Built in {attempt} attempt{'s' if attempt > 1 else ''}. "
                 f"Saved to: {project_dir}"
             )
             if speak: speak(msg)
-            return f"{msg}\n\nOutput:\n{last_output}"
+            return f"{msg}\n\nOutput:\n{last_output}\n\nTests:\n{test_output}"
 
         if attempt == MAX_FIX_ATTEMPTS:
             break
@@ -593,6 +606,19 @@ def dev_agent(
     language     = p.get("language", "python").strip()
     project_name = p.get("project_name", "").strip()
     timeout      = int(p.get("timeout", 30))
+    action       = str(p.get("action") or "build").strip().lower()
+
+    if action.startswith("git_"):
+        project_root = Path(str(p.get("project_root") or "")).expanduser()
+        if not project_root.is_absolute() or not project_root.exists():
+            return "An existing absolute approved project_root is required for Git actions."
+        return git_operation(
+            project_root,
+            action.removeprefix("git_"),
+            branch=str(p.get("branch") or ""),
+            message=str(p.get("message") or ""),
+            timeout=timeout,
+        )
 
     if not description:
         return "Please describe the project you want me to build, sir."
