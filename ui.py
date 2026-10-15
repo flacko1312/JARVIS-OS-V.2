@@ -15,6 +15,7 @@ from pathlib import Path
 import psutil
 
 from ui_locale import t, state_display, status_abbrev, STATE_DISPLAY, UI_TEXT
+from core.voice_config import GEMINI_VOICES
 
 from PyQt6.QtCore import (
     QEasingCurve, QEvent, QMimeData, QObject, QPointF, QPropertyAnimation,
@@ -120,17 +121,7 @@ def set_graphics_quality(quality: str) -> str:
     UI_SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
     UI_SETTINGS_FILE.write_text(json.dumps(settings, indent=2), encoding="utf-8")
     return value
-VOICE_OPTIONS = [
-    ("Puck",          "puck"),
-    ("Charon",        "charon"),
-    ("Kore",          "kore"),
-    ("Fenrir",        "fenrir"),
-    ("Aoede",         "aoede"),
-    ("Leda",          "leda"),
-    ("Orus",          "orus"),
-    ("Schedar",       "schedar"),
-    ("Zubenelgenubi", "zubenelgenubi"),
-]
+VOICE_OPTIONS = list(GEMINI_VOICES)
 VOICE_VALUE_TO_LABEL = {value: label for label, value in VOICE_OPTIONS}
 VOICE_LABEL_TO_VALUE = {label.lower(): value for label, value in VOICE_OPTIONS}
 
@@ -7393,6 +7384,31 @@ class MainWindow(QMainWindow):
         sc_show_right = QShortcut(QKeySequence("R"), self)
         sc_show_right.activated.connect(self._show_right_panel_popup)
         self._apply_state("STANDBY")
+
+    def _sync_metric_polling(self) -> None:
+        if not hasattr(self, "_metric_tmr"):
+            return
+        should_poll = self.isVisible() and not self.isMinimized()
+        if should_poll and not self._metric_tmr.isActive():
+            interval = int(GRAPHICS_PROFILES[self._graphics_quality]["metrics_ms"])
+            self._metric_tmr.start(interval)
+            self._update_metrics()
+        elif not should_poll and self._metric_tmr.isActive():
+            self._metric_tmr.stop()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._sync_metric_polling()
+
+    def hideEvent(self, event):
+        super().hideEvent(event)
+        self._sync_metric_polling()
+
+    def changeEvent(self, event):
+        super().changeEvent(event)
+        if event.type() == QEvent.Type.WindowStateChange:
+            self._sync_metric_polling()
+
     def closeEvent(self, event):
         # Minimize to tray instead of quitting (if tray is available)
         try:
@@ -7906,6 +7922,8 @@ class MainWindow(QMainWindow):
             )
 
     def _update_metrics(self):
+        if not self.isVisible() or self.isMinimized():
+            return
         snap = _get_metrics()
 
         # CPU

@@ -11,6 +11,9 @@ requires-python = ">=3.11"
 [project.scripts]
 jarvis = "main:cli_main"
 
+[project.optional-dependencies]
+quality = ["ruff>=0.17,<0.18", "mypy>=2.4,<2.5"]
+
 [tool.setuptools]
 py-modules = ["main", "ui", "ui_locale", "runtime"]
 
@@ -20,3 +23,30 @@ include = ["actions*", "agent*", "api*", "awareness*", "config*", "core*", "lili
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 norecursedirs = [".*", ".venv", "node_modules", "tmp"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+exclude = [".venv", "node_modules", "tmp", "build", "dist"]
+src = ["."]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]
+
+[tool.mypy]
+python_version = "3.11"
+files = [
+  "core/voice_config.py",
+  "core/error_reporting.py",
+  "core/local_ai.py",
+  "core/provider_status.py",
+  "core/dev_workspace.py",
+  "core/gemini_config.py",
+]
+ignore_missing_imports = true
+follow_imports = "skip"
+check_untyped_defs = true
+no_implicit_optional = true
+warn_return_any = true
+warn_unused_configs = true
+explicit_package_bases = true

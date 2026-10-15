@@ -8,21 +8,12 @@ from typing import Callable
 
 import numpy as np
 import sounddevice as sd
+from core.voice_config import GEMINI_VOICES
 
 RECEIVE_SAMPLE_RATE = 24000
 
 PROVIDER_VOICES: dict[str, list[tuple[str, str]]] = {
-    "gemini": [
-        ("Puck",          "puck"),
-        ("Charon",        "charon"),
-        ("Kore",          "kore"),
-        ("Fenrir",        "fenrir"),
-        ("Aoede",         "aoede"),
-        ("Leda",          "leda"),
-        ("Orus",          "orus"),
-        ("Schedar",       "schedar"),
-        ("Zubenelgenubi", "zubenelgenubi"),
-    ],
+    "gemini": list(GEMINI_VOICES),
 }
 
 EXTERNAL_PROVIDERS = set()
