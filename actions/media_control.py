@@ -21,6 +21,9 @@ _ACTION_ALIASES = {
     "next_track": "next",
     "prev": "previous",
     "previous_track": "previous",
+    "volume_up": "volume_up",
+    "volume_down": "volume_down",
+    "set_volume": "set_volume",
 }
 
 _PLATFORM_ALIASES = {
@@ -202,6 +205,84 @@ def _generic_media_key(action: str) -> str:
         return f"System media control is unavailable: {exc}"
 
 
+def _volume_percent(value: object) -> int:
+    try:
+        number = int(float(str(value)))
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Volume percentage must be a number from 0 to 100.") from exc
+    if not 0 <= number <= 100:
+        raise ValueError("Volume percentage must be between 0 and 100.")
+    return number
+
+
+def _windows_volume(action: str, level: int | None = None) -> str:
+    try:
+        from pycaw.pycaw import AudioUtilities
+
+        endpoint = AudioUtilities.GetSpeakers().EndpointVolume
+        if action == "set_volume":
+            assert level is not None
+            endpoint.SetMasterVolumeLevelScalar(level / 100.0, None)
+            return f"System volume set to {level}%."
+        if action in {"mute", "unmute", "toggle_mute"}:
+            current = bool(endpoint.GetMute())
+            desired = (not current) if action == "toggle_mute" else action == "mute"
+            endpoint.SetMute(desired, None)
+            return "System audio muted." if desired else "System audio unmuted."
+    except (ImportError, AttributeError, OSError) as exc:
+        return f"Exact Windows volume control is unavailable: {exc}"
+    return _generic_volume_key(action)
+
+
+def _generic_volume_key(action: str) -> str:
+    key = {"volume_up": "volumeup", "volume_down": "volumedown", "toggle_mute": "volumemute"}.get(action)
+    if not key:
+        return f"System volume action '{action}' is unsupported on this platform."
+    try:
+        import pyautogui
+
+        pyautogui.press(key)
+        return f"System {action.replace('_', ' ')} command sent."
+    except Exception as exc:
+        return f"System volume control is unavailable: {exc}"
+
+
+def _system_volume(action: str, level: int | None = None) -> str:
+    if _SYSTEM == "Windows":
+        if action in {"volume_up", "volume_down"}:
+            return _generic_volume_key(action)
+        return _windows_volume(action, level)
+    if _SYSTEM == "Darwin":
+        if action == "set_volume":
+            command = f"set volume output volume {level}"
+        elif action == "mute":
+            command = "set volume with output muted"
+        elif action == "unmute":
+            command = "set volume without output muted"
+        elif action == "toggle_mute":
+            command = "set volume output muted not (output muted of (get volume settings))"
+        else:
+            return _generic_volume_key(action)
+        result = _run_osascript(command)
+        return (f"System {action.replace('_', ' ')} completed." if result.returncode == 0 else
+                f"System volume control failed: {(result.stderr or result.stdout).strip()}")
+    if _SYSTEM == "Linux":
+        if shutil.which("pactl"):
+            command = {
+                "volume_up": ["pactl", "set-sink-volume", "@DEFAULT_SINK@", "+5%"],
+                "volume_down": ["pactl", "set-sink-volume", "@DEFAULT_SINK@", "-5%"],
+                "set_volume": ["pactl", "set-sink-volume", "@DEFAULT_SINK@", f"{level}%"],
+                "mute": ["pactl", "set-sink-mute", "@DEFAULT_SINK@", "1"],
+                "unmute": ["pactl", "set-sink-mute", "@DEFAULT_SINK@", "0"],
+                "toggle_mute": ["pactl", "set-sink-mute", "@DEFAULT_SINK@", "toggle"],
+            }[action]
+            result = _run(command)
+            return (f"System {action.replace('_', ' ')} completed." if result.returncode == 0 else
+                    f"System volume control failed: {(result.stderr or result.stdout).strip()}")
+        return _generic_volume_key(action)
+    return _generic_volume_key(action)
+
+
 def media_control(parameters: dict | None = None, response=None, player=None, session_memory=None) -> str:
     """Control Spotify, Apple Music, YouTube Music, or the active system player."""
     params = parameters or {}
@@ -211,11 +292,23 @@ def media_control(parameters: dict | None = None, response=None, player=None, se
     platform_name = _PLATFORM_ALIASES.get(platform_name.replace("_", " "), platform_name)
     query = str(params.get("query", "")).strip()
 
+    if action in {"queue", "inspect_queue", "list_queue"}:
+        return (
+            "Queue control is unsupported by the current provider architecture. "
+            "JARVIS will not guess using provider-specific UI automation."
+        )
+    if action in {"volume_up", "volume_down", "mute", "unmute", "toggle_mute", "set_volume"}:
+        try:
+            level = _volume_percent(params.get("volume")) if action == "set_volume" else None
+        except ValueError as exc:
+            return str(exc)
+        return _system_volume(action, level)
+
     if action == "play" and query:
         action = "play_query"
     allowed = {"play", "pause", "stop", "toggle", "next", "previous", "play_query"}
     if action not in allowed:
-        return f"Unknown media action: '{action}'. Available: play, pause, stop, toggle, next, previous, play_query."
+        return f"Unknown media action: '{action}'. Available: play, pause, stop, toggle, next, previous, play_query, volume_up, volume_down, set_volume, mute, unmute, toggle_mute."
     if platform_name not in {"spotify", "apple_music", "youtube_music", "system"}:
         return f"Unknown music platform: '{platform_name}'. Available: Spotify, Apple Music, YouTube Music, or system."
     if action == "play_query" and not query:

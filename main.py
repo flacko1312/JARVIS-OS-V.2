@@ -41,6 +41,11 @@ import logging.handlers
 from enum import Enum
 
 from core.live_model import pick_live_model
+from core.voice_config import (
+    DEFAULT_GEMINI_VOICE,
+    SUPPORTED_GEMINI_VOICE_NAMES,
+    normalize_gemini_voice,
+)
 
 
 def _lazy_action(module_name: str, attribute: str):
@@ -143,11 +148,8 @@ PROMPT_PATH     = BASE_DIR / "core" / "prompt.txt"
 LIVE_MODEL = "models/gemini-2.5-flash-native-audio-preview-12-2025"
 CHANNELS            = 1
 SEND_SAMPLE_RATE    = 16000
-SUPPORTED_VOICE_NAMES = {
-    "puck", "charon", "kore", "fenrir", "aoede",
-    "leda", "orus", "schedar", "zubenelgenubi"
-}
-DEFAULT_VOICE_NAME   = "puck"
+SUPPORTED_VOICE_NAMES = SUPPORTED_GEMINI_VOICE_NAMES
+DEFAULT_VOICE_NAME = DEFAULT_GEMINI_VOICE
 
 RECEIVE_SAMPLE_RATE = 24000
 CHUNK_SIZE          = 1024
@@ -804,10 +806,7 @@ def _get_api_key() -> str:
 
 
 def _normalize_voice_name(voice_name: str | None) -> str:
-    if not voice_name:
-        return DEFAULT_VOICE_NAME
-    candidate = voice_name.strip().lower()
-    return candidate if candidate in SUPPORTED_VOICE_NAMES else DEFAULT_VOICE_NAME
+    return normalize_gemini_voice(voice_name)
 
 
 def _is_unsupported_voice_error(exc: Exception) -> bool:
@@ -1001,7 +1000,7 @@ TOOL_DECLARATIONS = [
             "properties": {
                 "action": {
                     "type": "STRING",
-                    "enum": ["connect", "status", "disconnect", "inbox", "unread", "search", "read", "prepare", "approve", "cancel"],
+                    "enum": ["connect", "status", "disconnect", "inbox", "unread", "search", "read", "thread", "download_attachment", "create_draft", "list_drafts", "read_draft", "delete_draft", "prepare", "approve", "cancel"],
                     "description": "Email operation."
                 },
                 "provider": {
@@ -1020,6 +1019,12 @@ TOOL_DECLARATIONS = [
                 "limit": {"type": "INTEGER", "description": "Maximum inbox/search results, 1-30."},
                 "query": {"type": "STRING", "description": "Sender or subject text for search."},
                 "message_id": {"type": "STRING", "description": "Message ID returned by inbox/search, required for read."},
+                "thread_id": {"type": "STRING", "description": "Gmail thread ID required for thread retrieval."},
+                "draft_id": {"type": "STRING", "description": "Gmail draft ID for read/delete draft."},
+                "attachment_id": {"type": "STRING", "description": "Opaque Gmail attachment ID returned by read/thread."},
+                "filename": {"type": "STRING", "description": "Attachment filename returned by Gmail."},
+                "destination": {"type": "STRING", "description": "Existing user-selected directory for attachment download."},
+                "attachments": {"type": "ARRAY", "items": {"type": "STRING"}, "description": "Local file paths to attach to a Gmail draft or approval-gated email."},
                 "to": {"type": "STRING", "description": "Recipient email address or comma-separated addresses."},
                 "cc": {"type": "STRING", "description": "Optional Cc addresses."},
                 "bcc": {"type": "STRING", "description": "Optional Bcc addresses."},
@@ -1032,7 +1037,7 @@ TOOL_DECLARATIONS = [
     {
         "name": "reminder",
         "description": (
-            "Set a ONE-TIME future reminder using the local OS scheduler. Use only for one "
+            "Create, list, cancel or modify ONE-TIME future reminders using the local OS scheduler. Use only for one "
             "future occurrence or when the user explicitly asks to be reminded once. Never use "
             "for recurring, daily, weekly, routine, automation, or 'from now on' requests; those "
             "must use lilith_routine. A reminder notifies the user and does not execute a Home "
@@ -1041,11 +1046,15 @@ TOOL_DECLARATIONS = [
         "parameters": {
             "type": "OBJECT",
             "properties": {
+                "action":  {"type": "STRING", "description": "create | list | cancel | modify (default: create)"},
+                "id":      {"type": "STRING", "description": "Safe reminder ID returned by create/list; required for cancel/modify"},
                 "date":    {"type": "STRING", "description": "Date in YYYY-MM-DD format"},
                 "time":    {"type": "STRING", "description": "Time in HH:MM format (24h)"},
+                "text":    {"type": "STRING", "description": "Natural Spanish one-shot time, e.g. 'mañana a las 9 de la noche' or 'en 30 minutos'"},
+                "timezone":{"type": "STRING", "description": "IANA timezone; defaults to Europe/Madrid"},
                 "message": {"type": "STRING", "description": "Reminder message text"}
             },
-            "required": ["date", "time", "message"]
+            "required": []
         }
     },
     {
@@ -1078,7 +1087,7 @@ TOOL_DECLARATIONS = [
             "properties": {
                 "action": {
                     "type": "STRING",
-                    "enum": ["play", "pause", "stop", "toggle", "next", "previous", "play_query"],
+                    "enum": ["play", "pause", "stop", "toggle", "next", "previous", "play_query", "volume_up", "volume_down", "set_volume", "mute", "unmute", "toggle_mute", "queue", "inspect_queue"],
                     "description": "Playback command. Use play_query to find a specific song or other item."
                 },
                 "platform": {
@@ -1089,7 +1098,8 @@ TOOL_DECLARATIONS = [
                 "query": {
                     "type": "STRING",
                     "description": "Song, artist, album, playlist, or Spotify link for play/play_query."
-                }
+                },
+                "volume": {"type": "INTEGER", "description": "Exact system volume percentage from 0 to 100 for set_volume."}
             },
             "required": ["action"]
         }
@@ -1199,11 +1209,11 @@ TOOL_DECLARATIONS = [
     },
     {
         "name": "code_helper",
-        "description": "Writes, edits, explains, runs, or builds code files.",
+        "description": "Writes, edits, explains, runs, or builds code files. Screen-debug only proposes a patch; applying it requires the returned approval token in a later call.",
         "parameters": {
             "type": "OBJECT",
             "properties": {
-                "action":      {"type": "STRING", "description": "write | edit | explain | run | build | auto (default: auto)"},
+                "action":      {"type": "STRING", "description": "write | edit | explain | run | build | optimize | screen_debug | apply_screen_fix | auto"},
                 "description": {"type": "STRING", "description": "What the code should do or what change to make"},
                 "language":    {"type": "STRING", "description": "Programming language (default: python)"},
                 "output_path": {"type": "STRING", "description": "Where to save the file"},
@@ -1211,22 +1221,27 @@ TOOL_DECLARATIONS = [
                 "code":        {"type": "STRING", "description": "Raw code string for explain"},
                 "args":        {"type": "STRING", "description": "CLI arguments for run/build"},
                 "timeout":     {"type": "INTEGER", "description": "Execution timeout in seconds (default: 30)"},
+                "approval_token": {"type": "STRING", "description": "Token returned by screen_debug; use only after explicit user approval"},
             },
             "required": ["action"]
         }
     },
     {
         "name": "dev_agent",
-        "description": "Builds complete multi-file projects from scratch: plans, writes files, installs deps, opens VSCode, runs and fixes errors.",
+        "description": "Builds and tests contained multi-file projects, or performs explicit local Git status/diff/branch/create-branch/commit operations. Never pushes or discards changes.",
         "parameters": {
             "type": "OBJECT",
             "properties": {
+                "action":       {"type": "STRING", "description": "build | git_status | git_diff | git_branch | git_create_branch | git_commit"},
                 "description":  {"type": "STRING", "description": "What the project should do"},
                 "language":     {"type": "STRING", "description": "Programming language (default: python)"},
                 "project_name": {"type": "STRING", "description": "Optional project folder name"},
+                "project_root": {"type": "STRING", "description": "Existing absolute owner-approved root for Git operations"},
+                "branch":       {"type": "STRING", "description": "New local branch name for git_create_branch"},
+                "message":      {"type": "STRING", "description": "Commit message for git_commit; only already staged files are committed"},
                 "timeout":      {"type": "INTEGER", "description": "Run timeout in seconds (default: 30)"},
             },
-            "required": ["description"]
+            "required": ["action"]
         }
     },
     {
@@ -4110,7 +4125,13 @@ class JarvisLive:
             return await self._execute_tool(fc)
         fc_id = str(getattr(fc, "id", "") or "").strip()
         args = dict(getattr(fc, "args", None) or {})
-        operation = str(args.get("operation", "")).strip().lower() if name == "lilith_routine" else ""
+        operation = (
+            str(args.get("operation", "")).strip().lower()
+            if name == "lilith_routine"
+            else str(args.get("action", "create")).strip().lower()
+            if name == "reminder"
+            else ""
+        )
         turn_text = self._effective_schedule_text(name)
         if not fc_id or not turn_text:
             self._schedule_log(
@@ -4196,6 +4217,26 @@ class JarvisLive:
             self._schedule_log(
                 fc_id=fc_id, tool=name, operation=operation,
                 classification=semantics, decision="allowed_routine_management",
+            )
+            return await self._execute_tool(fc)
+
+        if name == "reminder" and operation in {"list", "cancel", "delete", "modify", "update"}:
+            if self._schedule_guard_routed:
+                self._schedule_log(
+                    fc_id=fc_id, tool=name, operation=operation,
+                    classification=semantics, decision="blocked_duplicate",
+                )
+                return types.FunctionResponse(
+                    id=fc.id, name=name,
+                    response={"result": (
+                        "JARVIS validation/routing failure: this turn already produced a reminder call; "
+                        "duplicate blocked before dispatch."
+                    )},
+                )
+            self._schedule_guard_routed = True
+            self._schedule_log(
+                fc_id=fc_id, tool=name, operation=operation,
+                classification=semantics, decision="allowed_reminder_management",
             )
             return await self._execute_tool(fc)
 

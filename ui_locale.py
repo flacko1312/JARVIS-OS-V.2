@@ -162,7 +162,6 @@ UI_TEXT: dict[str, str] = {
     # System tray
     "Show AURORA": "Mostrar AURORA",
     "Toggle Mute": "Alternar silencio",
-    "Quit AURORA": "Cerrar AURORA",
     "Running in background. Click tray icon to restore.":
         "Ejecutándose en segundo plano. Haz clic en el icono de la bandeja para restaurar.",
 
@@ -322,39 +321,10 @@ UI_TEXT: dict[str, str] = {
     "SYS: Microphone muted.": "SYS: Micrófono silenciado.",
     "SYS: Microphone active.": "SYS: Micrófono activo.",
 
-    # Uptime / session metrics
+    # Uptime / session metrics and dynamic labels
     "UP": "ACT",
-    "PROC": "PROC",
     "SESSION": "SESIÓN",
-
-    # Dynamic button labels
-    "NAME": "NOMBRE",
     "NAME  ·  SET": "NOMBRE  ·  FIJADO",
-
-    # Setup overlay additional
-    "OPERATING SYSTEM": "SISTEMA OPERATIVO",
-    "Auto-detected:": "Detectado automáticamente:",
-    "Gemini key verified.": "Clave de Gemini verificada.",
-
-    # JARVIS log messages
-    "JARVIS: Command Center is open.": "AURORA: El centro de comandos está abierto.",
-    "JARVIS: Returning to focus view.": "AURORA: Volviendo a la vista principal.",
-
-    # AURORA toast
-    "AURORA is thinking...": "AURORA está pensando...",
-    "Processing request...": "Procesando solicitud...",
-
-    # Right panel popup
-    "RIGHT PANEL INFORMATION": "INFORMACIÓN DEL PANEL DERECHO",
-    "Mission Control Panel": "Panel de control de misiones",
-    "Chat Status: Active": "Estado del chat: Activo",
-    "Chat Status: Inactive": "Estado del chat: Inactivo",
-    "Press R again to refresh this information":
-        "Pulsa R de nuevo para actualizar esta información",
-
-    # Right panel tab names (for popup display)
-    "INTEL": "INTEL.",
-    "MEMORY": "MEMORIA",
 
     # Voice selector overlay
     "◈  SELECT VOICE": "◈  SELECCIONAR VOZ",

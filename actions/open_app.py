@@ -77,7 +77,27 @@ def _normalize(raw: str) -> str:
         if alias_key in key or key in alias_key:
             return os_map.get(_SYSTEM, raw)
 
-    return raw  
+    return raw
+
+
+def _type_launcher_text(text: str) -> None:
+    """Enter Unicode launcher text while restoring the user's clipboard."""
+    import pyautogui
+
+    if text.isascii():
+        pyautogui.write(text, interval=0.05)
+        return
+    try:
+        import pyperclip
+
+        previous = pyperclip.paste()
+        try:
+            pyperclip.copy(text)
+            pyautogui.hotkey("ctrl", "v")
+        finally:
+            pyperclip.copy(previous)
+    except Exception as exc:
+        raise RuntimeError("Unicode launcher entry requires clipboard support.") from exc
 
 def _launch_windows(app_name: str) -> bool:
 
@@ -105,7 +125,7 @@ def _launch_windows(app_name: str) -> bool:
         pyautogui.PAUSE = 0.1
         pyautogui.press("win")
         time.sleep(0.7)
-        pyautogui.write(app_name, interval=0.05)
+        _type_launcher_text(app_name)
         time.sleep(0.9)
         pyautogui.press("enter")
         time.sleep(2.5)

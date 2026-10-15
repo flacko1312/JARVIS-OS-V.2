@@ -17,11 +17,13 @@ import platform
 import re
 import subprocess
 import threading
+import mimetypes
 from email.header import decode_header, make_header
 from email.message import EmailMessage
 from email.utils import getaddresses
 from pathlib import Path
 from urllib.parse import quote, urlencode
+from core.error_reporting import error_report
 
 
 _SYSTEM = platform.system()
@@ -38,6 +40,7 @@ _TENANT_GMAIL_ACCOUNTS: dict[str, str] = {}
 GMAIL_SCOPES = (
     "https://www.googleapis.com/auth/gmail.readonly",
     "https://www.googleapis.com/auth/gmail.send",
+    "https://www.googleapis.com/auth/gmail.compose",
 )
 _GMAIL_TOKEN_KEY = "gmail_oauth_credentials"
 _GMAIL_ACCOUNT_KEY = "gmail_account_email"
@@ -69,48 +72,59 @@ def _gmail_dependencies():
 
 
 def _discover_gmail_client_path(explicit_path: str = "") -> Path | None:
-    candidates: list[Path] = []
+    def valid(path_value: str | Path) -> Path | None:
+        try:
+            resolved = Path(path_value).expanduser().resolve()
+        except OSError:
+            return None
+        return resolved if resolved.is_file() and _valid_gmail_client_file(resolved) else None
+
     if explicit_path:
-        candidates.append(Path(explicit_path).expanduser())
+        return valid(explicit_path)
     env_path = os.environ.get("GMAIL_OAUTH_CLIENT_FILE", "").strip()
     if env_path:
-        candidates.append(Path(env_path).expanduser())
+        return valid(env_path)
     try:
         saved = _secret_store().get(_GMAIL_CLIENT_PATH_KEY)
         if saved:
-            candidates.append(Path(saved).expanduser())
+            saved_path = valid(saved)
+            if saved_path:
+                return saved_path
     except Exception:
         pass
 
     project = Path(__file__).resolve().parent.parent
-    candidates.extend([
+    named_candidates = [
         project / "config" / "gmail_credentials.json",
         project / "config" / "credentials.json",
         Path.home() / "Downloads" / "gmail_credentials.json",
         Path.home() / "Downloads" / "credentials.json",
-    ])
+    ]
+    valid_named = [path for path in (valid(candidate) for candidate in named_candidates) if path]
+    if len(set(valid_named)) == 1:
+        return valid_named[0]
+    if len(set(valid_named)) > 1:
+        raise GmailConnectionError(
+            "Multiple Gmail OAuth client files were found. Specify credentials_path explicitly."
+        )
+
     downloads = Path.home() / "Downloads"
+    discovered: list[Path] = []
     if downloads.exists():
         try:
-            candidates.extend(sorted(
-                downloads.glob("client_secret_*.json"),
-                key=lambda path: path.stat().st_mtime,
-                reverse=True,
-            )[:5])
+            discovered = [
+                path for path in (valid(candidate) for candidate in downloads.glob("client_secret_*.json"))
+                if path
+            ]
         except OSError:
             pass
-
-    seen = set()
-    for candidate in candidates:
-        try:
-            resolved = candidate.resolve()
-        except OSError:
-            continue
-        if resolved in seen or not resolved.is_file():
-            continue
-        seen.add(resolved)
-        if _valid_gmail_client_file(resolved):
-            return resolved
+    discovered = list(dict.fromkeys(discovered))
+    if len(discovered) == 1:
+        return discovered[0]
+    if len(discovered) > 1:
+        raise GmailConnectionError(
+            "Multiple Gmail OAuth client files were found in Downloads. Specify credentials_path explicitly."
+        )
     return None
 
 
@@ -224,7 +238,10 @@ def _gmail_connect(credentials_path: str = "") -> str:
         _Request, _Credentials, InstalledAppFlow, build = _gmail_dependencies()
     except GmailConnectionError as exc:
         return str(exc)
-    path = _discover_gmail_client_path(credentials_path)
+    try:
+        path = _discover_gmail_client_path(credentials_path)
+    except GmailConnectionError as exc:
+        return str(exc)
     if path is None:
         return (
             "Gmail needs a Google Desktop OAuth credentials JSON file. In Google Cloud: enable the Gmail API, "
@@ -284,18 +301,22 @@ def _gmail_status() -> str:
 
 def _gmail_api_error(exc: Exception, operation: str) -> str:
     status = getattr(getattr(exc, "resp", None), "status", None)
-    text = str(exc)
+    report = error_report(exc, f"gmail.{operation}", status=status)
+    text = report.detail
     if status == 401 or "invalid_grant" in text.lower():
         _clear_gmail_credentials()
         return "The Gmail connection expired or was revoked. Connect Gmail again."
     if status == 403:
         return (
             f"Gmail {operation} was denied. Confirm the Gmail API is enabled and the OAuth consent screen "
-            "includes gmail.readonly and gmail.send."
+            "includes gmail.readonly, gmail.send, and gmail.compose."
         )
     if status == 429:
         return "Gmail is temporarily rate-limiting requests. Try again shortly."
-    return f"Gmail {operation} failed: {text}"
+    return (
+        f"Gmail {operation} failed ({report.category.value}; reference "
+        f"{report.correlation_id}): {text}"
+    )
 
 
 def _decode_header_value(value: str) -> str:
@@ -356,6 +377,201 @@ def _gmail_body(payload: dict) -> str:
     return _html_to_text("\n".join(html_parts)) if html_parts else ""
 
 
+def _gmail_attachments(payload: dict) -> list[dict[str, object]]:
+    attachments: list[dict[str, object]] = []
+
+    def walk(part: dict) -> None:
+        body = part.get("body") or {}
+        filename = str(part.get("filename", "")).strip()
+        attachment_id = str(body.get("attachmentId", "")).strip()
+        if filename and attachment_id:
+            attachments.append({
+                "filename": Path(filename).name,
+                "mime_type": str(part.get("mimeType", "application/octet-stream")),
+                "size": int(body.get("size", 0) or 0),
+                "attachment_id": attachment_id,
+            })
+        for child in part.get("parts", []) or []:
+            walk(child)
+
+    walk(payload or {})
+    return attachments
+
+
+def _normalise_gmail_message(message: dict, max_chars: int = 12000) -> dict[str, object]:
+    payload = message.get("payload", {}) or {}
+    headers = _headers_map(payload)
+    body = _gmail_body(payload) or str(message.get("snippet", ""))
+    if len(body) > max_chars:
+        body = body[:max_chars].rstrip() + "\n\n[Message truncated]"
+    return {
+        "id": str(message.get("id", "")),
+        "thread_id": str(message.get("threadId", "")),
+        "from": headers.get("from", "Unknown sender"),
+        "to": headers.get("to", "Unknown recipient"),
+        "subject": headers.get("subject", "(No subject)"),
+        "date": headers.get("date", "Unknown date"),
+        "body": body,
+        "attachments": _gmail_attachments(payload),
+    }
+
+
+def _gmail_thread(thread_id: str) -> str:
+    try:
+        result = _gmail_service().users().threads().get(
+            userId="me", id=thread_id, format="full"
+        ).execute()
+        messages = [_normalise_gmail_message(item) for item in result.get("messages", []) or []]
+        if not messages:
+            return "That Gmail thread contains no messages."
+        sections = []
+        for index, message in enumerate(messages, 1):
+            attachment_text = ""
+            attachments = message["attachments"]
+            if attachments:
+                attachment_text = "\nAttachments: " + ", ".join(
+                    f"{item['filename']} ({item['size']} bytes; id={item['attachment_id']})"
+                    for item in attachments
+                )
+            sections.append(
+                f"Message {index} [{message['id']}]\nSubject: {message['subject']}\n"
+                f"From: {message['from']}\nTo: {message['to']}\nDate: {message['date']}"
+                f"{attachment_text}\n\n{message['body']}"
+            )
+        return f"Gmail thread {thread_id} ({len(messages)} messages)\n\n" + "\n\n---\n\n".join(sections)
+    except GmailConnectionError as exc:
+        return str(exc)
+    except Exception as exc:
+        return _gmail_api_error(exc, "thread reading")
+
+
+def _safe_attachment_path(destination: str, filename: str) -> Path:
+    base = Path(destination).expanduser().resolve()
+    if not base.is_dir():
+        raise ValueError("Attachment destination must be an existing directory.")
+    safe_name = Path(filename).name.strip()
+    if not safe_name or safe_name in {".", ".."}:
+        raise ValueError("Attachment filename is invalid.")
+    target = (base / safe_name).resolve()
+    if target.parent != base:
+        raise ValueError("Attachment path escapes the selected directory.")
+    if target.exists():
+        raise ValueError("An attachment with that filename already exists.")
+    return target
+
+
+def _gmail_download_attachment(message_id: str, attachment_id: str, filename: str, destination: str) -> str:
+    try:
+        target = _safe_attachment_path(destination, filename)
+        result = _gmail_service().users().messages().attachments().get(
+            userId="me", messageId=message_id, id=attachment_id
+        ).execute()
+        encoded = str(result.get("data", ""))
+        if not encoded:
+            return "Gmail returned an empty attachment. Nothing was written."
+        payload = base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4))
+        target.write_bytes(payload)
+        return f"Attachment downloaded to {target}."
+    except (OSError, ValueError) as exc:
+        return f"Could not save Gmail attachment: {exc}"
+    except GmailConnectionError as exc:
+        return str(exc)
+    except Exception as exc:
+        return _gmail_api_error(exc, "attachment download")
+
+
+def _attachment_paths(value: object) -> list[Path]:
+    raw = value if isinstance(value, list) else ([value] if value else [])
+    paths: list[Path] = []
+    total = 0
+    for item in raw:
+        path = Path(str(item)).expanduser().resolve()
+        if not path.is_file():
+            raise ValueError(f"Attachment does not exist: {path}")
+        total += path.stat().st_size
+        if total > 25 * 1024 * 1024:
+            raise ValueError("Total attachment size exceeds the 25 MB safety limit.")
+        paths.append(path)
+    return paths
+
+
+def _gmail_raw_message(draft: dict) -> str:
+    message = EmailMessage()
+    message["To"] = draft["to"]
+    if draft.get("cc"):
+        message["Cc"] = draft["cc"]
+    if draft.get("bcc"):
+        message["Bcc"] = draft["bcc"]
+    message["Subject"] = draft["subject"]
+    message.set_content(draft["body"])
+    for path in _attachment_paths(draft.get("attachments", [])):
+        mime_type, _encoding = mimetypes.guess_type(path.name)
+        maintype, subtype = (mime_type or "application/octet-stream").split("/", 1)
+        message.add_attachment(path.read_bytes(), maintype=maintype, subtype=subtype, filename=path.name)
+    return base64.urlsafe_b64encode(message.as_bytes()).decode("ascii")
+
+
+def _gmail_create_draft(draft: dict) -> str:
+    try:
+        result = _gmail_service().users().drafts().create(
+            userId="me", body={"message": {"raw": _gmail_raw_message(draft)}}
+        ).execute()
+        draft_id = str(result.get("id", ""))
+        return f"Gmail draft saved with ID {draft_id}. Nothing was sent." if draft_id else (
+            "Gmail did not confirm draft creation. Nothing was sent."
+        )
+    except (OSError, ValueError) as exc:
+        return f"Could not create Gmail draft: {exc}"
+    except GmailConnectionError as exc:
+        return str(exc)
+    except Exception as exc:
+        return _gmail_api_error(exc, "draft creation")
+
+
+def _gmail_list_drafts(limit: int) -> str:
+    try:
+        service = _gmail_service()
+        result = service.users().drafts().list(userId="me", maxResults=limit).execute()
+        rows = []
+        for item in result.get("drafts", []) or []:
+            draft = service.users().drafts().get(userId="me", id=item["id"], format="metadata").execute()
+            message = draft.get("message", {}) or {}
+            headers = _headers_map(message.get("payload", {}))
+            rows.append({
+                "id": str(draft.get("id", item["id"])), "sender": headers.get("to", "No recipient"),
+                "subject": headers.get("subject", "(No subject)"), "date": "Draft", "read": True,
+            })
+        return _format_rows(rows, "Gmail drafts")
+    except GmailConnectionError as exc:
+        return str(exc)
+    except Exception as exc:
+        return _gmail_api_error(exc, "draft listing")
+
+
+def _gmail_read_draft(draft_id: str) -> str:
+    try:
+        draft = _gmail_service().users().drafts().get(userId="me", id=draft_id, format="full").execute()
+        message = _normalise_gmail_message(draft.get("message", {}) or {})
+        return (
+            f"Gmail draft {draft_id}\nTo: {message['to']}\nSubject: {message['subject']}\n\n"
+            f"{message['body']}"
+        )
+    except GmailConnectionError as exc:
+        return str(exc)
+    except Exception as exc:
+        return _gmail_api_error(exc, "draft reading")
+
+
+def _gmail_delete_draft(draft_id: str) -> str:
+    try:
+        _gmail_service().users().drafts().delete(userId="me", id=draft_id).execute()
+        return f"Gmail draft {draft_id} was deleted."
+    except GmailConnectionError as exc:
+        return str(exc)
+    except Exception as exc:
+        return _gmail_api_error(exc, "draft deletion")
+
+
 def _gmail_list(query: str, limit: int, heading: str) -> str:
     try:
         service = _gmail_service()
@@ -408,19 +624,12 @@ def _gmail_read(message_id: str, max_chars: int = 12000) -> str:
         return _gmail_api_error(exc, "message reading")
 
 
-def _send_gmail(draft: dict[str, str]) -> str:
+def _send_gmail(draft: dict) -> str:
     try:
         service = _gmail_service()
-        message = EmailMessage()
-        message["To"] = draft["to"]
-        if draft.get("cc"):
-            message["Cc"] = draft["cc"]
-        if draft.get("bcc"):
-            message["Bcc"] = draft["bcc"]
-        message["Subject"] = draft["subject"]
-        message.set_content(draft["body"])
-        raw = base64.urlsafe_b64encode(message.as_bytes()).decode("ascii")
-        result = service.users().messages().send(userId="me", body={"raw": raw}).execute()
+        result = service.users().messages().send(
+            userId="me", body={"raw": _gmail_raw_message(draft)}
+        ).execute()
         if not result.get("id"):
             return "Gmail did not confirm that the email was sent. The pending draft is still available."
         _clear_pending_email()
@@ -1105,20 +1314,25 @@ def _prepare_email(params: dict, player=None) -> str:
         "subject": subject,
         "body": body,
         "provider": provider,
+        "attachments": [str(path) for path in _attachment_paths(params.get("attachments", []))],
     }
     if provider == "gmail":
-        browser = str(params.get("browser", "chrome")).strip().lower() or "chrome"
-        draft["browser"] = browser
-        result = _gmail_web_prepare(draft, player=player, browser=browser)
-        if result != "GMAIL_WEB_DRAFT_READY":
-            return result
-        draft["delivery"] = "gmail_web"
+        if draft["attachments"]:
+            draft["delivery"] = "gmail_api"
+        else:
+            browser = str(params.get("browser", "chrome")).strip().lower() or "chrome"
+            draft["browser"] = browser
+            result = _gmail_web_prepare(draft, player=player, browser=browser)
+            if result != "GMAIL_WEB_DRAFT_READY":
+                return result
+            draft["delivery"] = "gmail_web"
     _set_pending_email(draft)
     preview = body if len(body) <= 800 else body[:800].rstrip() + "…"
     copies = (f"\nCc: {cc}" if cc else "") + (f"\nBcc: {bcc}" if bcc else "")
     return (
         "EMAIL_APPROVAL_REQUIRED|A pending email is ready. Nothing has been sent.\n"
-        + ("JARVIS opened Gmail and visibly typed this draft. It remains open for your review.\n" if provider == "gmail" else "")
+        + ("JARVIS opened Gmail and visibly typed this draft. It remains open for your review.\n" if draft.get("delivery") == "gmail_web" else "")
+        + (f"Attachments: {', '.join(Path(item).name for item in draft['attachments'])}\n" if draft["attachments"] else "")
         + f"Provider: {'Gmail' if provider == 'gmail' else 'Apple Mail' if provider == 'apple_mail' else 'Default mail app'}\n"
         f"To: {to}{copies}\nSubject: {subject}\n\n{preview}\n\n"
         "Ask the user to approve, revise, or cancel this exact email."
@@ -1262,8 +1476,46 @@ def email_control(parameters: dict | None = None, response=None, player=None, se
         if _SYSTEM == "Darwin" and provider == "apple_mail":
             return _read_macos(message_id)
         return "Email reading for this provider is unavailable."
+    if action == "thread":
+        thread_id = str(params.get("thread_id", "")).strip()
+        return _gmail_thread(thread_id) if thread_id else "A Gmail thread ID is required."
+    if action == "download_attachment":
+        required = {
+            "message_id": str(params.get("message_id", "")).strip(),
+            "attachment_id": str(params.get("attachment_id", "")).strip(),
+            "filename": str(params.get("filename", "")).strip(),
+            "destination": str(params.get("destination", "")).strip(),
+        }
+        if not all(required.values()):
+            return "message_id, attachment_id, filename, and an existing destination directory are required."
+        return _gmail_download_attachment(**required)
+    if action in {"create_draft", "save_draft"}:
+        try:
+            to = _normalize_recipients(params.get("to", ""))
+            subject = re.sub(r"[\r\n]+", " ", str(params.get("subject", ""))).strip()
+            body = str(params.get("body", "")).strip()
+            if not to or not subject or not body:
+                return "A valid recipient, subject, and body are required to save a Gmail draft."
+            return _gmail_create_draft({
+                "to": to, "cc": _normalize_recipients(params.get("cc", "")),
+                "bcc": _normalize_recipients(params.get("bcc", "")), "subject": subject,
+                "body": body, "attachments": params.get("attachments", []),
+            })
+        except (OSError, ValueError) as exc:
+            return f"Could not create Gmail draft: {exc}"
+    if action == "list_drafts":
+        return _gmail_list_drafts(_bounded_limit(params.get("limit", 10)))
+    if action == "read_draft":
+        draft_id = str(params.get("draft_id", "")).strip()
+        return _gmail_read_draft(draft_id) if draft_id else "A Gmail draft ID is required."
+    if action in {"delete_draft", "cancel_saved_draft"}:
+        draft_id = str(params.get("draft_id", "")).strip()
+        return _gmail_delete_draft(draft_id) if draft_id else "A Gmail draft ID is required."
     if action == "prepare":
-        return _prepare_email(params, player=player)
+        try:
+            return _prepare_email(params, player=player)
+        except (OSError, ValueError) as exc:
+            return f"Could not prepare email: {exc}"
     if action == "approve":
         draft = _get_pending_email()
         if not draft:
@@ -1291,5 +1543,5 @@ def email_control(parameters: dict | None = None, response=None, player=None, se
         return "Pending email cancelled. Nothing was sent."
     return (
         "Unknown email action. Available: connect, status, disconnect, inbox, unread, search, read, "
-        "prepare, approve, cancel."
+        "thread, download_attachment, create_draft, list_drafts, read_draft, delete_draft, prepare, approve, cancel."
     )
