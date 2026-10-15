@@ -2,7 +2,8 @@ import os
 import shutil
 import platform
 import subprocess
-from pathlib import Path
+import unicodedata
+from pathlib import Path, PureWindowsPath
 from datetime import datetime
 
 from actions.jarvis_file_stamp import write_sidecar_metadata, write_text_with_stamp
@@ -19,74 +20,160 @@ _SAFE_ROOTS: list[Path] = [
     Path.home(),
 ]
 
+_WINDOWS_KNOWN_FOLDER_IDS = {
+    "desktop": "B4BFCC3A-DB2C-424C-B029-7FE99A87C641",
+    "documents": "FDD39AD0-238F-46AF-ADB4-6C85480369C7",
+    "downloads": "374DE290-123F-4565-9164-39C4925E467B",
+    "pictures": "33E28130-4E1E-4676-835A-98395C3BC3BB",
+    "music": "4BD8D571-6D19-48D3-BE97-422220080E43",
+    "videos": "18989B1D-99B5-455B-841C-AB7C74E4DDFC",
+}
+
+_KNOWN_FOLDER_ALIASES = {
+    "desktop": "desktop",
+    "escritorio": "desktop",
+    "documents": "documents",
+    "documentos": "documents",
+    "downloads": "downloads",
+    "descargas": "downloads",
+    "pictures": "pictures",
+    "imagenes": "pictures",
+    "music": "music",
+    "musica": "music",
+    "videos": "videos",
+}
+
+
+class UnsafePathError(ValueError):
+    """Raised when user path syntax attempts to escape an allowed location."""
+
+
+def _alias_key(value: str) -> str:
+    normalized = unicodedata.normalize("NFKD", value.strip().casefold())
+    return "".join(char for char in normalized if not unicodedata.combining(char))
+
+
+def _windows_known_folder_path(folder: str) -> Path:
+    """Resolve a current-user Windows Known Folder without hard-coded profile paths."""
+    import ctypes
+    import uuid
+    from ctypes import wintypes
+
+    class GUID(ctypes.Structure):
+        _fields_ = [
+            ("Data1", wintypes.DWORD),
+            ("Data2", wintypes.WORD),
+            ("Data3", wintypes.WORD),
+            ("Data4", ctypes.c_ubyte * 8),
+        ]
+
+        @classmethod
+        def from_string(cls, value: str):
+            raw = uuid.UUID(value).bytes_le
+            return cls.from_buffer_copy(raw)
+
+    folder_id = GUID.from_string(_WINDOWS_KNOWN_FOLDER_IDS[folder])
+    result = ctypes.c_wchar_p()
+    shell32 = ctypes.windll.shell32
+    ole32 = ctypes.windll.ole32
+    shell32.SHGetKnownFolderPath.argtypes = [
+        ctypes.POINTER(GUID),
+        wintypes.DWORD,
+        wintypes.HANDLE,
+        ctypes.POINTER(ctypes.c_wchar_p),
+    ]
+    shell32.SHGetKnownFolderPath.restype = ctypes.c_long
+    ole32.CoTaskMemFree.argtypes = [ctypes.c_void_p]
+    ole32.CoTaskMemFree.restype = None
+    status = shell32.SHGetKnownFolderPath(
+        ctypes.byref(folder_id), 0, None, ctypes.byref(result)
+    )
+    if status != 0:
+        raise OSError(status, f"SHGetKnownFolderPath failed for {folder}")
+    try:
+        return Path(result.value)
+    finally:
+        ole32.CoTaskMemFree(ctypes.cast(result, ctypes.c_void_p))
+
+
+def _known_folder_path(folder: str) -> Path:
+    if _OS == "Windows":
+        return _windows_known_folder_path(folder)
+    if _OS == "Linux":
+        variable = {
+            "desktop": "XDG_DESKTOP_DIR",
+            "downloads": "XDG_DOWNLOAD_DIR",
+            "documents": "XDG_DOCUMENTS_DIR",
+            "pictures": "XDG_PICTURES_DIR",
+            "music": "XDG_MUSIC_DIR",
+            "videos": "XDG_VIDEOS_DIR",
+        }[folder]
+        xdg = os.environ.get(variable, "")
+        if xdg and Path(xdg).exists():
+            return Path(xdg)
+    return Path.home() / {
+        "desktop": "Desktop",
+        "downloads": "Downloads",
+        "documents": "Documents",
+        "pictures": "Pictures",
+        "music": "Music",
+        "videos": "Videos",
+    }[folder]
+
+
+def _allowed_roots() -> list[Path]:
+    roots = list(_SAFE_ROOTS)
+    for folder in _WINDOWS_KNOWN_FOLDER_IDS:
+        try:
+            roots.append(_known_folder_path(folder))
+        except OSError:
+            continue
+    return roots
+
 def _is_safe_path(target: Path) -> bool:
     """Verilen path _SAFE_ROOTS içinde mi? Değilse işlemi reddet."""
     try:
         resolved = target.resolve()
         return any(
             resolved == root.resolve() or resolved.is_relative_to(root.resolve())
-            for root in _SAFE_ROOTS
+            for root in _allowed_roots()
         )
     except Exception:
         return False
 
 def _get_desktop() -> Path:
-    if _OS == "Linux":
-        xdg = os.environ.get("XDG_DESKTOP_DIR", "")
-        if xdg and Path(xdg).exists():
-            return Path(xdg)
-    return Path.home() / "Desktop"
+    return _known_folder_path("desktop")
 
 def _get_downloads() -> Path:
-    if _OS == "Linux":
-        xdg = os.environ.get("XDG_DOWNLOAD_DIR", "")
-        if xdg and Path(xdg).exists():
-            return Path(xdg)
-    return Path.home() / "Downloads"
+    return _known_folder_path("downloads")
 
 def _get_documents() -> Path:
-    if _OS == "Linux":
-        xdg = os.environ.get("XDG_DOCUMENTS_DIR", "")
-        if xdg and Path(xdg).exists():
-            return Path(xdg)
-    return Path.home() / "Documents"
+    return _known_folder_path("documents")
 
 def _get_pictures() -> Path:
-    if _OS == "Linux":
-        xdg = os.environ.get("XDG_PICTURES_DIR", "")
-        if xdg and Path(xdg).exists():
-            return Path(xdg)
-    return Path.home() / "Pictures"
+    return _known_folder_path("pictures")
 
 def _get_music() -> Path:
-    if _OS == "Linux":
-        xdg = os.environ.get("XDG_MUSIC_DIR", "")
-        if xdg and Path(xdg).exists():
-            return Path(xdg)
-    return Path.home() / "Music"
+    return _known_folder_path("music")
 
 def _get_videos() -> Path:
-    if _OS == "Linux":
-        xdg = os.environ.get("XDG_VIDEOS_DIR", "")
-        if xdg and Path(xdg).exists():
-            return Path(xdg)
-    return Path.home() / "Videos"
+    return _known_folder_path("videos")
 
 
 def _resolve_path(raw: str) -> Path:
-    shortcuts: dict[str, Path] = {
-        "desktop":   _get_desktop(),
-        "downloads": _get_downloads(),
-        "documents": _get_documents(),
-        "pictures":  _get_pictures(),
-        "music":     _get_music(),
-        "videos":    _get_videos(),
-        "home":      Path.home(),
-    }
-    lower = raw.strip().lower()
-    if lower in shortcuts:
-        return shortcuts[lower]
-    return Path(raw).expanduser()
+    value = str(raw).strip()
+    normalized = value.replace("\\", "/")
+    components = [part for part in normalized.split("/") if part]
+    if any(part == ".." for part in components):
+        raise UnsafePathError(f"Access denied: {value}")
+    is_rooted_windows_path = bool(PureWindowsPath(value).anchor)
+    if components and not is_rooted_windows_path:
+        alias = _KNOWN_FOLDER_ALIASES.get(_alias_key(components[0]))
+        if alias:
+            return _known_folder_path(alias).joinpath(*components[1:])
+        if _alias_key(components[0]) == "home":
+            return Path.home().joinpath(*components[1:])
+    return Path(value).expanduser()
 
 def _format_size(b: int) -> str:
     for unit in ["B", "KB", "MB", "GB", "TB"]:
@@ -132,6 +219,8 @@ def list_files(path: str = "desktop", show_hidden: bool = False) -> str:
 
         return f"Contents of {target.name}/ ({len(items)} items):\n" + "\n".join(items)
 
+    except UnsafePathError as e:
+        return str(e)
     except PermissionError:
         return f"Permission denied: {path}"
     except Exception as e:
@@ -151,6 +240,8 @@ def create_file(path: str, name: str = "", content: str = "") -> str:
             f"Created through JARVIS file_controller create_file action for {target.name}.",
         )
         return f"File saved: {target} ({target.stat().st_size} bytes)"
+    except UnsafePathError as e:
+        return str(e)
     except Exception as e:
         return f"Could not create file: {e}"
 
@@ -163,6 +254,8 @@ def create_folder(path: str, name: str = "") -> str:
             return f"Access denied: {target}"
         target.mkdir(parents=True, exist_ok=True)
         return f"Folder created: {target}"
+    except UnsafePathError as e:
+        return str(e)
     except Exception as e:
         return f"Could not create folder: {e}"
 
@@ -186,6 +279,8 @@ def delete_file(path: str, name: str = "") -> str:
 
         return _safe_trash(target)
 
+    except UnsafePathError as e:
+        return str(e)
     except PermissionError:
         return f"Permission denied: {path}"
     except Exception as e:
@@ -214,6 +309,8 @@ def move_file(path: str, name: str = "", destination: str = "") -> str:
         shutil.move(str(src), str(dst))
         return f"Moved: {src.name} → {dst.parent.name}/"
 
+    except UnsafePathError as e:
+        return str(e)
     except Exception as e:
         return f"Could not move: {e}"
 
@@ -249,6 +346,8 @@ def copy_file(path: str, name: str = "", destination: str = "") -> str:
 
         return f"Copied: {src.name} → {dst.parent.name}/"
 
+    except UnsafePathError as e:
+        return str(e)
     except Exception as e:
         return f"Could not copy: {e}"
 
@@ -271,6 +370,8 @@ def rename_file(path: str, name: str = "", new_name: str = "") -> str:
         target.rename(new_path)
         return f"Renamed: {target.name} → {new_name}"
 
+    except UnsafePathError as e:
+        return str(e)
     except Exception as e:
         return f"Could not rename: {e}"
 
@@ -291,6 +392,8 @@ def read_file(path: str, name: str = "", max_chars: int = 4000) -> str:
             content = content[:max_chars] + f"\n\n[Truncated — {len(content)} total chars]"
         return content
 
+    except UnsafePathError as e:
+        return str(e)
     except Exception as e:
         return f"Could not read file: {e}"
 
@@ -322,6 +425,8 @@ def open_file(path: str, name: str = "") -> str:
 
         kind = "folder" if target.is_dir() else "file"
         return f"Opened {kind}: {target.name}"
+    except UnsafePathError as e:
+        return str(e)
     except FileNotFoundError:
         opener = "open" if _OS == "Darwin" else "xdg-open"
         return f"Could not open the file because {opener} is unavailable."
@@ -350,6 +455,8 @@ def write_file(path: str, name: str = "", content: str = "",
             f.write(content)
         action = "Appended to" if append else "Written to"
         return f"{action}: {target.name}"
+    except UnsafePathError as e:
+        return str(e)
     except Exception as e:
         return f"Could not write file: {e}"
 
@@ -390,6 +497,8 @@ def find_files(name: str = "", extension: str = "",
 
         return f"Found {len(results)} file(s):\n" + "\n".join(results)
 
+    except UnsafePathError as e:
+        return str(e)
     except Exception as e:
         return f"Search error: {e}"
 
@@ -423,6 +532,8 @@ def get_largest_files(path: str = "downloads", count: int = 10) -> str:
 
         return "\n".join(lines)
 
+    except UnsafePathError as e:
+        return str(e)
     except Exception as e:
         return f"Error: {e}"
 
@@ -438,6 +549,8 @@ def get_disk_usage(path: str = "home") -> str:
             f"  Used  : {_format_size(usage.used)} ({pct:.1f}%)\n"
             f"  Free  : {_format_size(usage.free)}"
         )
+    except UnsafePathError as e:
+        return str(e)
     except Exception as e:
         return f"Could not get disk usage: {e}"
 
@@ -517,6 +630,8 @@ def get_file_info(path: str, name: str = "") -> str:
         }
         return "\n".join(f"  {k}: {v}" for k, v in info.items())
 
+    except UnsafePathError as e:
+        return str(e)
     except Exception as e:
         return f"Could not get file info: {e}"
 
