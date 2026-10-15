@@ -1,9 +1,13 @@
 import json
+import ctypes
 import platform as platform_module
 import subprocess
 import threading
 import time
 from dataclasses import dataclass
+from pathlib import Path
+
+from ctypes import wintypes
 
 try:
     import pyautogui
@@ -53,6 +57,8 @@ class SafeTextEntryResult:
     target: str = ""
     click_before_typing: bool = False
     safety_path: str = ""
+    target_id: tuple = ()
+    readback_supported: bool = False
 
 
 def _require_pyautogui() -> None:
@@ -66,6 +72,235 @@ def _actual_os() -> str:
         "Windows": "windows",
         "Linux": "linux",
     }.get(platform_module.system(), "unknown")
+
+
+WINDOWS_EDIT_CONTROL_TYPE = 50004
+WINDOWS_DOCUMENT_CONTROL_TYPE = 50030
+WINDOWS_BLOCKED_PROCESSES = {
+    "cmd.exe",
+    "code.exe",
+    "conhost.exe",
+    "powershell.exe",
+    "pwsh.exe",
+    "windowsterminal.exe",
+}
+WINDOWS_DESKTOP_CLASSES = {"progman", "workerw", "syslistview32"}
+
+
+def _windows_process_name(process_id: int) -> str:
+    kernel32 = ctypes.windll.kernel32
+    handle = kernel32.OpenProcess(0x1000, False, int(process_id))
+    if not handle:
+        return ""
+    try:
+        capacity = wintypes.DWORD(32768)
+        buffer = ctypes.create_unicode_buffer(capacity.value)
+        if not kernel32.QueryFullProcessImageNameW(handle, 0, buffer, ctypes.byref(capacity)):
+            return ""
+        return Path(buffer.value).name
+    finally:
+        kernel32.CloseHandle(handle)
+
+
+def _windows_focused_element_info() -> dict:
+    """Describe the actual focused UIA element without changing focus."""
+    if _actual_os() != "windows":
+        return {}
+    comtypes_module = None
+    com_initialized = False
+    try:
+        import comtypes
+        from comtypes.client import CreateObject
+        from comtypes.gen import UIAutomationClient as UIA
+
+        comtypes_module = comtypes
+        comtypes.CoInitialize()
+        com_initialized = True
+        automation = CreateObject("UIAutomationClient.CUIAutomation")
+        element = automation.GetFocusedElement()
+        if element is None:
+            return {}
+
+        process_id = int(element.CurrentProcessId or 0)
+        native_handle = int(element.CurrentNativeWindowHandle or 0)
+        runtime_id = tuple(int(value) for value in (element.GetRuntimeId() or ()))
+        info = {
+            "process_id": process_id,
+            "process_name": _windows_process_name(process_id),
+            "control_type": int(element.CurrentControlType or 0),
+            "class_name": str(element.CurrentClassName or ""),
+            "name": str(element.CurrentName or ""),
+            "automation_id": str(element.CurrentAutomationId or ""),
+            "enabled": bool(element.CurrentIsEnabled),
+            "keyboard_focusable": bool(element.CurrentIsKeyboardFocusable),
+            "has_keyboard_focus": bool(element.CurrentHasKeyboardFocus),
+            "native_handle": native_handle,
+            "runtime_id": runtime_id,
+            "read_only": None,
+            "text_value": None,
+            "supports_text": False,
+        }
+
+        try:
+            value_pattern = element.GetCurrentPattern(UIA.UIA_ValuePatternId).QueryInterface(
+                UIA.IUIAutomationValuePattern
+            )
+            info["read_only"] = bool(value_pattern.CurrentIsReadOnly)
+            info["text_value"] = str(value_pattern.CurrentValue or "")
+        except Exception:
+            pass
+
+        try:
+            text_pattern = element.GetCurrentPattern(UIA.UIA_TextPatternId).QueryInterface(
+                UIA.IUIAutomationTextPattern
+            )
+            document_range = text_pattern.DocumentRange
+            info["supports_text"] = True
+            info["text_value"] = str(document_range.GetText(-1) or "")
+            if info["read_only"] is None:
+                read_only = document_range.GetAttributeValue(UIA.UIA_IsReadOnlyAttributeId)
+                if isinstance(read_only, bool):
+                    info["read_only"] = read_only
+        except Exception:
+            pass
+
+        if info["read_only"] is None and native_handle:
+            try:
+                style = ctypes.windll.user32.GetWindowLongW(native_handle, -16)
+                if info["control_type"] == WINDOWS_EDIT_CONTROL_TYPE:
+                    info["read_only"] = bool(style & 0x0800)  # ES_READONLY
+            except Exception:
+                pass
+        return info
+    except Exception as exc:
+        print(f"[SafeTextEntry] Windows UI Automation probe failed: {type(exc).__name__}")
+        return {}
+    finally:
+        if com_initialized and comtypes_module is not None:
+            try:
+                comtypes_module.CoUninitialize()
+            except Exception:
+                pass
+
+
+def _windows_target_id(info: dict) -> tuple:
+    return (
+        int(info.get("process_id") or 0),
+        tuple(info.get("runtime_id") or ()),
+        int(info.get("control_type") or 0),
+        str(info.get("automation_id") or ""),
+        str(info.get("class_name") or ""),
+    )
+
+
+def _validate_windows_text_target(info: dict, purpose: str = "generic") -> SafeTextEntryResult:
+    if not info:
+        return SafeTextEntryResult(False, "No puedo verificar un campo de texto enfocado en Windows.")
+
+    process = str(info.get("process_name") or "").casefold()
+    class_name = str(info.get("class_name") or "").casefold()
+    control_type = int(info.get("control_type") or 0)
+    if process in WINDOWS_BLOCKED_PROCESSES:
+        return SafeTextEntryResult(False, "No escribiré en esa aplicación protegida.")
+    if class_name in WINDOWS_DESKTOP_CLASSES or (
+        process == "explorer.exe" and control_type not in {WINDOWS_EDIT_CONTROL_TYPE, WINDOWS_DOCUMENT_CONTROL_TYPE}
+    ):
+        return SafeTextEntryResult(False, "El escritorio no es un destino de texto editable.")
+    if not info.get("enabled") or not info.get("keyboard_focusable") or not info.get("has_keyboard_focus"):
+        return SafeTextEntryResult(False, "No hay un control de texto editable con el foco confirmado.")
+    if control_type not in {WINDOWS_EDIT_CONTROL_TYPE, WINDOWS_DOCUMENT_CONTROL_TYPE}:
+        return SafeTextEntryResult(False, "El elemento enfocado no es un campo de texto editable.")
+    if info.get("read_only") is True:
+        return SafeTextEntryResult(False, "El campo de texto enfocado es de solo lectura.")
+
+    label = " ".join(str(info.get(key) or "") for key in ("name", "automation_id", "class_name")).casefold()
+    browser_processes = {"chrome.exe", "msedge.exe", "firefox.exe", "brave.exe"}
+    if process in browser_processes and any(
+        marker in label for marker in ("address and search bar", "address bar", "omnibox", "barra de direcciones")
+    ):
+        return SafeTextEntryResult(False, "No escribiré en la barra de direcciones del navegador.")
+    if str(purpose or "generic").casefold() == "message":
+        message_markers = MESSAGE_LABEL_MARKERS + ("compose", "composer", "redactar", "mensaje", "responder")
+        if not _contains_any(label, message_markers):
+            return SafeTextEntryResult(False, "No puedo confirmar que el campo enfocado sea un compositor de mensajes.")
+
+    # ValuePattern exposes read-only state for standard/browser edit controls.
+    # Modern Notepad exposes a focused Document/TextPattern instead.
+    known_notepad_document = (
+        process == "notepad.exe"
+        and control_type == WINDOWS_DOCUMENT_CONTROL_TYPE
+        and bool(info.get("supports_text"))
+    )
+    if info.get("read_only") is None and not known_notepad_document:
+        return SafeTextEntryResult(False, "No puedo determinar con seguridad si el campo permite edición.")
+
+    target_id = _windows_target_id(info)
+    if not target_id[0] or not target_id[1]:
+        return SafeTextEntryResult(False, "No puedo identificar de forma estable el campo enfocado.")
+    target_label = str(info.get("name") or info.get("class_name") or "campo de texto")
+    return SafeTextEntryResult(
+        True,
+        "Campo de texto editable verificado en Windows.",
+        f"{info.get('process_name') or 'Windows'} {target_label}",
+        safety_path="windows_uia",
+        target_id=target_id,
+        readback_supported=info.get("text_value") is not None,
+    )
+
+
+def _windows_focus_matches(target_id: tuple) -> bool:
+    current = _windows_focused_element_info()
+    return bool(current and _windows_target_id(current) == target_id)
+
+
+def _windows_send_input(units: list[tuple[int, int]]) -> bool:
+    """Send keyboard inputs, where each tuple is (virtual-key, scan-code/UTF-16 unit)."""
+    ulong_ptr = wintypes.WPARAM
+
+    class KEYBDINPUT(ctypes.Structure):
+        _fields_ = [
+            ("wVk", wintypes.WORD),
+            ("wScan", wintypes.WORD),
+            ("dwFlags", wintypes.DWORD),
+            ("time", wintypes.DWORD),
+            ("dwExtraInfo", ulong_ptr),
+        ]
+
+    class INPUT_UNION(ctypes.Union):
+        _fields_ = [("ki", KEYBDINPUT)]
+
+    class INPUT(ctypes.Structure):
+        _anonymous_ = ("union",)
+        _fields_ = [("type", wintypes.DWORD), ("union", INPUT_UNION)]
+
+    key_up = 0x0002
+    unicode_flag = 0x0004
+    inputs: list[INPUT] = []
+    for virtual_key, scan_code in units:
+        flags = unicode_flag if not virtual_key else 0
+        inputs.append(INPUT(type=1, ki=KEYBDINPUT(virtual_key, scan_code, flags, 0, 0)))
+        inputs.append(INPUT(type=1, ki=KEYBDINPUT(virtual_key, scan_code, flags | key_up, 0, 0)))
+    if not inputs:
+        return True
+    array = (INPUT * len(inputs))(*inputs)
+    sent = ctypes.windll.user32.SendInput(len(inputs), array, ctypes.sizeof(INPUT))
+    return int(sent) == len(inputs)
+
+
+def _write_windows_unicode(text: str, target_id: tuple) -> tuple[bool, str]:
+    """Write Unicode natively while rechecking focused UIA identity before each character."""
+    for character in text:
+        if not _windows_focus_matches(target_id):
+            return False, "El foco cambió o el campo de texto desapareció; se detuvo la escritura."
+        if character == "\n":
+            if not _windows_send_input([(0x0D, 0)]):
+                return False, "Windows no pudo insertar el salto de línea."
+            continue
+        utf16 = character.encode("utf-16-le")
+        units = [int.from_bytes(utf16[index:index + 2], "little") for index in range(0, len(utf16), 2)]
+        if not _windows_send_input([(0, unit) for unit in units]):
+            return False, "Windows no pudo insertar el texto Unicode."
+    return True, ""
 
 
 def _frontmost_app_name() -> str:
@@ -512,8 +747,11 @@ def _pointer_message_target() -> SafeTextEntryResult:
 
 def validate_safe_text_target(purpose: str = "generic", allow_pointer_fallback: bool = False) -> SafeTextEntryResult:
     purpose_key = str(purpose or "generic").lower().strip()
-    if _actual_os() != "mac":
-        return SafeTextEntryResult(False, "Safe text-field validation is only implemented on macOS.")
+    os_name = _actual_os()
+    if os_name == "windows":
+        return _validate_windows_text_target(_windows_focused_element_info(), purpose_key)
+    if os_name != "mac":
+        return SafeTextEntryResult(False, "Safe text-field validation is unavailable on this operating system.")
 
     dom_info = _browser_dom_focus_info()
     front_app = str(dom_info.get("frontApp", "")).strip()
@@ -578,6 +816,8 @@ def safe_type_text(
     interval: float = VISIBLE_TYPING_INTERVAL_SECONDS,
 ) -> SafeTextEntryResult:
     _require_pyautogui()
+    if not str(text or ""):
+        return SafeTextEntryResult(False, "No se proporcionó texto para escribir.")
     validation = validate_safe_text_target(purpose, allow_pointer_fallback=allow_pointer_fallback)
     if not validation.ok:
         print(
@@ -592,6 +832,56 @@ def safe_type_text(
         f"[SafeTextEntry] path={validation.safety_path or 'unknown'} "
         f"purpose={purpose} target={validation.target or 'unknown'}"
     )
+
+    if os_name == "windows":
+        before_info = _windows_focused_element_info()
+        if not before_info or _windows_target_id(before_info) != validation.target_id:
+            return SafeTextEntryResult(False, "El foco cambió después de validar el campo; no se escribió texto.")
+        before_text = before_info.get("text_value")
+        with PyAutoGuiFastPause():
+            if clear_first:
+                pyautogui.hotkey(*select_all)
+                time.sleep(0.03)
+                pyautogui.press("delete")
+                time.sleep(0.03)
+                if not _windows_focus_matches(validation.target_id):
+                    return SafeTextEntryResult(False, "El foco cambió al preparar el campo; no se escribió texto.")
+
+            wrote, error = _write_windows_unicode(str(text), validation.target_id)
+            if not wrote:
+                return SafeTextEntryResult(False, error, validation.target, safety_path="windows_uia")
+            if press_enter:
+                if not _windows_focus_matches(validation.target_id):
+                    return SafeTextEntryResult(False, "El foco cambió antes de confirmar; no se pulsó Intro.")
+                if not _windows_send_input([(0x0D, 0)]):
+                    return SafeTextEntryResult(False, "Windows no pudo pulsar Intro en el campo verificado.")
+
+        after_info = _windows_focused_element_info()
+        if not after_info or _windows_target_id(after_info) != validation.target_id:
+            return SafeTextEntryResult(False, "El campo validado desapareció antes de comprobar el resultado.")
+        if validation.readback_supported:
+            after_text = after_info.get("text_value")
+            expected = str(text).replace("\r\n", "\n")
+            normalized_after = str(after_text or "").replace("\r\n", "\n")
+            normalized_before = str(before_text or "").replace("\r\n", "\n")
+            if normalized_after == normalized_before or expected not in normalized_after:
+                return SafeTextEntryResult(False, "Windows recibió la entrada, pero no pude verificar el texto insertado.")
+            return SafeTextEntryResult(
+                True,
+                "Texto escrito de forma segura y verificado en el campo enfocado.",
+                validation.target,
+                safety_path="windows_uia_verified",
+                target_id=validation.target_id,
+                readback_supported=True,
+            )
+        return SafeTextEntryResult(
+            True,
+            "Texto enviado al campo enfocado verificado; este control no permite releer la inserción.",
+            validation.target,
+            safety_path="windows_uia_no_readback",
+            target_id=validation.target_id,
+        )
+
     with MouseClickBlocker(), PyAutoGuiFastPause():
         if validation.click_before_typing:
             pyautogui.click()

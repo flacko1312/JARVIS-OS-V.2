@@ -150,13 +150,13 @@ def _type(text: str, interval: float = 0.03) -> str:
     result = safe_type_text(text, purpose="generic", interval=min(interval, 0.002))
     if not result.ok:
         return result.message
-    return f"Typed safely: {text[:60]}{'…' if len(text) > 60 else ''}"
+    return f"Typed safely: {result.message}"
 
 def _smart_type(text: str, clear_first: bool = True) -> str:
     result = safe_type_text(text, purpose="generic", clear_first=clear_first)
     if not result.ok:
         return result.message
-    return f"Smart-typed safely: {text[:60]}{'…' if len(text) > 60 else ''}"
+    return f"Smart-typed safely: {result.message}"
 
 
 def _click(x=None, y=None, button: str = "left", clicks: int = 1) -> str:
