@@ -3,17 +3,13 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+from core.date_time_authority import normalize_timezone
 
 
 _SPANISH_NUMBERS = {
     "una": 1, "uno": 1, "dos": 2, "tres": 3, "cuatro": 4, "cinco": 5,
     "seis": 6, "siete": 7, "ocho": 8, "nueve": 9, "diez": 10,
     "once": 11, "doce": 12,
-}
-_LOCAL_TIMEZONE_ALIASES = {
-    "madrid", "hora de madrid", "zona horaria de madrid", "mi zona horaria",
-    "hora local", "local timezone", "my timezone",
 }
 
 
@@ -88,16 +84,3 @@ def daily_time_from_text(text: str) -> tuple[int, int] | None:
     if period == "manana" and hour == 12:
         hour = 0
     return hour, 0
-
-
-def normalize_timezone(value: str | None, *, default: str = "Europe/Madrid") -> str | None:
-    """Resolve friendly local timezone references while preserving valid IANA names."""
-    raw = str(value or "").strip()
-    normalized = normalized_turn_text(raw)
-    if not raw or normalized in _LOCAL_TIMEZONE_ALIASES:
-        return default
-    try:
-        ZoneInfo(raw)
-    except ZoneInfoNotFoundError:
-        return None
-    return raw

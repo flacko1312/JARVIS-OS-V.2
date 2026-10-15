@@ -10,6 +10,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from actions.jarvis_file_stamp import mark_created_file, write_text_with_stamp
+from core.date_time_authority import DateTimeAuthority, localize_wall_time, relative_date
 from core.schedule_safety import daily_time_from_text, normalize_timezone, normalized_turn_text, schedule_semantics
 
 def _base_dir() -> Path:
@@ -95,7 +96,7 @@ def _parse_natural_datetime(
     """Parse one-shot Spanish date/time wording, returning an error/clarification."""
     timezone_name = normalize_timezone(timezone_name) or "Europe/Madrid"
     zone = ZoneInfo(timezone_name)
-    current = now.astimezone(zone) if now else datetime.now(zone)
+    current = now.astimezone(zone) if now else DateTimeAuthority(timezone_name=timezone_name).now().instant
     value = normalized_turn_text(text)
     if schedule_semantics(value) == "recurring":
         return None, "Las rutinas recurrentes deben gestionarse como rutinas de LILITH, no como recordatorios."
@@ -123,12 +124,8 @@ def _parse_natural_datetime(
             date_value = datetime.strptime(iso_date.group(1), "%Y-%m-%d").date()
         except ValueError:
             return None, "No pude interpretar la fecha."
-    elif "pasado manana" in value:
-        date_value = (current + timedelta(days=2)).date()
-    elif "manana" in value:
-        date_value = (current + timedelta(days=1)).date()
-    elif "hoy" in value:
-        date_value = current.date()
+    elif any(marker in value for marker in ("pasado manana", "manana", "hoy")):
+        date_value = relative_date(current, value)
     else:
         date_value = current.date()
 
@@ -148,9 +145,12 @@ def _parse_natural_datetime(
         if re.search(rf"\ba las?\s+(?:\d{{1,2}}|{hour_words})\b", value):
             return None, "La hora es ambigua. Indica mañana, tarde, noche o formato 24 horas."
         return None, "Necesito una hora concreta para el recordatorio."
-    target = datetime.combine(date_value, datetime.min.time(), tzinfo=zone).replace(
-        hour=clock[0], minute=clock[1]
+    target, timezone_error = localize_wall_time(
+        date_value, clock[0], clock[1], timezone_name,
     )
+    if timezone_error:
+        return None, timezone_error
+    assert target is not None
     if target <= current:
         return None, "Esa hora ya ha pasado."
     return target, None

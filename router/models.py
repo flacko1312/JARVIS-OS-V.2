@@ -19,6 +19,7 @@ class Domain(Enum):
     MULTIMEDIA = "multimedia"
     REMINDERS = "reminders"
     PRESENTATIONS = "presentations"
+    DATE_TIME = "date_time"
     CONVERSATION = "conversation"
 
 

@@ -6,6 +6,12 @@ import re
 from router.models import Domain, RouteResult
 
 _RULES: list[tuple[re.Pattern[str], Domain, str, float]] = [
+    (re.compile(
+        r"^\s*[¿¡]?\s*(?:qu[eé]\s+hora\s+(?:es|tenemos)(?:\s+ahora)?|"
+        r"dime\s+la\s+hora|qu[eé]\s+d[ií]a\s+es\s+hoy|qu[eé]\s+fecha\s+es|"
+        r"dime\s+la\s+fecha)\s*[?.!]?\s*$", re.I),
+     Domain.DATE_TIME, "date_time", 1.0),
+
     # Specific task intents precede generic app/entity words.  Confidence,
     # rather than list order, remains the authoritative winner.
     (re.compile(

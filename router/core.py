@@ -14,6 +14,7 @@ from router.classifier import classify
 from router.models import Domain, RouteResult
 from core.schedule_safety import schedule_semantics
 from core.local_ai import OllamaTextProvider, configured_ollama_text
+from core.date_time_authority import DateTimeAuthority
 
 logger = logging.getLogger("jarvis.router")
 
@@ -65,11 +66,13 @@ class JarvisRouter:
         client: LilithClient,
         monitor: LilithMonitor,
         local_ai: OllamaTextProvider | None = None,
+        date_time_authority: DateTimeAuthority | None = None,
     ):
         self._client = client
         self._monitor = monitor
         config_path = Path(__file__).resolve().parent.parent / "config" / "api_keys.json"
         self._local_ai = local_ai or OllamaTextProvider(configured_ollama_text(config_path))
+        self._date_time = date_time_authority or DateTimeAuthority()
 
     def classify(self, user_input: str) -> RouteResult:
         return classify(user_input)
@@ -265,6 +268,16 @@ class JarvisRouter:
             "data": {"text": response.text, "model": response.status.model},
         }
 
+    async def _handle_date_time(self, result: RouteResult) -> dict[str, Any]:
+        raw = str(result.params.get("raw_input", ""))
+        message = self._date_time.answer(raw)
+        return {
+            "ok": message is not None,
+            "action": "host_date_time",
+            "message": message or "No pude interpretar la consulta de fecha u hora.",
+            "data": {"timezone": self._date_time.timezone_name},
+        }
+
 
 _HANDLERS: dict[Domain, Any] = {
     Domain.MEMORY: JarvisRouter._handle_memory,
@@ -281,4 +294,5 @@ _HANDLERS: dict[Domain, Any] = {
     Domain.MULTIMEDIA: JarvisRouter._handle_gemini_passthrough,
     Domain.REMINDERS: JarvisRouter._handle_gemini_passthrough,
     Domain.PRESENTATIONS: JarvisRouter._handle_gemini_passthrough,
+    Domain.DATE_TIME: JarvisRouter._handle_date_time,
 }

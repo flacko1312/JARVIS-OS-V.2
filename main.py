@@ -14,6 +14,7 @@ from core.schedule_safety import daily_time_from_text as _daily_time_from_text
 from core.schedule_safety import normalize_timezone
 from core.schedule_safety import normalized_turn_text as _normalized_turn_text
 from core.schedule_safety import schedule_semantics as _schedule_semantics
+from core.date_time_authority import DateTimeAuthority
 
 import sounddevice as sd
 from google import genai
@@ -224,6 +225,17 @@ lilith_memory_store, and do not ask LILITH. This includes what the user just sai
 or names, the current project/topic, pronoun/reference resolution, and calculations based on recent
 facts. Stored-memory tools are only for information outside this logical conversation when the user
 explicitly asks to search or modify saved/persistent memory. Do not mention this internal rule.
+""".strip()
+
+DATE_TIME_AUTHORITY_RULE = """
+[DATE/TIME AUTHORITY — mandatory]
+For any question asking for the current time or current date, call date_time. Never infer,
+estimate, calculate, or answer from model knowledge or from an earlier prompt timestamp.
+The tool reads the Windows host clock without changing the clock or timezone. Its returned
+Spanish sentence is authoritative: repeat it faithfully. Calendar parsing and scheduled actions
+use the same timezone authority. If a wall-clock time such as "a las 5" lacks enough context to
+distinguish morning from afternoon/evening, ask for clarification and call no action tool.
+"10 de la noche" is unambiguously 22:00.
 """.strip()
 
 _SCHEDULED_TOOL_NAMES = frozenset({"lilith_home_action", "reminder", "lilith_routine"})
@@ -892,6 +904,25 @@ def _merge_transcript_text(current: str, chunk: str) -> str:
     return f"{current} {chunk}".strip()
 
 TOOL_DECLARATIONS = [
+    {
+        "name": "date_time",
+        "description": (
+            "Reads the real current date or time from the Windows host. Mandatory for every "
+            "current-time/current-date question; never guess from model knowledge."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "action": {
+                    "type": "STRING",
+                    "enum": ["current_time", "current_date"],
+                    "description": "Whether the user asks for the current local time or date.",
+                },
+                "query": {"type": "STRING", "description": "Original user wording, if available."},
+            },
+            "required": ["action"],
+        },
+    },
     {
         "name": "open_app",
         "description": (
@@ -2112,6 +2143,7 @@ class JarvisLive:
         self._is_speaking   = False
         self._speaking_lock = threading.Lock()
         self.voice_name     = voice_name
+        self._date_time_authority = DateTimeAuthority()
         # optional runtime limit in seconds (set by main)
         self.runtime_limit_seconds: int | None = None
         # optional path that must exist (e.g. a mounted encrypted volume)
@@ -2487,6 +2519,16 @@ class JarvisLive:
         self._last_input_transcript_at = time.monotonic()
         self._remember_conversation_text("user", self._current_input_transcript)
         outgoing_text = self._current_input_transcript
+        authority = getattr(self, "_date_time_authority", None)
+        if authority is None:
+            authority = self._date_time_authority = DateTimeAuthority()
+        authoritative_date_time = authority.answer(self._current_input_transcript)
+        if authoritative_date_time:
+            outgoing_text = (
+                "[AUTHORITATIVE HOST DATE/TIME] "
+                f'Di exactamente en español: "{authoritative_date_time}" '
+                "No calcules ni adivines la fecha o la hora y no llames a ninguna herramienta."
+            )
         if (
             not getattr(self, "_pending_self_quit", False)
             and self._is_explicit_self_quit_transcript(self._current_input_transcript)
@@ -2799,21 +2841,11 @@ class JarvisLive:
         local_continuity: str = "",
         initial_history: bool = False,
     ) -> types.LiveConnectConfig:
-        from datetime import datetime
-
         memory     = load_memory()
         mem_str    = format_memory_for_prompt(memory)
         sys_prompt = _load_system_prompt()
 
-        now      = datetime.now()
-        time_str = now.strftime("%A, %B %d, %Y — %I:%M %p")
-        time_ctx = (
-            f"[CURRENT DATE & TIME]\n"
-            f"Right now it is: {time_str}\n"
-            f"Use this to calculate exact times for one-time reminders and persistent routines.\n\n"
-        )
-
-        parts = [LANGUAGE_RULE, time_ctx, ROUTINE_ROUTING_RULES, MEMORY_ROUTING_RULES]
+        parts = [LANGUAGE_RULE, DATE_TIME_AUTHORITY_RULE, ROUTINE_ROUTING_RULES, MEMORY_ROUTING_RULES]
         lilith_is_authoritative = False
         if lilith_context:
             lilith_str = self._format_lilith_context(lilith_context)
@@ -3088,6 +3120,11 @@ class JarvisLive:
             elif name == "reminder":
                 r = await asyncio.to_thread(lambda: reminder(parameters=args, response=None, player=self.ui))
                 result = r or "Reminder set."
+
+            elif name == "date_time":
+                result = self._date_time_authority.answer_action(
+                    str(args.get("action", "")), str(args.get("query", "")),
+                ) or "No he podido determinar si necesitas la fecha o la hora actual."
 
             elif name == "youtube_video":
                 r = await asyncio.to_thread(lambda: youtube_video(parameters=args, response=None, player=self.ui))
