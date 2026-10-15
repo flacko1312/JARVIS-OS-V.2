@@ -157,6 +157,8 @@ RECEIVE_SAMPLE_RATE = 24000
 CHUNK_SIZE          = 1024
 LIVE_VAD_SILENCE_MS = 200
 LIVE_PLAYBACK_DRAIN_TIMEOUT_SECONDS = 30.0
+LIVE_INPUT_CALLBACK_STALE_SECONDS = 2.5
+AUDIO_DEVICE_RECOVERY_MAX_DELAY_SECONDS = 10.0
 STARTUP_CLAPS_REQUIRED = 2
 STARTUP_CLAP_MAX_GAP_SECONDS = 4.0
 STARTUP_CLAP_COOLDOWN_SECONDS = 0.22
@@ -670,6 +672,32 @@ def _is_recoverable_live_disconnect(exc: BaseException) -> bool:
 
 def _live_reconnect_delay(attempt: int) -> float:
     return min(30.0, float(2 ** max(0, int(attempt) - 1)))
+
+
+def _audio_device_recovery_delay(attempt: int) -> float:
+    return min(
+        AUDIO_DEVICE_RECOVERY_MAX_DELAY_SECONDS,
+        0.5 * float(2 ** max(0, int(attempt) - 1)),
+    )
+
+
+class AudioInputDeviceLost(ConnectionError):
+    """The local capture stream stopped producing usable callbacks."""
+
+
+def _current_default_input_device() -> tuple[int | None, str]:
+    """Resolve the current OS default input on every open/recovery attempt."""
+    default = getattr(sd.default, "device", None)
+    try:
+        index = int(default[0])
+    except (TypeError, IndexError, ValueError):
+        index = None
+    if index is not None and index < 0:
+        index = None
+    info = sd.query_devices(index, "input")
+    if int(info.get("max_input_channels", 0)) < CHANNELS:
+        raise AudioInputDeviceLost("default input exposes no capture channel")
+    return index, _safe_live_diagnostic(info.get("name", "default input"), 80)
 
 
 def _is_invalid_argument_1007(exc: BaseException) -> bool:
@@ -2190,6 +2218,8 @@ class JarvisLive:
         self._barge_in_gate = SpeechAwareBargeInGate(input_sample_rate=SEND_SAMPLE_RATE)
         self._barge_in_candidate_logged = False
         self._barge_in_last_reject_log = 0.0
+        self._audio_input_worker_lock = threading.Lock()
+        self._audio_input_device_id: int | None = None
         self.voice_name     = voice_name
         self._date_time_authority = DateTimeAuthority()
         # optional runtime limit in seconds (set by main)
@@ -4476,32 +4506,137 @@ class JarvisLive:
             await self.session.send_realtime_input(media=msg)
 
     async def _listen_audio(self):
-        print("[JARVIS] 🎤 Mic started")
-        loop = asyncio.get_event_loop()
-
-        def callback(indata, frames, time_info, status):
-            if not self.ui.muted:
-                data = indata.tobytes()
-                _report_audio_level(self.ui, "input", data)
-                self._process_microphone_audio(data, loop)
-
+        """Own one capture worker and hot-recreate only its local InputStream."""
+        worker_lock = getattr(self, "_audio_input_worker_lock", None)
+        if worker_lock is None:
+            worker_lock = self._audio_input_worker_lock = threading.Lock()
+        if not worker_lock.acquire(blocking=False):
+            logger.warning("AUDIO_INPUT duplicate_worker_ignored")
+            return
         try:
-            with sd.InputStream(
-                samplerate=SEND_SAMPLE_RATE,
-                channels=CHANNELS,
-                dtype="int16",
-                blocksize=CHUNK_SIZE,
-                callback=callback,
-            ):
-                print("[JARVIS] 🎤 Mic stream open")
-                while (
-                    not self._shutdown_requested.is_set()
-                    and self._conversation_requested.is_set()
+            await self._listen_audio_with_recovery()
+        finally:
+            worker_lock.release()
+
+    async def _wait_for_audio_recovery(self, delay: float) -> None:
+        deadline = time.monotonic() + max(0.0, float(delay))
+        while (
+            not self._shutdown_requested.is_set()
+            and self._conversation_requested.is_set()
+        ):
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return
+            await asyncio.sleep(min(0.1, remaining))
+
+    async def _listen_audio_with_recovery(self) -> None:
+        print("[JARVIS] 🎤 Mic worker started")
+        loop = asyncio.get_running_loop()
+        stream_factory = getattr(self, "_audio_input_stream_factory", sd.InputStream)
+        device_resolver = getattr(
+            self, "_audio_input_device_resolver", _current_default_input_device,
+        )
+        attempt = 0
+        recovering = False
+        previous_device = getattr(self, "_audio_input_device_id", None)
+
+        while (
+            not self._shutdown_requested.is_set()
+            and self._conversation_requested.is_set()
+        ):
+            callback_state = {
+                "last_at": time.monotonic(),
+                "count": 0,
+                "status": "",
+            }
+
+            def callback(indata, frames, time_info, status):
+                callback_state["last_at"] = time.monotonic()
+                callback_state["count"] += 1
+                if status:
+                    callback_state["status"] = _safe_live_diagnostic(status, 80)
+                if not self.ui.muted:
+                    data = indata.tobytes()
+                    _report_audio_level(self.ui, "input", data)
+                    self._process_microphone_audio(data, loop)
+
+            try:
+                device_id, device_name = device_resolver()
+                opened_at = time.monotonic()
+                with stream_factory(
+                    samplerate=SEND_SAMPLE_RATE,
+                    channels=CHANNELS,
+                    dtype="int16",
+                    blocksize=CHUNK_SIZE,
+                    callback=callback,
+                    device=device_id,
+                ) as stream:
+                    print("[JARVIS] 🎤 Mic stream open")
+                    recovered_logged = False
+                    while (
+                        not self._shutdown_requested.is_set()
+                        and self._conversation_requested.is_set()
+                    ):
+                        await asyncio.sleep(0.1)
+                        now = time.monotonic()
+                        active = getattr(stream, "active", True)
+                        if active is False:
+                            raise AudioInputDeviceLost("capture stream became inactive")
+                        if now - callback_state["last_at"] > LIVE_INPUT_CALLBACK_STALE_SECONDS:
+                            raise AudioInputDeviceLost(
+                                f"no capture callback for {now - callback_state['last_at']:.1f}s"
+                            )
+                        if callback_state["count"] >= 3:
+                            if recovering and not recovered_logged:
+                                changed = previous_device != device_id
+                                logger.info(
+                                    "AUDIO_INPUT recovered device_id=%s device_name=%s "
+                                    "default_changed=%s attempts=%d",
+                                    device_id if device_id is not None else "default",
+                                    device_name, changed, attempt,
+                                )
+                                try:
+                                    self.ui.write_log("SYS: Micrófono recuperado automáticamente.")
+                                except Exception:
+                                    pass
+                                recovered_logged = True
+                                recovering = False
+                            previous_device = device_id
+                            self._audio_input_device_id = device_id
+                            if now - opened_at >= 1.0:
+                                attempt = 0
+                    return
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                if (
+                    self._shutdown_requested.is_set()
+                    or not self._conversation_requested.is_set()
                 ):
-                    await asyncio.sleep(0.1)
-        except Exception as e:
-            print(f"[JARVIS] ❌ Mic: {e}")
-            raise
+                    return
+                attempt += 1
+                discarded = self._drain_queue(getattr(self, "out_queue", None))
+                if not recovering:
+                    logger.warning(
+                        "AUDIO_INPUT device_lost error=%s detail=%s device_id=%s "
+                        "discarded_input_chunks=%d",
+                        type(exc).__name__, _safe_live_diagnostic(exc),
+                        previous_device if previous_device is not None else "default",
+                        discarded,
+                    )
+                    try:
+                        self.ui.write_log(
+                            "SYS: Micrófono no disponible; JARVIS reintentará conectarlo automáticamente."
+                        )
+                    except Exception:
+                        pass
+                recovering = True
+                delay = _audio_device_recovery_delay(attempt)
+                logger.info(
+                    "AUDIO_INPUT recovery_wait attempt=%d delay=%.1fs",
+                    attempt, delay,
+                )
+                await self._wait_for_audio_recovery(delay)
 
     def _enqueue_microphone_audio(self, data: bytes) -> None:
         queue = getattr(self, "out_queue", None)
