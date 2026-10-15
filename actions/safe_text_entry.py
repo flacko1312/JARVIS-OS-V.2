@@ -1,5 +1,6 @@
 import json
 import ctypes
+import os
 import platform as platform_module
 import subprocess
 import threading
@@ -85,6 +86,19 @@ WINDOWS_BLOCKED_PROCESSES = {
     "windowsterminal.exe",
 }
 WINDOWS_DESKTOP_CLASSES = {"progman", "workerw", "syslistview32"}
+WINDOWS_TARGET_CACHE_TTL_SECONDS = 45.0
+
+
+@dataclass
+class _WindowsTargetCache:
+    info: dict
+    purpose: str
+    validated_at: float
+    last_input_tick: int
+
+
+_WINDOWS_TARGET_CACHE: _WindowsTargetCache | None = None
+_WINDOWS_TARGET_LOCK = threading.RLock()
 
 
 def _windows_process_name(process_id: int) -> str:
@@ -124,6 +138,23 @@ def _windows_focused_element_info() -> dict:
         process_id = int(element.CurrentProcessId or 0)
         native_handle = int(element.CurrentNativeWindowHandle or 0)
         runtime_id = tuple(int(value) for value in (element.GetRuntimeId() or ()))
+        root_handle = native_handle
+        try:
+            walker = automation.ControlViewWalker
+            ancestor = element
+            for _ in range(64):
+                parent = walker.GetParentElement(ancestor)
+                if parent is None:
+                    break
+                parent_process_id = int(parent.CurrentProcessId or 0)
+                if parent_process_id and parent_process_id != process_id:
+                    break
+                ancestor = parent
+                candidate_handle = int(ancestor.CurrentNativeWindowHandle or 0)
+                if candidate_handle:
+                    root_handle = candidate_handle
+        except Exception:
+            pass
         info = {
             "process_id": process_id,
             "process_name": _windows_process_name(process_id),
@@ -135,6 +166,7 @@ def _windows_focused_element_info() -> dict:
             "keyboard_focusable": bool(element.CurrentIsKeyboardFocusable),
             "has_keyboard_focus": bool(element.CurrentHasKeyboardFocus),
             "native_handle": native_handle,
+            "root_handle": root_handle,
             "runtime_id": runtime_id,
             "read_only": None,
             "text_value": None,
@@ -184,9 +216,10 @@ def _windows_focused_element_info() -> dict:
 
 
 def _windows_target_id(info: dict) -> tuple:
+    """Stable editor identity; UIA RuntimeId may legitimately be regenerated."""
     return (
         int(info.get("process_id") or 0),
-        tuple(info.get("runtime_id") or ()),
+        int(info.get("root_handle") or info.get("native_handle") or 0),
         int(info.get("control_type") or 0),
         str(info.get("automation_id") or ""),
         str(info.get("class_name") or ""),
@@ -250,7 +283,107 @@ def _validate_windows_text_target(info: dict, purpose: str = "generic") -> SafeT
 
 def _windows_focus_matches(target_id: tuple) -> bool:
     current = _windows_focused_element_info()
-    return bool(current and _windows_target_id(current) == target_id)
+    return bool(current and _windows_target_id(current) == target_id and _validate_windows_text_target(current).ok)
+
+
+def _windows_last_input_tick() -> int:
+    class LASTINPUTINFO(ctypes.Structure):
+        _fields_ = [("cbSize", wintypes.UINT), ("dwTime", wintypes.DWORD)]
+
+    info = LASTINPUTINFO(ctypes.sizeof(LASTINPUTINFO), 0)
+    try:
+        if ctypes.windll.user32.GetLastInputInfo(ctypes.byref(info)):
+            return int(info.dwTime)
+    except Exception:
+        pass
+    return 0
+
+
+def _windows_window_exists(hwnd: int) -> bool:
+    try:
+        return bool(hwnd and ctypes.windll.user32.IsWindow(int(hwnd)))
+    except Exception:
+        return False
+
+
+def _windows_activate_window(hwnd: int) -> bool:
+    """Restore a previously proven top-level target; never discovers a new one."""
+    try:
+        return bool(hwnd and ctypes.windll.user32.SetForegroundWindow(int(hwnd)))
+    except Exception:
+        return False
+
+
+def _cache_windows_target(info: dict, purpose: str) -> None:
+    global _WINDOWS_TARGET_CACHE
+    with _WINDOWS_TARGET_LOCK:
+        _WINDOWS_TARGET_CACHE = _WindowsTargetCache(
+            info=dict(info), purpose=str(purpose or "generic").casefold(),
+            validated_at=time.monotonic(), last_input_tick=_windows_last_input_tick(),
+        )
+    print(
+        "SAFE_TEXT target_validated "
+        f"process={str(info.get('process_name') or 'unknown').casefold()} "
+        f"hwnd={int(info.get('root_handle') or info.get('native_handle') or 0)} "
+        f"control={int(info.get('control_type') or 0)}"
+    )
+
+
+def _invalidate_windows_target(reason: str) -> None:
+    global _WINDOWS_TARGET_CACHE
+    with _WINDOWS_TARGET_LOCK:
+        had_target = _WINDOWS_TARGET_CACHE is not None
+        _WINDOWS_TARGET_CACHE = None
+    if had_target:
+        print(f"SAFE_TEXT target_invalidated reason={reason}")
+
+
+def _resolve_windows_target(purpose: str) -> tuple[SafeTextEntryResult, dict]:
+    """Validate current focus or safely reacquire a cached target after JARVIS self-focus."""
+    purpose_key = str(purpose or "generic").casefold()
+    current = _windows_focused_element_info()
+    validation = _validate_windows_text_target(current, purpose_key)
+    if validation.ok:
+        _cache_windows_target(current, purpose_key)
+        return validation, current
+
+    with _WINDOWS_TARGET_LOCK:
+        cached = _WINDOWS_TARGET_CACHE
+    if not cached:
+        return validation, current
+    if time.monotonic() - cached.validated_at > WINDOWS_TARGET_CACHE_TTL_SECONDS:
+        _invalidate_windows_target("expired")
+        return validation, current
+    if cached.purpose != purpose_key:
+        _invalidate_windows_target("purpose_changed")
+        return validation, current
+    if int(current.get("process_id") or 0) != os.getpid():
+        _invalidate_windows_target("user_focus_changed")
+        return validation, current
+    if _windows_last_input_tick() != cached.last_input_tick:
+        _invalidate_windows_target("user_input_after_validation")
+        return validation, current
+
+    root_handle = int(cached.info.get("root_handle") or cached.info.get("native_handle") or 0)
+    if not _windows_window_exists(root_handle):
+        _invalidate_windows_target("target_destroyed")
+        return validation, current
+    print("SAFE_TEXT transient_focus_loss owner=jarvis")
+    if not _windows_activate_window(root_handle):
+        _invalidate_windows_target("reacquire_failed")
+        return validation, current
+    time.sleep(0.04)
+    reacquired = _windows_focused_element_info()
+    reacquired_validation = _validate_windows_text_target(reacquired, purpose_key)
+    if not reacquired_validation.ok or _windows_target_id(reacquired) != _windows_target_id(cached.info):
+        _invalidate_windows_target("reacquired_target_mismatch")
+        return validation, current
+    _cache_windows_target(reacquired, purpose_key)
+    print(
+        "SAFE_TEXT target_reacquired "
+        f"process={str(reacquired.get('process_name') or 'unknown').casefold()} hwnd={root_handle}"
+    )
+    return reacquired_validation, reacquired
 
 
 def _windows_send_input(units: list[tuple[int, int]]) -> bool:
@@ -288,7 +421,7 @@ def _windows_send_input(units: list[tuple[int, int]]) -> bool:
 
 
 def _write_windows_unicode(text: str, target_id: tuple) -> tuple[bool, str]:
-    """Write Unicode natively while rechecking focused UIA identity before each character."""
+    """Write Unicode natively, stopping as soon as the verified editor loses focus."""
     for character in text:
         if not _windows_focus_matches(target_id):
             return False, "El foco cambió o el campo de texto desapareció; se detuvo la escritura."
@@ -818,7 +951,11 @@ def safe_type_text(
     _require_pyautogui()
     if not str(text or ""):
         return SafeTextEntryResult(False, "No se proporcionó texto para escribir.")
-    validation = validate_safe_text_target(purpose, allow_pointer_fallback=allow_pointer_fallback)
+    os_name = _actual_os()
+    if os_name == "windows":
+        validation, _ = _resolve_windows_target(purpose)
+    else:
+        validation = validate_safe_text_target(purpose, allow_pointer_fallback=allow_pointer_fallback)
     if not validation.ok:
         print(
             f"[SafeTextEntry] refused purpose={purpose} "
@@ -826,7 +963,6 @@ def safe_type_text(
         )
         return validation
 
-    os_name = _actual_os()
     select_all = ("command", "a") if os_name == "mac" else ("ctrl", "a")
     print(
         f"[SafeTextEntry] path={validation.safety_path or 'unknown'} "
@@ -836,6 +972,7 @@ def safe_type_text(
     if os_name == "windows":
         before_info = _windows_focused_element_info()
         if not before_info or _windows_target_id(before_info) != validation.target_id:
+            _invalidate_windows_target("focus_changed_before_write")
             return SafeTextEntryResult(False, "El foco cambió después de validar el campo; no se escribió texto.")
         before_text = before_info.get("text_value")
         with PyAutoGuiFastPause():
@@ -849,6 +986,7 @@ def safe_type_text(
 
             wrote, error = _write_windows_unicode(str(text), validation.target_id)
             if not wrote:
+                _invalidate_windows_target("focus_changed_during_write")
                 return SafeTextEntryResult(False, error, validation.target, safety_path="windows_uia")
             if press_enter:
                 if not _windows_focus_matches(validation.target_id):
@@ -858,7 +996,9 @@ def safe_type_text(
 
         after_info = _windows_focused_element_info()
         if not after_info or _windows_target_id(after_info) != validation.target_id:
+            _invalidate_windows_target("target_missing_after_write")
             return SafeTextEntryResult(False, "El campo validado desapareció antes de comprobar el resultado.")
+        _cache_windows_target(after_info, purpose)
         if validation.readback_supported:
             after_text = after_info.get("text_value")
             expected = str(text).replace("\r\n", "\n")
@@ -866,7 +1006,7 @@ def safe_type_text(
             normalized_before = str(before_text or "").replace("\r\n", "\n")
             if normalized_after == normalized_before or expected not in normalized_after:
                 return SafeTextEntryResult(False, "Windows recibió la entrada, pero no pude verificar el texto insertado.")
-            return SafeTextEntryResult(
+            result = SafeTextEntryResult(
                 True,
                 "Texto escrito de forma segura y verificado en el campo enfocado.",
                 validation.target,
@@ -874,13 +1014,17 @@ def safe_type_text(
                 target_id=validation.target_id,
                 readback_supported=True,
             )
-        return SafeTextEntryResult(
+            print(f"SAFE_TEXT write_complete chars={len(str(text))} verified=true")
+            return result
+        result = SafeTextEntryResult(
             True,
             "Texto enviado al campo enfocado verificado; este control no permite releer la inserción.",
             validation.target,
             safety_path="windows_uia_no_readback",
             target_id=validation.target_id,
         )
+        print(f"SAFE_TEXT write_complete chars={len(str(text))} verified=false")
+        return result
 
     with MouseClickBlocker(), PyAutoGuiFastPause():
         if validation.click_before_typing:
