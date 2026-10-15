@@ -15,6 +15,7 @@ from core.schedule_safety import normalize_timezone
 from core.schedule_safety import normalized_turn_text as _normalized_turn_text
 from core.schedule_safety import schedule_semantics as _schedule_semantics
 from core.date_time_authority import DateTimeAuthority
+from core.audio_barge_in import BargeInDecision, SpeechAwareBargeInGate
 
 import sounddevice as sd
 from google import genai
@@ -2186,6 +2187,9 @@ class JarvisLive:
         self._loop          = None
         self._is_speaking   = False
         self._speaking_lock = threading.Lock()
+        self._barge_in_gate = SpeechAwareBargeInGate(input_sample_rate=SEND_SAMPLE_RATE)
+        self._barge_in_candidate_logged = False
+        self._barge_in_last_reject_log = 0.0
         self.voice_name     = voice_name
         self._date_time_authority = DateTimeAuthority()
         # optional runtime limit in seconds (set by main)
@@ -2618,7 +2622,15 @@ class JarvisLive:
 
     def set_speaking(self, value: bool):
         with self._speaking_lock:
+            previous = getattr(self, "_is_speaking", False)
             self._is_speaking = value
+        gate = getattr(self, "_barge_in_gate", None)
+        if gate is not None and value != previous:
+            if value:
+                gate.start_playback()
+                self._barge_in_candidate_logged = False
+            else:
+                gate.stop_playback()
         if value:
             self.ui.set_state("SPEAKING")
         elif not self.ui.muted:
@@ -4468,15 +4480,10 @@ class JarvisLive:
         loop = asyncio.get_event_loop()
 
         def callback(indata, frames, time_info, status):
-            # Gemini Live is full duplex. Keep upstream audio active during
-            # playback so server VAD can emit its native interruption event.
             if not self.ui.muted:
                 data = indata.tobytes()
                 _report_audio_level(self.ui, "input", data)
-                loop.call_soon_threadsafe(
-                    self.out_queue.put_nowait,
-                    {"data": data, "mime_type": "audio/pcm"}
-                )
+                self._process_microphone_audio(data, loop)
 
         try:
             with sd.InputStream(
@@ -4495,6 +4502,56 @@ class JarvisLive:
         except Exception as e:
             print(f"[JARVIS] ❌ Mic: {e}")
             raise
+
+    def _enqueue_microphone_audio(self, data: bytes) -> None:
+        queue = getattr(self, "out_queue", None)
+        if queue is None:
+            return
+        try:
+            queue.put_nowait({"data": data, "mime_type": "audio/pcm"})
+        except asyncio.QueueFull:
+            logger.warning("BARGE_IN microphone_frame_dropped reason=input_queue_full")
+
+    @staticmethod
+    def _barge_in_metrics(decision: BargeInDecision) -> tuple[int, float, float, float]:
+        return (
+            decision.speech_duration_ms,
+            round(decision.rms, 4),
+            round(decision.noise_floor, 4),
+            round(decision.echo_similarity, 3),
+        )
+
+    def _log_barge_in(self, event: str, decision: BargeInDecision) -> None:
+        duration, rms, noise, echo = self._barge_in_metrics(decision)
+        logger.info(
+            "BARGE_IN %s speech_duration_ms=%d rms=%.4f noise_floor=%.4f echo_similarity=%.3f",
+            event, duration, rms, noise, echo,
+        )
+
+    def _process_microphone_audio(self, data: bytes, loop) -> BargeInDecision:
+        """Capture full duplex, but expose playback-time audio only after speech validation."""
+        with self._speaking_lock:
+            speaking = self._is_speaking
+        gate = getattr(self, "_barge_in_gate", None)
+        if gate is None:
+            gate = self._barge_in_gate = SpeechAwareBargeInGate(
+                input_sample_rate=SEND_SAMPLE_RATE,
+            )
+        previously_accepted = gate.accepted
+        decision = gate.process(data, playback_active=speaking)
+        now = time.monotonic()
+        if decision.candidate and not self._barge_in_candidate_logged:
+            self._barge_in_candidate_logged = True
+            loop.call_soon_threadsafe(self._log_barge_in, "candidate", decision)
+        if decision.rejected_reason and now - self._barge_in_last_reject_log >= 1.0:
+            self._barge_in_last_reject_log = now
+            event = f"rejected reason={decision.rejected_reason}"
+            loop.call_soon_threadsafe(self._log_barge_in, event, decision)
+        if decision.accepted and not previously_accepted:
+            loop.call_soon_threadsafe(self._log_barge_in, "accepted", decision)
+        for frame in decision.forward_frames:
+            loop.call_soon_threadsafe(self._enqueue_microphone_audio, frame)
+        return decision
 
     @staticmethod
     def _drain_queue(queue: asyncio.Queue | None) -> int:
@@ -4765,6 +4822,9 @@ class JarvisLive:
                     pass  # drain silently
                 else:
                     self.set_speaking(True)
+                    gate = getattr(self, "_barge_in_gate", None)
+                    if gate is not None:
+                        gate.observe_playback(chunk, sample_rate=RECEIVE_SAMPLE_RATE)
                     _report_audio_level(self.ui, "output", chunk)
                     if self.external_audio:
                         send_audio = getattr(self.client, "send_audio", None)

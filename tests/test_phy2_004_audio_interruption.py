@@ -6,6 +6,7 @@ import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
+import numpy as np
 import pytest
 
 import main
@@ -201,11 +202,20 @@ async def test_microphone_audio_is_forwarded_while_model_is_speaking():
     jarvis._conversation_requested.set()
     jarvis.out_queue = asyncio.Queue()
     jarvis.set_speaking(True)
+    samples = np.arange(main.CHUNK_SIZE) / main.SEND_SAMPLE_RATE
+    voice = 0.08 * (
+        np.sin(2 * np.pi * 180 * samples)
+        + 0.5 * np.sin(2 * np.pi * 360 * samples)
+        + 0.25 * np.sin(2 * np.pi * 720 * samples)
+    )
+    pcm = (voice * 32767).astype(np.int16).tobytes()
 
     class Input:
         def __init__(self, **kwargs): self.callback = kwargs["callback"]
         def __enter__(self):
-            self.callback(SimpleNamespace(tobytes=lambda: b"user-speech"), 1, None, None)
+            block = SimpleNamespace(tobytes=lambda: pcm)
+            for _ in range(3):
+                self.callback(block, main.CHUNK_SIZE, None, None)
             return self
         def __exit__(self, *_args): return False
 
@@ -214,7 +224,7 @@ async def test_microphone_audio_is_forwarded_while_model_is_speaking():
         forwarded = await asyncio.wait_for(jarvis.out_queue.get(), 1)
         jarvis._conversation_requested.clear()
         await asyncio.wait_for(task, 1)
-    assert forwarded["data"] == b"user-speech"
+    assert forwarded["data"] == pcm
 
 
 @async_test
