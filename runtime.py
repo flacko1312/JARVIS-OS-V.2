@@ -43,6 +43,7 @@ _CONVERSATION_DOMAINS = frozenset({Domain.CONVERSATION})
 _GEMINI_DOMAINS = frozenset({
     Domain.WINDOWS, Domain.FILES, Domain.VISION,
     Domain.DEVELOPMENT, Domain.KNOWLEDGE, Domain.WEB,
+    Domain.GMAIL, Domain.MULTIMEDIA, Domain.REMINDERS, Domain.PRESENTATIONS,
 })
 
 # JL-R005: below this threshold the classification is "low confidence" —
@@ -117,6 +118,22 @@ class JarvisRuntime:
           enviar el texto al LLM conversacional (Gemini, etc.).
         """
         classification = self._router.classify(text)
+
+        if classification.params.get("ambiguous"):
+            rivals = classification.params.get("rival_domains", [])
+            choices = [classification.domain.value, *rivals]
+            return {
+                "handled": True,
+                "domain": classification.domain.value,
+                "confidence": classification.confidence,
+                "message": (
+                    "La petición puede corresponder a varias acciones "
+                    f"({', '.join(choices)}). ¿Qué quieres que haga exactamente?"
+                ),
+                "data": {"needs_clarification": True, "choices": choices},
+                "pass_to_conversation": False,
+                "low_confidence": False,
+            }
 
         if classification.domain in _CONVERSATION_DOMAINS:
             return {

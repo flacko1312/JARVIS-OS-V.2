@@ -5,6 +5,7 @@ import asyncio
 import logging
 import re
 from typing import Any
+from pathlib import Path
 
 from lilith_client.client import LilithClient
 from lilith_client.errors import LilithConnectionError, LilithError, LilithTimeoutError
@@ -12,13 +13,13 @@ from lilith_client.monitor import LilithMonitor
 from router.classifier import classify
 from router.models import Domain, RouteResult
 from core.schedule_safety import schedule_semantics
+from core.local_ai import OllamaTextProvider, configured_ollama_text
 
 logger = logging.getLogger("jarvis.router")
 
 _LILITH_OFFLINE_MESSAGES = {
     Domain.MEMORY: "LILITH no está disponible. No puedo acceder a la memoria ahora.",
     Domain.HOME: "LILITH no está disponible. No puedo controlar la casa ahora.",
-    Domain.LOCAL_AI: "LILITH no está disponible. No puedo usar IA local ahora.",
 }
 
 # JL-H005: JARVIS understands the intent (on/off + the reference text); LILITH owns the
@@ -59,9 +60,16 @@ def _parse_home_command(text: str) -> tuple[str | None, str]:
 class JarvisRouter:
     """Enruta peticiones del usuario al handler correcto."""
 
-    def __init__(self, client: LilithClient, monitor: LilithMonitor):
+    def __init__(
+        self,
+        client: LilithClient,
+        monitor: LilithMonitor,
+        local_ai: OllamaTextProvider | None = None,
+    ):
         self._client = client
         self._monitor = monitor
+        config_path = Path(__file__).resolve().parent.parent / "config" / "api_keys.json"
+        self._local_ai = local_ai or OllamaTextProvider(configured_ollama_text(config_path))
 
     def classify(self, user_input: str) -> RouteResult:
         return classify(user_input)
@@ -239,6 +247,24 @@ class JarvisRouter:
             "message": f"Handler '{result.domain.value}' no implementado aún.",
         }
 
+    async def _handle_local_ai(self, result: RouteResult) -> dict[str, Any]:
+        raw = str(result.params.get("raw_input", "")).strip()
+        response = await self._local_ai.generate(raw)
+        if not response.ok:
+            return {
+                "ok": False,
+                "action": "local_text",
+                "offline": response.status.state.value == "offline",
+                "message": response.status.message,
+                "data": {"state": response.status.state.value, "model": response.status.model},
+            }
+        return {
+            "ok": True,
+            "action": "local_text",
+            "message": response.text,
+            "data": {"text": response.text, "model": response.status.model},
+        }
+
 
 _HANDLERS: dict[Domain, Any] = {
     Domain.MEMORY: JarvisRouter._handle_memory,
@@ -249,6 +275,10 @@ _HANDLERS: dict[Domain, Any] = {
     Domain.VISION: JarvisRouter._handle_gemini_passthrough,
     Domain.DEVELOPMENT: JarvisRouter._handle_gemini_passthrough,
     Domain.KNOWLEDGE: JarvisRouter._handle_gemini_passthrough,
-    Domain.LOCAL_AI: JarvisRouter._handle_not_implemented,
+    Domain.LOCAL_AI: JarvisRouter._handle_local_ai,
     Domain.WEB: JarvisRouter._handle_gemini_passthrough,
+    Domain.GMAIL: JarvisRouter._handle_gemini_passthrough,
+    Domain.MULTIMEDIA: JarvisRouter._handle_gemini_passthrough,
+    Domain.REMINDERS: JarvisRouter._handle_gemini_passthrough,
+    Domain.PRESENTATIONS: JarvisRouter._handle_gemini_passthrough,
 }

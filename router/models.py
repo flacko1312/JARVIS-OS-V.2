@@ -15,10 +15,14 @@ class Domain(Enum):
     KNOWLEDGE = "knowledge"
     LOCAL_AI = "local_ai"
     WEB = "web"
+    GMAIL = "gmail"
+    MULTIMEDIA = "multimedia"
+    REMINDERS = "reminders"
+    PRESENTATIONS = "presentations"
     CONVERSATION = "conversation"
 
 
-_REQUIRES_LILITH = frozenset({Domain.MEMORY, Domain.HOME, Domain.LOCAL_AI})
+_REQUIRES_LILITH = frozenset({Domain.MEMORY, Domain.HOME})
 
 
 @dataclass

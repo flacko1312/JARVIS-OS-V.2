@@ -6,6 +6,38 @@ import re
 from router.models import Domain, RouteResult
 
 _RULES: list[tuple[re.Pattern[str], Domain, str, float]] = [
+    # Specific task intents precede generic app/entity words.  Confidence,
+    # rather than list order, remains the authoritative winner.
+    (re.compile(
+        r"\b(arregla|repara|depura|debuggea|modifica)\b.*\b("
+        r"aplicaci[oó]n|app|programa|c[oó]digo|proyecto|repositorio|bug|error)\b", re.I),
+     Domain.DEVELOPMENT, "development", 0.98),
+
+    (re.compile(
+        r"\b(lee|lista|muestra|busca|revisa|escribe|redacta|prepara|env[ií]a|"
+        r"responde|contesta|abre)\b.*\b(correo|correos|email|emails|gmail|"
+        r"bandeja de entrada|mensaje de correo)\b|"
+        r"\b(correo|email)\b.*\b(a|para|de|no le[ií]do|pendiente)\b", re.I),
+     Domain.GMAIL, "gmail", 0.94),
+
+    (re.compile(
+        r"\b(pon|reproduce|pausa|reanuda|contin[uú]a|para|det[eé]n|salta|"
+        r"siguiente|anterior|sube|baja|silencia|mutea)\b.*\b("
+        r"m[uú]sica|canci[oó]n|audio|spotify|youtube music|reproducci[oó]n|volumen)\b|"
+        r"\b(pon m[uú]sica|pausa la m[uú]sica|siguiente canci[oó]n)\b", re.I),
+     Domain.MULTIMEDIA, "multimedia", 0.93),
+
+    (re.compile(
+        r"\b(recu[eé]rdame|av[ií]same|notif[ií]came)\b|"
+        r"\b(crea|pon|programa|lista|cancela|modifica|cambia)\b.*\b("
+        r"recordatorio|recordatorios|aviso|avisos)\b", re.I),
+     Domain.REMINDERS, "reminders", 0.94),
+
+    (re.compile(
+        r"\b(crea|haz|genera|prepara|edita|modifica|ampl[ií]a|redise[ñn]a)\b.*\b("
+        r"presentaci[oó]n|presentaciones|diapositivas|powerpoint|pptx|deck)\b", re.I),
+     Domain.PRESENTATIONS, "presentations", 0.94),
+
     (re.compile(
         r"\b(recuerda|acuérdate|acuerdate|no olvides|guarda en memoria|"
         r"qué sabes de|que sabes de|qué recuerdas|que recuerdas)\b", re.I),
@@ -52,9 +84,10 @@ _RULES: list[tuple[re.Pattern[str], Domain, str, float]] = [
      Domain.KNOWLEDGE, "knowledge", 0.8),
 
     (re.compile(
-        r"\b(localmente|sin internet|usa ollama|resumen local|"
-        r"analiza localmente|modelo local)\b", re.I),
-     Domain.LOCAL_AI, "local_ai", 0.8),
+        r"\b(localmente|sin internet|usa ollama|usar ollama|resumen local|"
+        r"analiza localmente|modelo local|ia local|i\.a\. local|"
+        r"resp[oó]ndeme usando (?:la )?ia local)\b", re.I),
+     Domain.LOCAL_AI, "local_ai", 0.92),
 
     (re.compile(
         r"\b(busca en google|busca en internet|qué tiempo hace|que tiempo hace|"
