@@ -155,6 +155,7 @@ DEFAULT_VOICE_NAME = DEFAULT_GEMINI_VOICE
 RECEIVE_SAMPLE_RATE = 24000
 CHUNK_SIZE          = 1024
 LIVE_VAD_SILENCE_MS = 200
+LIVE_PLAYBACK_DRAIN_TIMEOUT_SECONDS = 30.0
 STARTUP_CLAPS_REQUIRED = 2
 STARTUP_CLAP_MAX_GAP_SECONDS = 4.0
 STARTUP_CLAP_COOLDOWN_SECONDS = 0.22
@@ -605,6 +606,49 @@ def _is_resumption_handle_rejected(exc: BaseException) -> bool:
 
 class RecoverableLiveDisconnect(ConnectionError):
     """Real Live transport/session failure that should trigger a silent reconnect."""
+
+    def __init__(
+        self,
+        detail: str,
+        *,
+        category: str = "transport",
+        close_code: int | str | None = None,
+    ) -> None:
+        super().__init__(detail)
+        self.category = category
+        self.close_code = close_code
+
+
+def _safe_live_diagnostic(value: object, limit: int = 160) -> str:
+    """Single-line, bounded transport diagnostic; never includes payload/audio."""
+    text = redact_sensitive_text(str(value or "").replace("\x00", ""))
+    text = " ".join(text.split())
+    return text[:limit] or "none"
+
+
+def _live_disconnect_diagnostics(exc: BaseException) -> dict[str, object]:
+    leaves = list(_exception_leaves(exc)) or [exc]
+    primary = next(
+        (leaf for leaf in leaves if isinstance(leaf, RecoverableLiveDisconnect)),
+        leaves[0],
+    )
+    category = getattr(primary, "category", None)
+    if not category:
+        if isinstance(primary, (asyncio.TimeoutError, TimeoutError)):
+            category = "timeout"
+        elif _is_normal_live_close_error(primary):
+            category = "provider_close"
+        elif _is_transient_live_connection_error(primary):
+            category = "network"
+        else:
+            category = "transport"
+    code = getattr(primary, "close_code", None) or getattr(primary, "code", None)
+    return {
+        "category": category,
+        "exception": type(primary).__name__,
+        "close_code": code if code is not None else "none",
+        "detail": _safe_live_diagnostic(primary),
+    }
 
 
 class InitialHistoryRejected(ConnectionError):
@@ -2883,7 +2927,8 @@ class JarvisLive:
                     start_of_speech_sensitivity=types.StartSensitivity.START_SENSITIVITY_HIGH,
                     end_of_speech_sensitivity=types.EndSensitivity.END_SENSITIVITY_HIGH,
                     silence_duration_ms=LIVE_VAD_SILENCE_MS,
-                )
+                ),
+                activity_handling=types.ActivityHandling.START_OF_ACTIVITY_INTERRUPTS,
             ),
             thinking_config=types.ThinkingConfig(thinking_budget=0),
             session_resumption=types.SessionResumptionConfig(handle=resumption_handle),
@@ -4423,9 +4468,9 @@ class JarvisLive:
         loop = asyncio.get_event_loop()
 
         def callback(indata, frames, time_info, status):
-            with self._speaking_lock:
-                jarvis_speaking = self._is_speaking
-            if not jarvis_speaking and not self.ui.muted:
+            # Gemini Live is full duplex. Keep upstream audio active during
+            # playback so server VAD can emit its native interruption event.
+            if not self.ui.muted:
                 data = indata.tobytes()
                 _report_audio_level(self.ui, "input", data)
                 loop.call_soon_threadsafe(
@@ -4451,9 +4496,47 @@ class JarvisLive:
             print(f"[JARVIS] ❌ Mic: {e}")
             raise
 
+    @staticmethod
+    def _drain_queue(queue: asyncio.Queue | None) -> int:
+        drained = 0
+        if queue is None:
+            return drained
+        while True:
+            try:
+                queue.get_nowait()
+            except asyncio.QueueEmpty:
+                return drained
+            else:
+                drained += 1
+
+    def _interrupt_live_playback(self, reason: str) -> int:
+        """Accept a provider interruption and discard only stale output audio."""
+        drained = self._drain_queue(getattr(self, "audio_in_queue", None))
+        self.set_speaking(False)
+        logger.info(
+            "LIVE_AUDIO interrupted reason=%s flushed_chunks=%d",
+            _safe_live_diagnostic(reason, 64), drained,
+        )
+        return drained
+
+    async def _wait_for_playback_drain(
+        self,
+        timeout: float = LIVE_PLAYBACK_DRAIN_TIMEOUT_SECONDS,
+    ) -> bool:
+        deadline = time.monotonic() + max(0.0, timeout)
+        while time.monotonic() < deadline:
+            queue = getattr(self, "audio_in_queue", None)
+            with self._speaking_lock:
+                speaking = self._is_speaking
+            if (queue is None or queue.empty()) and not speaking:
+                return True
+            await asyncio.sleep(0.02)
+        return False
+
     async def _receive_audio(self):
         print("[JARVIS] 👂 Recv started")
         receive_conversation_id = self._conversation_id
+        pending_goaway: str | None = None
 
         try:
             while True:
@@ -4482,8 +4565,17 @@ class JarvisLive:
                                 self._session_resumption_handle_at = time.monotonic()
                                 print("[JARVIS] Session resumption handle updated.")
 
-                    if getattr(response, "go_away", None) is not None:
-                        raise RecoverableLiveDisconnect("server GoAway")
+                    go_away = getattr(response, "go_away", None)
+                    if go_away is not None:
+                        pending_goaway = _safe_live_diagnostic(
+                            getattr(go_away, "time_left", None), 32,
+                        )
+                        logger.info(
+                            "LIVE_SESSION go_away received time_left=%s active_playback=%s queued_audio=%d",
+                            pending_goaway,
+                            bool(self._is_speaking),
+                            self.audio_in_queue.qsize() if self.audio_in_queue else 0,
+                        )
 
                     response_audio = _live_response_audio_bytes(response)
                     if response_audio:
@@ -4494,6 +4586,9 @@ class JarvisLive:
 
                     if response.server_content:
                         sc = response.server_content
+
+                        if getattr(sc, "interrupted", False):
+                            self._interrupt_live_playback("provider_interruption")
 
                         if sc.output_transcription and sc.output_transcription.text:
                             txt = _clean_transcript(sc.output_transcription.text)
@@ -4580,6 +4675,13 @@ class JarvisLive:
                             turn_had_audio = False
                             _new_turn = True
 
+                            if pending_goaway is not None:
+                                drained = await self._wait_for_playback_drain()
+                                raise RecoverableLiveDisconnect(
+                                    f"provider GoAway time_left={pending_goaway} playback_drained={drained}",
+                                    category="provider_goaway",
+                                )
+
                     if response.tool_call:
                         function_calls = list(response.tool_call.function_calls)
                         fn_responses = await self._execute_tool_batch(function_calls)
@@ -4594,6 +4696,11 @@ class JarvisLive:
                         )
                     if self._shutdown_requested.is_set() or not self._conversation_requested.is_set():
                         return
+                    if pending_goaway is not None and not response_audio and response.server_content is None:
+                        raise RecoverableLiveDisconnect(
+                            f"provider GoAway time_left={pending_goaway} idle=true",
+                            category="provider_goaway",
+                        )
                 # AsyncSession.receive() covers one complete model turn. Normal
                 # exhaustion means that turn ended, not that the Live transport did.
                 if not received_message:
@@ -4607,9 +4714,14 @@ class JarvisLive:
                 raise
             if isinstance(e, genai.errors.APIError) and "1000" in str(e):
                 print("[JARVIS] Live session closed by the server; reconnecting.")
-                raise RecoverableLiveDisconnect("Gemini Live session expired") from e
+                raise RecoverableLiveDisconnect(
+                    "Gemini Live session expired", category="provider_close", close_code=1000,
+                ) from e
             if _is_transient_live_connection_error(e):
-                raise RecoverableLiveDisconnect(str(e)) from e
+                raise RecoverableLiveDisconnect(
+                    _safe_live_diagnostic(e), category="network",
+                    close_code=getattr(e, "code", None),
+                ) from e
             print(f"[JARVIS] ❌ Recv: {e}")
             raise
 
@@ -4732,7 +4844,7 @@ class JarvisLive:
         start_time = time.time()
         reconnect_attempt = 0
         ever_connected = False
-        goaway_resume_attempted = False
+        goaway_resume_handle: str | None = None
         clean_goaway_fallback_used = False
         initial_history_disabled = live_model_id in _INITIAL_HISTORY_UNSUPPORTED_MODELS
         initial_history_fallback_logged = False
@@ -4958,13 +5070,19 @@ class JarvisLive:
                         "[JARVIS] 🔌 Live resumption was rejected; rebuilding from local continuity."
                     )
                 elif _is_recoverable_live_disconnect(e):
+                    diagnostic = _live_disconnect_diagnostics(e)
                     logger.info(
-                        "LIVE_SESSION disconnect recoverable error=%s handle=%s",
-                        type(actual).__name__, bool(self._session_resumption_handle),
+                        "LIVE_SESSION disconnect recoverable category=%s error=%s close_code=%s "
+                        "detail=%s handle=%s active_playback=%s queued_audio=%d queued_input=%d",
+                        diagnostic["category"], diagnostic["exception"],
+                        diagnostic["close_code"], diagnostic["detail"],
+                        bool(self._session_resumption_handle), bool(self._is_speaking),
+                        self.audio_in_queue.qsize() if self.audio_in_queue else 0,
+                        self.out_queue.qsize() if self.out_queue else 0,
                     )
-                    is_goaway = isinstance(actual, RecoverableLiveDisconnect) and str(actual) == "server GoAway"
+                    is_goaway = diagnostic["category"] == "provider_goaway"
                     if is_goaway and self._session_resumption_handle is not None:
-                        if goaway_resume_attempted:
+                        if goaway_resume_handle == self._session_resumption_handle:
                             self._session_resumption_handle = None
                             self._session_resumption_handle_at = None
                             self._resume_from_local_continuity = True
@@ -4973,7 +5091,7 @@ class JarvisLive:
                                 "[JARVIS] Repeated GoAway; falling back to local continuity."
                             )
                         else:
-                            goaway_resume_attempted = True
+                            goaway_resume_handle = self._session_resumption_handle
                     elif is_goaway and clean_goaway_fallback_used:
                         self._session_resumption_handle = None
                         self._session_resumption_handle_at = None
@@ -5001,6 +5119,14 @@ class JarvisLive:
                     self.ui.write_log(f"ERR: Falló la conexión con Gemini Live: {actual}")
                     return
             finally:
+                queued_audio = self._drain_queue(self.audio_in_queue)
+                queued_input = self._drain_queue(self.out_queue)
+                if queued_audio or queued_input:
+                    logger.info(
+                        "LIVE_SESSION queue_cleanup audio_chunks=%d input_chunks=%d",
+                        queued_audio, queued_input,
+                    )
+                self.set_speaking(False)
                 self.session = None
                 self.audio_in_queue = None
                 self.out_queue = None
