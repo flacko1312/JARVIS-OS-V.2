@@ -177,6 +177,13 @@ LANGUAGE_RULE = (
     "etiquetas internas entre corchetes."
 )
 
+TOOL_RESULT_TRUTH_RULE = (
+    "Los resultados observables de las herramientas son la única autoridad sobre si una acción se completó. "
+    "No afirmes que una ventana o aplicación se cerró si la herramienta informa fallo, ambigüedad o que sigue "
+    "abierta. Solo confirma el cierre cuando el resultado de la herramienta lo haya verificado. Ante un resultado "
+    "de 'ninguna ventana abierta', informa que no estaba abierta sin inventar una acción previa."
+)
+
 ROUTINE_ROUTING_RULES = """
 [SCHEDULING AND ROUTINE TOOL ROUTING — mandatory]
 Classify the user's intent before calling any action tool:
@@ -1238,7 +1245,8 @@ TOOL_DECLARATIONS = [
         "parameters": {
             "type": "OBJECT",
             "properties": {
-                "action":      {"type": "STRING", "description": "The action to perform"},
+                "action":      {"type": "STRING", "description": "The action to perform. Use close_tab only for a browser tab; use close_window for a named application window."},
+                "app_name":    {"type": "STRING", "description": "Exact requested application name for close_window/close_app, for example 'Bloc de notas', 'Spotify', or 'Chrome'. Never infer it from the foreground window."},
                 "description": {"type": "STRING", "description": "Natural language description of what to do"},
                 "value":       {"type": "STRING", "description": "Optional value: volume level, text to type, etc."}
             },
@@ -2931,7 +2939,13 @@ class JarvisLive:
         mem_str    = format_memory_for_prompt(memory)
         sys_prompt = _load_system_prompt()
 
-        parts = [LANGUAGE_RULE, DATE_TIME_AUTHORITY_RULE, ROUTINE_ROUTING_RULES, MEMORY_ROUTING_RULES]
+        parts = [
+            LANGUAGE_RULE,
+            DATE_TIME_AUTHORITY_RULE,
+            ROUTINE_ROUTING_RULES,
+            MEMORY_ROUTING_RULES,
+            TOOL_RESULT_TRUTH_RULE,
+        ]
         lilith_is_authoritative = False
         if lilith_context:
             lilith_str = self._format_lilith_context(lilith_context)
@@ -2950,6 +2964,7 @@ class JarvisLive:
             # immediate history wins without disabling either memory tool.
             parts.append(local_continuity)
         parts.append(LANGUAGE_RULE)  # repeated near the end: recency keeps the rule in force
+        parts.append(TOOL_RESULT_TRUTH_RULE)
         parts.append(CURRENT_CONVERSATION_PRECEDENCE)
 
         return types.LiveConnectConfig(

@@ -8,6 +8,8 @@ import subprocess
 import platform
 from pathlib import Path
 
+from actions.windows_window_control import close_named_window
+
 try:
     import pyautogui
     pyautogui.FAILSAFE = True
@@ -754,6 +756,11 @@ def computer_settings(
                 or description
                 or ""
             ).strip()
+
+            # A named Windows close is resolved by HWND/process identity and
+            # verified after WM_CLOSE. Foreground focus is never target authority.
+            if _OS == "Windows":
+                return close_named_window(app_name)
 
             # If user named an app on macOS, target that app directly.
             if _OS == "Darwin" and app_name:
