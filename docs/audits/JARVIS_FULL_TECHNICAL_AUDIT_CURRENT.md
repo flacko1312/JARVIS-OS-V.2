@@ -2,7 +2,7 @@
 
 **Date**: 2026-10-16
 **Branch**: main
-**HEAD**: f625583
+**HEAD**: 500b14d
 **Auditor**: automated from-scratch audit (Claude)
 **Source of truth**: executable code > tests > config > git > metadata > docs
 
@@ -12,8 +12,8 @@
 
 JARVIS is a substantial Windows desktop assistant (main.py: 5222 lines, ui.py: 8701 lines) built on Gemini Live for voice interaction, PyQt6 for the GUI, and an extensible tool system with 48 declared tools. It includes a hosted web surface (FastAPI + Next.js), a typed LILITH boundary for persistent memory/routines/Home Assistant, and a GREEN observational infrastructure layer (18 components, 372 tests).
 
-**Current automated state**: 1173 passed, 93 skipped, 1 failed, 49 subtests passed.
-The single failure is a known test contract gap (EXPECTED_TOOLS missing `open_capabilities_catalog`).
+**Current automated state**: 1174 passed, 93 skipped, 0 failed, 49 subtests passed.
+All tests green after fixing EXPECTED_TOOLS (commit 500b14d) and catalog tool reference (this follow-up).
 
 ---
 
@@ -271,7 +271,7 @@ All GREEN components follow shadow/passive integration: observe only, never auth
 | Subtests | 49 | — | — |
 | **Total** | **1173** | **93** | **1** |
 
-**Single failure**: test_qa_system.py::test_declared_tool_inventory_is_complete_and_unique (EXPECTED_TOOLS missing `open_capabilities_catalog`)
+**No failures** after commit 500b14d (EXPECTED_TOOLS fix) — 1174 passed, 0 failed
 
 **93 skips**: 77 historical UI spec (first-run/tour never existed), remainder platform/config skips.
 
@@ -337,13 +337,13 @@ All default OFF via `os.environ.get("JARVIS_*_ENABLED", "0") == "1"` pattern.
 
 ---
 
-## 16. Bugs Found (Document Only — NOT Fixed)
+## 16. Bugs Found
 
-| # | Severity | Description | Location | Action |
+| # | Severity | Description | Location | Status |
 |---|----------|-------------|----------|--------|
-| B-1 | P1 | EXPECTED_TOOLS set missing `open_capabilities_catalog` — causes test failure | core/qa_audit.py:12 | Add to set |
-| B-2 | P2 | JARVIS_CAPABILITIES.md generated at stale commit (47 tools, should be 48) | docs/JARVIS_CAPABILITIES.md | Regenerate |
-| B-3 | Info | Hosted chat model default (gemini-2.5-flash) differs from desktop text model (gemini-3.8-flash) | api/config.py:36 vs core/text_model.py:8 | Intentional or oversight — verify |
+| B-1 | P1 | EXPECTED_TOOLS set missing `open_capabilities_catalog` — causes test failure | core/qa_audit.py:12 | ✅ FIXED (commit 500b14d) |
+| B-2 | P2 | Capability catalog entry missing `tools=["open_capabilities_catalog"]` — catalog counted 47 not 48 | core/green/capability_catalog.py:689 | ✅ FIXED (this follow-up) |
+| B-3 | Info | Hosted chat model default (`gemini-2.5-flash`) differs from desktop text model (`gemini-3.8-flash`) | api/config.py:36 vs core/text_model.py:8 | Unresolved inconsistency — separate env vars (`JARVIS_CHAT_MODEL` / `GEMINI_TEXT_MODEL`), likely stale API default. Not a runtime bug — review when deploying. |
 
 ---
 
@@ -354,9 +354,9 @@ All default OFF via `os.environ.get("JARVIS_*_ENABLED", "0") == "1"` pattern.
 | ARCHITECTURE.md | Tool count 46→48 | ✅ FIXED this audit |
 | PROJECT_STATE.md | Tool count 46→48, date 10-14→10-16 | ✅ FIXED this audit |
 | CHANGELOG.md | Tool count annotation | ✅ FIXED this audit |
-| JARVIS_CAPABILITIES.md | Stale catalog (47 tools at commit 61208f7) | ⚠️ Needs regeneration |
-| GREEN_FOUNDATION.md | Line counts stale (docs: 2763, actual: 3541); test count OK | ⚠️ Needs update |
-| GREEN_RUNTIME_INTEGRATION_HANDOFF.md | HEAD stale (dc4f61f vs f625583) | ⚠️ Minor |
+| JARVIS_CAPABILITIES.md | Regenerated at 500b14d, now 48 tools | ✅ FIXED this follow-up |
+| GREEN_FOUNDATION.md | Line counts updated (3541 total) | ✅ FIXED prior audit |
+| GREEN_RUNTIME_INTEGRATION_HANDOFF.md | HEAD updated to f625583 | ✅ FIXED prior audit |
 | TESTING.md | Date 10-13, still accurate | ✅ OK |
 | TECHNICAL_DEBT.md | Accurate, no new entries needed | ✅ OK |
 | TASKS.md | Accurate, no changes needed | ✅ OK |

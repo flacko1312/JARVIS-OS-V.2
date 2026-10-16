@@ -687,6 +687,7 @@ def build_inventory() -> CapabilityInventory:
     green.entries.append(CapabilityEntry(
         name="Capability catalog / Catálogo de capacidades",
         status=ValidationStatus.AVAILABLE,
+        tools=["open_capabilities_catalog"],
         description="This document. Auto-generated searchable reference of all JARVIS capabilities.",
         can=["Show capabilities / Mostrar capacidades",
              "Refresh catalog / Actualizar catálogo"],

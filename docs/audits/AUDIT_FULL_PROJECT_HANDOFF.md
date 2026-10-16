@@ -2,7 +2,7 @@
 
 **Last updated**: 2026-10-16
 **Branch**: main
-**HEAD**: f625583 (26 commits ahead of origin/main at 196ffdd)
+**HEAD**: 500b14d (28 commits ahead of origin/main at 196ffdd)
 **Audit status**: COMPLETE — master document at `docs/audits/JARVIS_FULL_TECHNICAL_AUDIT_CURRENT.md`
 
 ---
@@ -41,11 +41,11 @@
 ### 3. Tool Declaration Audit ✅
 - **Code reality**: 48 tool declarations in TOOL_DECLARATIONS (lines 986-2177)
 - **All 48 have dispatch handlers** in `_execute_tool` — zero mismatches
-- **EXPECTED_TOOLS in qa_audit.py**: 47 tools — missing `open_capabilities_catalog`
+- **EXPECTED_TOOLS in qa_audit.py**: 48 tools — ✅ FIXED (commit 500b14d)
 - **ARCHITECTURE.md claims**: "46 unique declared tools" — STALE (should be 48)
 - **PROJECT_STATE.md claims**: "46 unique declared tools" — STALE (should be 48)
-- **JARVIS_CAPABILITIES.md claims**: "47 registered tools" — STALE (should be 48)
-- **BUG FOUND**: test_qa_system.py::test_declared_tool_inventory_is_complete_and_unique FAILS because EXPECTED_TOOLS is missing `open_capabilities_catalog`
+- **JARVIS_CAPABILITIES.md claims**: "48 registered tools" — ✅ FIXED (catalog regenerated)
+- **All QA tests pass** after fixes (1174 passed, 0 failed)
 
 Complete tool list (48):
 date_time, open_app, web_search, weather_report, check_messages, prepare_message_reply, send_message, email_control, reminder, youtube_video, media_control, screen_process, computer_settings, browser_control, file_controller, desktop_control, code_helper, dev_agent, agent_task, computer_control, game_updater, flight_finder, graphics_quality, jarvis_ui_control, deep_research, create_presentation, task_status, file_processor, save_memory, local_memory_search, lilith_memory_search, lilith_memory_store, lilith_memory_delete, lilith_home_action, lilith_request_approval, lilith_resolve_approval, lilith_health, lilith_runtime_status, lilith_docs_list, lilith_docs_read, lilith_docs_search, lilith_source_list, lilith_source_read, lilith_source_search, lilith_git_status, lilith_command_submit, lilith_routine, open_capabilities_catalog
@@ -61,9 +61,8 @@ date_time, open_app, web_search, weather_report, check_messages, prepare_message
 - **cli_main** (line 5562): entry point, creates JarvisLive + PyQt MainWindow
 
 ### 5. Test Suite ✅
-- **Full pytest run**: 1173 passed, 93 skipped, 1 failed, 49 subtests passed (35.47s)
-- **Single failure**: test_qa_system.py::test_declared_tool_inventory_is_complete_and_unique
-  - Cause: EXPECTED_TOOLS set missing `open_capabilities_catalog` (added by GREEN)
+- **Full pytest run**: 1174 passed, 93 skipped, 0 failed, 49 subtests passed
+- **All tests green** after EXPECTED_TOOLS fix (commit 500b14d) and catalog tool reference fix
 - **93 skips**: 77 historical UI spec skips + GREEN/platform skips
 - **1 warning**: Python 3.14 google.genai typing deprecation
 - **GREEN tests**: 372 passing (18 test files)

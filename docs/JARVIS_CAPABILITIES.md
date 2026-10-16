@@ -1,11 +1,11 @@
 # JARVIS — Capability Catalogue
 
-Generated: 2026-10-16 05:11:41
-JARVIS commit: `1901a1e`
+Generated: 2026-10-16 15:28:35
+JARVIS commit: `500b14d`
 
 ## Summary
 
-- **Total registered tools**: 47
+- **Total registered tools**: 48
 - **Available capabilities**: 35
 - **Disabled**: 0
 - **Pending physical validation**: 1
@@ -908,6 +908,9 @@ Local document retrieval for technical documentation. Separate from personal mem
 
 **Status**: ✅ AVAILABLE
 **Authority**: JARVIS
+
+**Tools**:
+- `open_capabilities_catalog`
 
 **Can**:
 - Show capabilities / Mostrar capacidades
