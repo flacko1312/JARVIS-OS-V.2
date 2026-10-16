@@ -4,7 +4,7 @@ Status: **IMPLEMENTED** as of 2026-10-16.
 
 ## Overview
 
-Nine passive, observational, metadata-only infrastructure components that improve JARVIS observability, modularity, agent lifecycle, tool organization, capabilities, loop protection, execution budgets, reusable workflows, and documentary knowledge retrieval.
+Ten passive, observational, metadata-only infrastructure components that improve JARVIS observability, modularity, agent lifecycle, tool organization, capabilities, loop protection, execution budgets, reusable workflows, and documentary knowledge retrieval.
 
 OpenJarvis is an architectural reference only. It is not a runtime dependency or authority in JARVIS.
 
@@ -94,6 +94,16 @@ Local document retrieval with path exclusions for secrets/binaries, lexical TF s
 - Feature flag: `JARVIS_RAG_ENABLED=1`
 - 28 tests
 
+### 10. Capability Catalog (`core/green/capability_catalog.py`)
+
+Auto-generated searchable Markdown document of all JARVIS capabilities. Built from real Tool Registry, Capabilities, and Agent metadata. Includes Spanish/English search terms, status symbols, authority attribution, and side-effect/approval indicators.
+
+- Output: `docs/JARVIS_CAPABILITIES.md` (generated, not manually maintained)
+- Opens in VS Code (preferred) or Notepad (fallback)
+- API: `build_inventory()`, `render_markdown()`, `write_catalog()`, `open_catalog()`
+- All 47 JARVIS tools mapped to categories with bilingual search terms
+- 33 tests
+
 ## Feature flags
 
 All GREEN components default to disabled. Existing JARVIS behavior is unchanged when flags are unset:
@@ -105,7 +115,7 @@ All GREEN components default to disabled. Existing JARVIS behavior is unchanged 
 | `JARVIS_TOOL_REGISTRY_ENABLED` | Tool Registry |
 | `JARVIS_RAG_ENABLED` | Documentary RAG |
 
-Components without runtime integration (Agent Contract, Capabilities, Loop Guards, Budgets, Skills) need no feature flag — they are library code used by explicit callers.
+Components without runtime integration (Agent Contract, Capabilities, Loop Guards, Budgets, Skills, Capability Catalog) need no feature flag — they are library code used by explicit callers.
 
 ## Rollback / disable
 
@@ -130,4 +140,4 @@ GREEN does not modify or rewrite JL-A10 execution paths. JL-A10 is CLOSED with p
 
 ## Test summary
 
-175 focused GREEN tests, all passing. Existing JARVIS regression suite unaffected.
+208 focused GREEN tests, all passing. Existing JARVIS regression suite unaffected.
