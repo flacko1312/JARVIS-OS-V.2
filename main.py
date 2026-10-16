@@ -3038,6 +3038,11 @@ class JarvisLive:
         args = dict(fc.args or {})
 
         if getattr(self, "cloud_safe", False) and name not in CLOUD_SAFE_ACTIONS:
+            try:
+                from core.green.runtime import emit_tool_rejected
+                emit_tool_rejected(tool_name=name, function_call_id=fc.id, reason="cloud_safe")
+            except Exception:
+                pass
             return types.FunctionResponse(
                 id=fc.id,
                 name=name,
@@ -3049,6 +3054,11 @@ class JarvisLive:
             )
 
         if getattr(self.ui, "operational_ready", True) is False:
+            try:
+                from core.green.runtime import emit_tool_rejected
+                emit_tool_rejected(tool_name=name, function_call_id=fc.id, reason="not_ready")
+            except Exception:
+                pass
             return types.FunctionResponse(
                 id=fc.id,
                 name=name,
@@ -3059,11 +3069,31 @@ class JarvisLive:
 
         qa_decision = guard_tool_call(name, args)
         if not qa_decision.allowed:
+            try:
+                from core.green.runtime import emit_tool_rejected
+                emit_tool_rejected(tool_name=name, function_call_id=fc.id, reason="qa_blocked")
+            except Exception:
+                pass
             return types.FunctionResponse(
                 id=fc.id,
                 name=name,
                 response={"result": qa_block_message(qa_decision)},
             )
+
+        # GREEN: trace + event for authorized tool execution
+        _green_trace = None
+        try:
+            from core.green.runtime import trace_tool_start, emit_tool_authorized
+            emit_tool_authorized(tool_name=name, function_call_id=fc.id)
+            _green_trace = trace_tool_start(
+                tool_name=name,
+                tool_arguments=args,
+                function_call_id=fc.id,
+                session_id=getattr(self, "_schedule_session_id", None),
+                turn_id=getattr(self, "_schedule_turn_id", None),
+            )
+        except Exception:
+            pass
 
         print(f"[JARVIS] 🔧 {name}  {args}")
         logger.info("TOOL_CALL  %s  args=%s", name, args)
@@ -3922,6 +3952,17 @@ class JarvisLive:
             logger.error("TOOL_FAILED  %s  error=%s", name, e, exc_info=True)
             traceback.print_exc()
             self.speak_error(name, e)
+            try:
+                from core.green.runtime import trace_tool_failed
+                trace_tool_failed(_green_trace, error=e)
+            except Exception:
+                pass
+        else:
+            try:
+                from core.green.runtime import trace_tool_complete
+                trace_tool_complete(_green_trace, result_summary=str(result)[:200])
+            except Exception:
+                pass
 
         if not self.ui.muted:
             self.ui.set_state("LISTENING")
@@ -3939,6 +3980,15 @@ class JarvisLive:
         self._schedule_turn_source = source
         self._current_input_transcript = str(text or "").strip()
         self._schedule_guard_routed = False
+        try:
+            from core.green.runtime import emit_turn_started
+            emit_turn_started(
+                session_id=self._schedule_session_id,
+                turn_id=self._schedule_turn_id,
+                source=source,
+            )
+        except Exception:
+            pass
         self._memory_turn_effects.clear()
         self._capture_pending_recurring(self._current_input_transcript)
 
