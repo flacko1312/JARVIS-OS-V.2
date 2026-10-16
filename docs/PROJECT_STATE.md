@@ -1,6 +1,6 @@
 # JARVIS Project State
 
-Status: **CANONICAL CURRENT STATE** as of 2026-10-14.
+Status: **CANONICAL CURRENT STATE** as of 2026-10-16.
 
 ## Verdict
 
@@ -11,7 +11,7 @@ Machine-verifiable recovery and stabilization are complete on the real Windows c
 - Real Windows runtime and repository identity established at `C:\JARVIS`.
 - Local code commit and remote documentation history reconciled without overwriting either side.
 - Gemini Live session, Spanish prompt, tool registration/response path, voice/model precedence, and audio formats verified from code and tests.
-- 46 unique declared tools have dispatch paths and schemas.
+- 48 unique declared tools have dispatch paths and schemas.
 - Memory authority guards enforce LILITH persistence versus explicit in-process session storage.
 - Routine guard enforces recurring/one-shot/immediate routing, turn provenance, and duplicate FunctionCall IDs.
 - Routine guard now validates deterministic Spanish time expressions in current-turn routine descriptions before submitting `lilith_routine`, including the JL-A10 `10 de la noche` -> `22:00` regression.

@@ -4,7 +4,7 @@
 **Audited**: 2026-10-16 (full audit, all tests verified)
 **Branch**: main (25 commits ahead of origin)
 **Total GREEN tests**: 372 (all passing, 0 failures, 0 skipped)
-**HEAD**: `dc4f61f`
+**HEAD**: `f625583`
 
 ---
 
@@ -64,7 +64,7 @@ All GREEN runtime components follow the shadow integration pattern:
 | 3962 | `_execute_tool` | `trace_tool_complete` (success path) |
 | 3984 | `_begin_schedule_turn` | `emit_turn_started` |
 
-### GREEN Source Files (18 components, 2763 total lines)
+### GREEN Source Files (18 components, 3541 total lines)
 
 | File | Lines | Layer |
 |------|-------|-------|

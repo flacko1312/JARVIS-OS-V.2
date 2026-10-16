@@ -1,10 +1,10 @@
 # GREEN Foundation Architecture
 
-Status: **IMPLEMENTED + RUNTIME INTEGRATED** as of 2026-10-16.
+Status: **IMPLEMENTED + RUNTIME INTEGRATED**. Last verified from code: 2026-10-16.
 
 ## Overview
 
-Eighteen passive, observational, metadata-only infrastructure components split across two layers:
+Eighteen passive, observational, metadata-only infrastructure components split across two layers (3541 total source lines, 372 tests):
 
 - **Foundation** (10 components): Core infrastructure — tracing, events, registry, contracts, capabilities, loop guards, budgets, skills, documentary RAG, capability catalog.
 - **Runtime Integration** (8 components): Bridges connecting foundation to the live JARVIS runtime — shadow instrumentation in `_execute_tool`, tool metadata parity, agent adapters, capabilities query surface, budget guard, skills runtime, RAG runtime.
@@ -38,7 +38,7 @@ LILITH remains canonical for persistent personal memory, Home Assistant authorit
 
 ## Foundation Components
 
-### 1. ExecutionTrace (`core/green/execution_trace.py`) — 156 lines
+### 1. ExecutionTrace (`core/green/execution_trace.py`) — 199 lines
 
 Structured tracing with unique trace IDs, parent/child correlation, session/turn/FunctionCall correlation, timing, centralized secret redaction, and bounded in-memory storage.
 
@@ -46,14 +46,14 @@ Structured tracing with unique trace IDs, parent/child correlation, session/turn
 - Redacts: password, token, api_key, authorization, cookie, secret, private_key, access_token, refresh_token, credential
 - 28 tests
 
-### 2. Event Bus (`core/green/event_bus.py`) — 82 lines
+### 2. Event Bus (`core/green/event_bus.py`) — 109 lines
 
 Lightweight in-process pub/sub. Subscriber exceptions are isolated — a failing handler never crashes core operations. Event vocabulary: TURN, ROUTING, TOOL, AGENT, LILITH, TRACE lifecycle events.
 
 - Feature flag: `JARVIS_EVENT_BUS_ENABLED=1`
 - 15 tests
 
-### 3. Tool Registry (`core/green/tool_registry.py`) — 118 lines
+### 3. Tool Registry (`core/green/tool_registry.py`) — 151 lines
 
 Central catalogue of JARVIS tools with domain, risk level, capabilities, schema validation. Includes `catalogue_from_declarations()` for parity with existing TOOL_DECLARATIONS.
 
@@ -61,32 +61,32 @@ Central catalogue of JARVIS tools with domain, risk level, capabilities, schema 
 - Has no `execute()` method by design
 - 20 tests
 
-### 4. Agent Contract (`core/green/agent_contract.py`) — 133 lines
+### 4. Agent Contract (`core/green/agent_contract.py`) — 175 lines
 
 Common interface (AgentProtocol) for existing agents. BaseAgent with adapter pattern for planner, executor, dev_agent, deep_research. Structured AgentRequest/AgentContext/AgentResult/AgentError.
 
 - States: CREATED, RUNNING, WAITING, COMPLETED, FAILED, CANCELLED, TIMED_OUT, BUDGET_EXHAUSTED, LOOP_DETECTED
 - 19 tests
 
-### 5. Capabilities (`core/green/capabilities.py`) — 90 lines
+### 5. Capabilities (`core/green/capabilities.py`) — 127 lines
 
 Validated enum vocabulary describing what tools/agents/skills can do: filesystem, browser, windows, vision, memory, home, development, network, system, multimedia, communication. Unknown capabilities are rejected (fail-closed).
 
 - 18 tests
 
-### 6. Loop Guards (`core/green/loop_guard.py`) — 107 lines
+### 6. Loop Guards (`core/green/loop_guard.py`) — 131 lines
 
 Deterministic fingerprint-based detection: same-operation, same-error, no-progress stagnation. Configurable thresholds. Returns structured LoopDetection — never autonomously acts.
 
 - 14 tests
 
-### 7. Agent Budgets (`core/green/agent_budget.py`) — 123 lines
+### 7. Agent Budgets (`core/green/agent_budget.py`) — 145 lines
 
 Step, tool-call, failure, consecutive-failure, and runtime-seconds limits. Clean BUDGET_EXHAUSTED with structured reason. Integrates with Agent Contract.
 
 - 12 tests
 
-### 8. Skills Framework (`core/green/skills.py`) — 173 lines
+### 8. Skills Framework (`core/green/skills.py`) — 217 lines
 
 Local-only, version-controlled skill definitions with validated capabilities, allowed-tool enforcement, and step validation. SkillRunner produces tool requests — never calls handlers directly. Two safe reference skills included.
 
@@ -94,7 +94,7 @@ Local-only, version-controlled skill definitions with validated capabilities, al
 - No arbitrary code execution
 - 21 tests
 
-### 9. Documentary RAG (`core/green/documentary_rag.py`) — 224 lines
+### 9. Documentary RAG (`core/green/documentary_rag.py`) — 289 lines
 
 Local document retrieval with path exclusions for secrets/binaries, lexical TF scoring, source attribution, stable chunk IDs. Interface supports future BM25/embedding/hybrid backends.
 
@@ -102,7 +102,7 @@ Local document retrieval with path exclusions for secrets/binaries, lexical TF s
 - Feature flag: `JARVIS_RAG_ENABLED=1`
 - 28 tests
 
-### 10. Capability Catalog (`core/green/capability_catalog.py`) — 697 lines
+### 10. Capability Catalog (`core/green/capability_catalog.py`) — 762 lines
 
 Auto-generated searchable Markdown document of all JARVIS capabilities. Built from real Tool Registry, Capabilities, and Agent metadata. Includes Spanish/English search terms, status symbols, authority attribution, and side-effect/approval indicators.
 
@@ -116,7 +116,7 @@ Auto-generated searchable Markdown document of all JARVIS capabilities. Built fr
 
 ## Runtime Integration Components
 
-### 11. Runtime Bridge (`core/green/runtime.py`) — 211 lines
+### 11. Runtime Bridge (`core/green/runtime.py`) — 248 lines
 
 Single integration surface between JARVIS `_execute_tool` and GREEN infrastructure. Wired into main.py via lazy imports. Instruments tool rejection, authorization, start/complete/fail lifecycle, and turn lifecycle.
 
@@ -125,7 +125,7 @@ Single integration surface between JARVIS `_execute_tool` and GREEN infrastructu
 - All exceptions caught and isolated from user-facing execution
 - 24 tests
 
-### 12. Tool Metadata (`core/green/tool_metadata.py`) — 249 lines
+### 12. Tool Metadata (`core/green/tool_metadata.py`) — 265 lines
 
 Canonical domain, risk level, capability, and side-effect mapping for all 48 JARVIS tools. Powers the enriched Tool Registry and parity checker.
 
@@ -133,7 +133,7 @@ Canonical domain, risk level, capability, and side-effect mapping for all 48 JAR
 - `enrich_registry_from_declarations()` and `check_parity()` APIs
 - 21 tests
 
-### 13. Agent Adapters (`core/green/agent_adapters.py`) — 79 lines
+### 13. Agent Adapters (`core/green/agent_adapters.py`) — 107 lines
 
 BaseAgent wrappers for the three real JARVIS agents: AgentExecutor, dev_agent, deep_research. Lazy imports keep existing execution unchanged. Provides structured lifecycle via `_do_execute` pattern.
 
@@ -142,28 +142,28 @@ BaseAgent wrappers for the three real JARVIS agents: AgentExecutor, dev_agent, d
 - DeepResearchAdapter: web_search, analysis, report_generation
 - 29 tests
 
-### 14. Capabilities Runtime (`core/green/capabilities_runtime.py`) — 146 lines
+### 14. Capabilities Runtime (`core/green/capabilities_runtime.py`) — 171 lines
 
 Unified read-only query surface for capability metadata. Supports lookup by tool name, agent ID, domain, and capability tag. Ties together tool_metadata + agent_adapters.
 
 - Feature flag: `JARVIS_CAPABILITIES_RUNTIME_ENABLED=1`
 - 23 tests
 
-### 15. Budget Guard (`core/green/budget_guard.py`) — 132 lines
+### 15. Budget Guard (`core/green/budget_guard.py`) — 159 lines
 
 Per-agent budget tracking (steps, tool calls, time, consecutive failures) integrated with LoopGuard. Reports exhaustion but does not kill agents. Default budgets for all three agent adapters.
 
 - Feature flag: `JARVIS_BUDGET_GUARD_ENABLED=1`
 - 18 tests
 
-### 16. Skills Runtime (`core/green/skills_runtime.py`) — 113 lines
+### 16. Skills Runtime (`core/green/skills_runtime.py`) — 133 lines
 
 Read-only skill listing, detail lookup, and execution preview. Built-in safe skills auto-registered. Skills execute through normal JARVIS authority — never bypass guards.
 
 - Feature flag: `JARVIS_SKILLS_RUNTIME_ENABLED=1`
 - 16 tests
 
-### 17. RAG Runtime (`core/green/rag_runtime.py`) — 124 lines
+### 17. RAG Runtime (`core/green/rag_runtime.py`) — 146 lines
 
 Read-only documentary retrieval with source attribution. Auto-indexes docs/ directories. Excludes secrets from indexing. Separate from personal memory (LILITH).
 
@@ -212,7 +212,7 @@ GREEN does not modify or rewrite JL-A10 execution paths. JL-A10 is CLOSED with p
 
 ## Test Summary
 
-**372 GREEN tests**, all passing. 18 test files across foundation and runtime layers:
+**372 GREEN tests**, all passing (verified 2026-10-16). 18 test files across foundation and runtime layers:
 
 | Test file | Tests | Component |
 |---|---|---|

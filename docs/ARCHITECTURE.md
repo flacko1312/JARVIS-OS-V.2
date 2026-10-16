@@ -1,6 +1,6 @@
 # JARVIS Architecture
 
-Status: **CANONICAL**. This document describes executable architecture verified during the 2026-10-08 recovery. When it conflicts with historical prose, code plus tests plus the recovery audit win.
+Status: **CANONICAL**. Last reconciled against executable code: 2026-10-16. When it conflicts with historical prose, code plus tests plus the recovery audit win.
 
 ## System boundary
 
@@ -37,7 +37,7 @@ JARVIS owns the human interface, Gemini Live session, microphone/playback, Spani
 
 ## Tool execution and authority
 
-`TOOL_DECLARATIONS` contains 46 unique schemas. `_receive_audio()` reads Gemini FunctionCalls, `_execute_tool_batch()` serializes every potentially mutating/mixed tool, and `_execute_tool_guarded()` applies turn provenance, duplicate FunctionCall ID, schedule, and memory authority guards before `_execute_tool()` dispatches. Results return via `session.send_tool_response()`.
+`TOOL_DECLARATIONS` contains 48 unique schemas. `_receive_audio()` reads Gemini FunctionCalls, `_execute_tool_batch()` serializes every potentially mutating/mixed tool, and `_execute_tool_guarded()` applies turn provenance, duplicate FunctionCall ID, schedule, and memory authority guards before `_execute_tool()` dispatches. Results return via `session.send_tool_response()`.
 
 Scheduled effects are fail-closed. Recurring requests route only to `lilith_routine`; one-shot reminders route to `reminder`; immediate Home actions route to `lilith_home_action`. FunctionCall IDs, session/turn provenance, pending routine state, and duplicate suppression are enforced.
 
