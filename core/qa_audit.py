@@ -20,7 +20,7 @@ EXPECTED_TOOLS = {
     "lilith_home_action", "lilith_request_approval", "lilith_resolve_approval", "lilith_health",
     "lilith_runtime_status", "lilith_docs_list", "lilith_docs_read", "lilith_docs_search",
     "lilith_source_list", "lilith_source_read", "lilith_source_search", "lilith_git_status",
-    "lilith_command_submit", "lilith_routine",
+    "lilith_command_submit", "lilith_routine", "open_capabilities_catalog",
 }
 
 
