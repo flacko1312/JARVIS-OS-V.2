@@ -2147,6 +2147,33 @@ TOOL_DECLARATIONS = [
             "required": ["operation"]
         }
     },
+    {
+        "name": "open_capabilities_catalog",
+        "description": (
+            "Opens the JARVIS capability catalog — a searchable generated list of "
+            "everything JARVIS can do. Call this tool whenever the user asks to see "
+            "JARVIS capabilities, abilities, skills, functions, or what JARVIS can do. "
+            "Triggers: abre tus habilidades, muéstrame tus habilidades, abre tus "
+            "capacidades, enséñame qué puedes hacer, abre la lista de funciones, "
+            "show me your capabilities, what can you do, list your abilities. "
+            "The catalog is refreshed automatically and opened in a text editor. "
+            "Do NOT read the catalog aloud — just confirm it was opened."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "action": {
+                    "type": "STRING",
+                    "enum": ["open", "refresh"],
+                    "description": (
+                        "open: refresh and open the catalog (default). "
+                        "refresh: regenerate without opening."
+                    ),
+                },
+            },
+            "required": [],
+        },
+    },
 ]
 
 # Tool names exposed by hosted clients. The names here are Gemini function
@@ -3874,6 +3901,17 @@ class JarvisLive:
                                 fc.id, getattr(exc, "code", type(exc).__name__), str(exc),
                             )
                             result = f"LILITH routine request failed; no success confirmed: {exc}"
+
+            elif name == "open_capabilities_catalog":
+                from core.green.capability_catalog import refresh_catalog, open_catalog
+                action = str(args.get("action", "open")).strip().lower()
+                if action == "refresh":
+                    path = await asyncio.to_thread(refresh_catalog)
+                    result = f"Capability catalog refreshed at {path}."
+                else:
+                    await asyncio.to_thread(refresh_catalog)
+                    msg = await asyncio.to_thread(open_catalog)
+                    result = msg
 
             else:
                 result = f"Unknown tool: {name}"
