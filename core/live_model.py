@@ -8,10 +8,11 @@ from pathlib import Path
 
 
 DEFAULT_LIVE_MODEL = "models/gemini-2.5-flash-native-audio-preview-12-2025"
+HEADLESS_LIVE_MODEL = "models/gemini-2.5-flash-native-audio-latest"
 LIVE_ACTION = "bidiGenerateContent"
 
 
-def configured_live_model(config_path: Path) -> str:
+def configured_live_model(config_path: Path, *, headless: bool = False) -> str:
     env_model = os.environ.get("GEMINI_LIVE_MODEL", "").strip()
     if env_model:
         return env_model
@@ -21,7 +22,9 @@ def configured_live_model(config_path: Path) -> str:
         ).strip()
     except Exception:
         configured = ""
-    return configured or DEFAULT_LIVE_MODEL
+    if configured:
+        return configured
+    return HEADLESS_LIVE_MODEL if headless else DEFAULT_LIVE_MODEL
 
 
 def _model_name(model) -> str:
@@ -35,8 +38,8 @@ def _model_actions(model) -> set[str]:
     return {str(action).lower() for action in (actions or [])}
 
 
-def pick_live_model(client, config_path: Path) -> str:
-    configured = configured_live_model(config_path)
+def pick_live_model(client, config_path: Path, *, headless: bool = False) -> str:
+    configured = configured_live_model(config_path, headless=headless)
     try:
         models = list(client.models.list())
     except Exception as exc:

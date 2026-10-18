@@ -14,10 +14,14 @@ from core.schedule_safety import daily_time_from_text as _daily_time_from_text
 from core.schedule_safety import normalize_timezone
 from core.schedule_safety import normalized_turn_text as _normalized_turn_text
 from core.schedule_safety import schedule_semantics as _schedule_semantics
+from core.schedule_safety import user_confirmed as _user_confirmed
 from core.date_time_authority import DateTimeAuthority
 from core.audio_barge_in import BargeInDecision, SpeechAwareBargeInGate
 
-import sounddevice as sd
+try:
+    import sounddevice as sd
+except (ImportError, OSError):
+    sd = None  # headless / no-audio: resolved lazily when audio is actually needed
 from google import genai
 from google.genai import types
 from api import status as jarvis_status
@@ -249,6 +253,28 @@ distinguish morning from afternoon/evening, ask for clarification and call no ac
 "10 de la noche" is unambiguously 22:00.
 """.strip()
 
+HEADLESS_SYSTEM_RULES = """
+[HEADLESS TOOL PROFILE — mandatory]
+You are JARVIS Headless on Ubuntu. The only tools available in this profile are exactly:
+lilith_memory_search, lilith_memory_store, lilith_memory_delete, lilith_home_action,
+and lilith_routine. Never request, call, imply, or invent any tool outside that list.
+For current date/time questions, do not guess and do not call date_time: say briefly that
+current date/time is not exposed in this Headless profile.
+One-shot local reminders are not available in this profile. Persistent or recurring schedules
+must use lilith_routine. Immediate Home Assistant actions must use lilith_home_action.
+Persistent memory outside the active conversation uses only the three lilith_memory_* tools,
+and only when the user explicitly asks to search, store, or delete persistent memory.
+Answer ordinary conversation and current-context follow-ups directly without a memory tool.
+""".strip()
+
+HEADLESS_CURRENT_CONVERSATION_PRECEDENCE = """
+[HEADLESS CURRENT CONVERSATION PRECEDENCE — highest priority]
+If the answer exists in the active or restored logical conversation, answer it directly.
+Do not call any memory tool for immediate context. Use lilith_memory_search/store/delete only
+for explicit persistent-memory requests concerning information outside the current conversation.
+Never mention unavailable desktop/local tools.
+""".strip()
+
 _SCHEDULED_TOOL_NAMES = frozenset({"lilith_home_action", "reminder", "lilith_routine"})
 _ROUTINE_READ_OPERATIONS = frozenset({"list", "get", "history"})
 _ROUTINE_WRITE_OPERATIONS = frozenset({"create", "update", "enable", "disable", "delete"})
@@ -468,13 +494,22 @@ class PendingRoutineState:
         description_time = _daily_time_from_text(str(args.get("description") or ""))
         if description_time is not None:
             self.hour, self.minute = description_time
+        name_time = _daily_time_from_text(str(args.get("name") or ""))
+        if name_time is not None and self.hour is None:
+            self.hour, self.minute = name_time
         schedule_type = str(args.get("schedule_type") or "").strip().lower()
         if schedule_type:
             self.recurrence = schedule_type
         schedule = args.get("schedule")
         if isinstance(schedule, dict):
             if self.hour is None and isinstance(schedule.get("hour"), int):
-                self.hour = schedule["hour"]
+                raw_h = schedule["hour"]
+                from core.schedule_safety import _resolve_period, _apply_period, normalized_turn_text
+                period_ctx = _resolve_period(
+                    normalized_turn_text(str(args.get("description") or args.get("name") or ""))
+                )
+                resolved = _apply_period(raw_h, period_ctx) if period_ctx else raw_h
+                self.hour = resolved if resolved is not None else raw_h
             if self.minute is None and isinstance(schedule.get("minute"), int):
                 self.minute = schedule["minute"]
         timezone = normalize_timezone(args.get("timezone"), default=self.timezone)
@@ -499,6 +534,20 @@ class PendingRoutineState:
         if not self.action:
             missing.add("action")
         self.pending_clarification = missing
+
+
+@dataclass
+class PendingRoutineConfirmation:
+    """Holds a routine mutation awaiting explicit user confirmation."""
+
+    session_id: str
+    turn_sequence: int
+    fc_id: str
+    fc_name: str
+    operation: str
+    args: dict
+    summary: str
+    confirmed: bool | None = None
 
 
 def _is_daily_routine_text(text: str) -> bool:
@@ -707,6 +756,60 @@ def _current_default_input_device() -> tuple[int | None, str]:
     return index, _safe_live_diagnostic(info.get("name", "default input"), 80)
 
 
+def _device_supports_rate(idx: int, kind: str, rate: int) -> bool:
+    """Return True if device *idx* accepts *rate* Hz for *kind*."""
+    if sd is None:
+        return False
+    try:
+        check = sd.check_input_settings if kind == "input" else sd.check_output_settings
+        check(device=idx, samplerate=rate, channels=CHANNELS, dtype="int16")
+        return True
+    except Exception:
+        return False
+
+
+def _resolve_device_by_name(
+    kind: str, name_hints: tuple[str, ...] = (), *, required_rate: int = 0
+) -> int | None:
+    """Find an audio device whose name contains any of *name_hints*.
+
+    *kind* is ``"input"`` or ``"output"``.  When *required_rate* is nonzero
+    the candidate must also accept that sample rate.  Returns the device
+    index, or ``None`` to let sounddevice use the system default.
+    """
+    if sd is None:
+        return None
+    devices = sd.query_devices()
+    chan_key = "max_input_channels" if kind == "input" else "max_output_channels"
+    for hint in name_hints:
+        hint_lower = hint.lower()
+        for idx, dev in enumerate(devices):
+            if hint_lower in dev["name"].lower() and int(dev.get(chan_key, 0)) >= CHANNELS:
+                if required_rate and not _device_supports_rate(idx, kind, required_rate):
+                    continue
+                return idx
+    return None
+
+
+_HEADLESS_INPUT_HINTS = (
+    "ALC3234 Analog", "HDA Intel PCH", "pulse", "default",
+)
+_HEADLESS_OUTPUT_HINTS = (
+    "ALC3234 Analog", "HDA Intel PCH", "pulse", "default",
+)
+
+
+def _headless_input_device() -> tuple[int | None, str]:
+    """Resolve input device by name for headless deployments."""
+    resolved = _resolve_device_by_name(
+        "input", _HEADLESS_INPUT_HINTS, required_rate=SEND_SAMPLE_RATE,
+    )
+    if resolved is not None:
+        info = sd.query_devices(resolved, "input")
+        return resolved, _safe_live_diagnostic(info.get("name", "headless input"), 80)
+    return _current_default_input_device()
+
+
 def _is_invalid_argument_1007(exc: BaseException) -> bool:
     return any(
         "1007" in str(leaf)
@@ -716,11 +819,14 @@ def _is_invalid_argument_1007(exc: BaseException) -> bool:
 
 
 def _is_session_not_found_1008(exc: BaseException) -> bool:
-    return any(
-        "1008" in str(leaf)
-        and "session not found" in str(leaf).lower()
-        for leaf in _exception_leaves(exc)
-    )
+    for leaf in _exception_leaves(exc):
+        s = str(leaf).lower()
+        if "1008" in s and (
+            "session not found" in s
+            or "requested entity was not found" in s
+        ):
+            return True
+    return False
 
 
 _SESSION_RESUMPTION_HANDLE_MAX_AGE = 600.0  # 10 minutes
@@ -2232,9 +2338,10 @@ class ConversationState(str, Enum):
 
 MAX_LIVE_RECONNECT_ATTEMPTS = 5
 _INITIAL_HISTORY_UNSUPPORTED_MODELS = frozenset({
-    # Verified against google-genai 2.25.0 / Gemini Developer API v1beta:
-    # even a two-item user/model history is rejected with API 1007.
+    # Verified against Gemini Developer API v1beta: these native-audio models
+    # reject restored initial history and close the Live session (1007/1008).
     "gemini-2.5-flash-native-audio-preview-12-2025",
+    "gemini-2.5-flash-native-audio-latest",
 })
 
 
@@ -2247,6 +2354,7 @@ class JarvisLive:
         *,
         cloud_safe: bool = False,
         headless: bool = False,
+        no_audio: bool = False,
         api_key: str | None = None,
         external_audio: bool = False,
         conversation_store_path: Path | str | None = None,
@@ -2257,7 +2365,14 @@ class JarvisLive:
         self.ui             = client
         self.cloud_safe     = bool(cloud_safe)
         self.headless       = bool(headless)
+        self.no_audio       = bool(no_audio)
         self.external_audio = bool(external_audio)
+        if self.headless and not self.no_audio:
+            self._audio_input_device_resolver = _headless_input_device
+            self._audio_output_device_id = _resolve_device_by_name(
+                "output", _HEADLESS_OUTPUT_HINTS,
+                required_rate=RECEIVE_SAMPLE_RATE,
+            )
         self._api_key       = api_key.strip() if isinstance(api_key, str) else None
         self.tool_declarations = get_tool_declarations(
             cloud_safe=self.cloud_safe, headless=self.headless,
@@ -2297,6 +2412,7 @@ class JarvisLive:
         self._schedule_turn_source = ""
         self._schedule_call_turns: dict[str, str] = {}
         self._pending_routine: PendingRoutineState | None = None
+        self._routine_confirmation: PendingRoutineConfirmation | None = None
         self._memory_call_turns: dict[str, str] = {}
         self._memory_consumed_call_ids: set[str] = set()
         self._memory_turn_effects: set[tuple[str, str, str]] = set()
@@ -2979,18 +3095,27 @@ class JarvisLive:
         resumption_handle: str | None = None,
         local_continuity: str = "",
         initial_history: bool = False,
+        live_model_id: str = "",
     ) -> types.LiveConnectConfig:
-        memory     = load_memory()
-        mem_str    = format_memory_for_prompt(memory)
-        sys_prompt = _load_system_prompt()
+        memory  = load_memory()
+        mem_str = format_memory_for_prompt(memory)
 
-        parts = [
-            LANGUAGE_RULE,
-            DATE_TIME_AUTHORITY_RULE,
-            ROUTINE_ROUTING_RULES,
-            MEMORY_ROUTING_RULES,
-            TOOL_RESULT_TRUTH_RULE,
-        ]
+        if getattr(self, "headless", False):
+            parts = [
+                LANGUAGE_RULE,
+                HEADLESS_SYSTEM_RULES,
+                TOOL_RESULT_TRUTH_RULE,
+            ]
+            sys_prompt = ""
+        else:
+            sys_prompt = _load_system_prompt()
+            parts = [
+                LANGUAGE_RULE,
+                DATE_TIME_AUTHORITY_RULE,
+                ROUTINE_ROUTING_RULES,
+                MEMORY_ROUTING_RULES,
+                TOOL_RESULT_TRUTH_RULE,
+            ]
         lilith_is_authoritative = False
         if lilith_context:
             lilith_str = self._format_lilith_context(lilith_context)
@@ -3003,14 +3128,19 @@ class JarvisLive:
             mem_str = format_memory_for_prompt(stripped)
         if mem_str:
             parts.append(mem_str)
-        parts.append(sys_prompt)
+        if sys_prompt:
+            parts.append(sys_prompt)
         if local_continuity:
             # Keep active-conversation continuity after generic routing rules so
-            # immediate history wins without disabling either memory tool.
+            # immediate history wins without forcing a persistent-memory lookup.
             parts.append(local_continuity)
         parts.append(LANGUAGE_RULE)  # repeated near the end: recency keeps the rule in force
         parts.append(TOOL_RESULT_TRUTH_RULE)
-        parts.append(CURRENT_CONVERSATION_PRECEDENCE)
+        parts.append(
+            HEADLESS_CURRENT_CONVERSATION_PRECEDENCE
+            if getattr(self, "headless", False)
+            else CURRENT_CONVERSATION_PRECEDENCE
+        )
 
         return types.LiveConnectConfig(
             response_modalities=["AUDIO"],
@@ -3032,7 +3162,10 @@ class JarvisLive:
                 ),
                 activity_handling=types.ActivityHandling.START_OF_ACTIVITY_INTERRUPTS,
             ),
-            thinking_config=types.ThinkingConfig(thinking_budget=0),
+            thinking_config=(
+                None if "3.8-live" in live_model_id
+                else types.ThinkingConfig(thinking_budget=0)
+            ),
             session_resumption=types.SessionResumptionConfig(handle=resumption_handle),
             context_window_compression=types.ContextWindowCompressionConfig(
                 sliding_window=types.SlidingWindow(),
@@ -4045,6 +4178,66 @@ class JarvisLive:
             return None
         return pending
 
+    def _routine_confirmation_summary(self, operation: str, args: dict) -> str:
+        """Build a human-readable summary for confirmation prompt."""
+        name = args.get("name", "")
+        schedule = args.get("schedule", {})
+        h, m = schedule.get("hour"), schedule.get("minute", 0)
+        time_str = f"{h:02d}:{m:02d}" if isinstance(h, int) else ""
+        tz = args.get("timezone", "")
+        target = (args.get("action_parameters") or {}).get("entity_id", "") or (args.get("action_parameters") or {}).get("target", "")
+        if operation == "create":
+            return f"Crear rutina '{name}': {target} a las {time_str} ({tz})"
+        if operation == "delete":
+            rid = args.get("routine_id", "?")
+            return f"Eliminar rutina #{rid}"
+        if operation in ("enable", "disable"):
+            rid = args.get("routine_id", "?")
+            return f"{'Activar' if operation == 'enable' else 'Desactivar'} rutina #{rid}"
+        if operation == "update":
+            rid = args.get("routine_id", "?")
+            return f"Modificar rutina #{rid}"
+        return f"Operación {operation} en rutina"
+
+    def _stash_routine_confirmation(
+        self, fc_id: str, fc_name: str, operation: str, args: dict,
+    ) -> PendingRoutineConfirmation:
+        summary = self._routine_confirmation_summary(operation, args)
+        conf = PendingRoutineConfirmation(
+            session_id=self._schedule_session_id,
+            turn_sequence=self._schedule_turn_sequence,
+            fc_id=fc_id,
+            fc_name=fc_name,
+            operation=operation,
+            args=args,
+            summary=summary,
+        )
+        self._routine_confirmation = conf
+        return conf
+
+    def _check_routine_confirmation(self, text: str) -> bool | None:
+        """Check if user text confirms or rejects the pending routine.
+
+        Returns True (confirmed), False (rejected), or None (no pending).
+        """
+        conf = self._routine_confirmation
+        if conf is None:
+            return None
+        if conf.session_id != self._schedule_session_id:
+            self._routine_confirmation = None
+            return None
+        if self._schedule_turn_sequence - conf.turn_sequence > 6:
+            self._routine_confirmation = None
+            return None
+        if conf.confirmed:
+            return None
+        result = _user_confirmed(text)
+        if result is True:
+            conf.confirmed = True
+        elif result is False:
+            self._routine_confirmation = None
+        return result
+
     def _pending_create_args(self, fc, pending: PendingRoutineState) -> dict | None:
         supplied = dict(getattr(fc, "args", None) or {})
         pending.absorb_call(supplied)
@@ -4404,6 +4597,36 @@ class JarvisLive:
                 )},
             )
         self._schedule_call_turns[fc_id] = self._schedule_turn_id
+
+        # --- Confirmation gate: execute stashed mutation if user confirmed ---
+        conf = getattr(self, "_routine_confirmation", None)
+        if conf is not None and name == "lilith_routine" and operation in _ROUTINE_WRITE_OPERATIONS:
+            user_answer = self._check_routine_confirmation(turn_text)
+            if user_answer is True:
+                self._schedule_guard_routed = True
+                self._schedule_log(
+                    fc_id=conf.fc_id, tool=conf.fc_name, operation=conf.operation,
+                    classification="confirmed", decision="allowed_after_confirmation",
+                )
+                routed = SimpleNamespace(id=fc.id, name=conf.fc_name, args=conf.args)
+                self._routine_confirmation = None
+                self._pending_routine = None
+                return await self._execute_tool(routed)
+            if user_answer is False:
+                self._schedule_log(
+                    fc_id=conf.fc_id, tool=conf.fc_name, operation=conf.operation,
+                    classification="rejected", decision="cancelled_by_user",
+                )
+                self._routine_confirmation = None
+                self._pending_routine = None
+                return types.FunctionResponse(
+                    id=fc.id, name=name,
+                    response={"result": (
+                        "The user cancelled the routine operation. "
+                        "LILITH was not called. Acknowledge the cancellation."
+                    )},
+                )
+
         semantics = _schedule_semantics(turn_text)
 
         # Gemini Live can emit a FunctionCall while input transcription is still a
@@ -4459,11 +4682,18 @@ class JarvisLive:
                     )},
                 )
             self._schedule_guard_routed = True
+            conf = self._stash_routine_confirmation(fc_id, name, operation, args)
             self._schedule_log(
                 fc_id=fc_id, tool=name, operation=operation,
-                classification=semantics, decision="allowed_routine_management",
+                classification=semantics, decision="pending_confirmation",
             )
-            return await self._execute_tool(fc)
+            return types.FunctionResponse(
+                id=fc.id, name=name,
+                response={"result": (
+                    f"JARVIS confirmation required: {conf.summary}. "
+                    "Ask the user to confirm before executing. LILITH was NOT called yet."
+                )},
+            )
 
         if name == "reminder" and operation in {"list", "cancel", "delete", "modify", "update"}:
             if self._schedule_guard_routed:
@@ -4517,12 +4747,16 @@ class JarvisLive:
                         f"missing {missing}. Ask only for those fields. LILITH was not called."
                     )},
                 )
-            routed = SimpleNamespace(id=fc.id, name=name, args=routine_args)
-            self._schedule_log(fc_id=fc_id, tool=name, operation=operation, classification="recurring", decision="allowed")
             pending.consumed_call_ids.add(fc_id)
-            response = await self._execute_tool(routed)
-            self._pending_routine = None
-            return response
+            conf = self._stash_routine_confirmation(fc_id, name, operation, routine_args)
+            self._schedule_log(fc_id=fc_id, tool=name, operation=operation, classification="recurring", decision="pending_confirmation")
+            return types.FunctionResponse(
+                id=fc.id, name=name,
+                response={"result": (
+                    f"JARVIS confirmation required: {conf.summary}. "
+                    "Ask the user to confirm before executing. LILITH was NOT called yet."
+                )},
+            )
 
         if semantics == "recurring" or pending_followup_complete:
             if self._schedule_guard_routed:
@@ -4550,13 +4784,17 @@ class JarvisLive:
                     )},
                 )
             self._schedule_guard_routed = True
-            routed = SimpleNamespace(id=fc.id, name="lilith_routine", args=routine_args)
-            self._schedule_log(fc_id=fc_id, tool=name, operation=operation, classification=semantics, decision="rerouted_lilith_routine")
-            response = await self._execute_tool(routed)
             if pending is not None:
                 pending.consumed_call_ids.add(fc_id)
-            self._pending_routine = None
-            return types.FunctionResponse(id=fc.id, name=name, response=response.response)
+            conf = self._stash_routine_confirmation(fc_id, "lilith_routine", "create", routine_args)
+            self._schedule_log(fc_id=fc_id, tool=name, operation=operation, classification=semantics, decision="rerouted_pending_confirmation")
+            return types.FunctionResponse(
+                id=fc.id, name=name,
+                response={"result": (
+                    f"JARVIS confirmation required: {conf.summary}. "
+                    "Ask the user to confirm before executing. LILITH was NOT called yet."
+                )},
+            )
 
         if semantics == "one_shot" and name != "reminder":
             self._schedule_log(fc_id=fc_id, tool=name, operation=operation, classification=semantics, decision="blocked_wrong_tool")
@@ -4635,9 +4873,86 @@ class JarvisLive:
             logger.warning("AUDIO_INPUT duplicate_worker_ignored")
             return
         try:
-            await self._listen_audio_with_recovery()
+            use_direct_alsa = (
+                self.headless
+                and sys.platform.startswith("linux")
+                and not self.external_audio
+                and not hasattr(self, "_audio_input_stream_factory")
+                and os.environ.get("JARVIS_HEADLESS_CAPTURE_BACKEND", "alsa").strip().lower()
+                != "sounddevice"
+            )
+            if use_direct_alsa:
+                await self._listen_audio_with_arecord()
+            else:
+                await self._listen_audio_with_recovery()
         finally:
             worker_lock.release()
+
+    async def _listen_audio_with_arecord(self) -> None:
+        """Capture Headless Linux audio directly from ALSA, bypassing a silent Pulse source."""
+        print("[JARVIS] 🎤 Mic worker started (direct ALSA)")
+        loop = asyncio.get_running_loop()
+        device = (
+            os.environ.get("JARVIS_HEADLESS_ALSA_CAPTURE_DEVICE", "plughw:CARD=PCH,DEV=0").strip()
+            or "plughw:CARD=PCH,DEV=0"
+        )
+        attempt = 0
+
+        while (
+            not self._shutdown_requested.is_set()
+            and self._conversation_requested.is_set()
+        ):
+            proc = None
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    "arecord", "-q", "-D", device,
+                    "-t", "raw", "-f", "S16_LE",
+                    "-r", str(SEND_SAMPLE_RATE),
+                    "-c", str(CHANNELS),
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                print(f"[JARVIS] 🎤 Mic stream open (ALSA {device})")
+                self._audio_input_device_id = None
+                attempt = 0
+                while (
+                    not self._shutdown_requested.is_set()
+                    and self._conversation_requested.is_set()
+                ):
+                    data = await proc.stdout.read(CHUNK_SIZE * CHANNELS * 2)
+                    if not data:
+                        detail = ""
+                        if proc.stderr is not None:
+                            detail = (await proc.stderr.read()).decode("utf-8", errors="replace").strip()
+                        raise AudioInputDeviceLost(detail or "arecord capture ended")
+                    if not self.ui.muted:
+                        _report_audio_level(self.ui, "input", data)
+                        self._process_microphone_audio(data, loop)
+                return
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                if (
+                    self._shutdown_requested.is_set()
+                    or not self._conversation_requested.is_set()
+                ):
+                    return
+                attempt += 1
+                discarded = self._drain_queue(getattr(self, "out_queue", None))
+                logger.warning(
+                    "AUDIO_INPUT direct_alsa_lost error=%s detail=%s device=%s discarded_input_chunks=%d",
+                    type(exc).__name__, _safe_live_diagnostic(exc), device, discarded,
+                )
+                delay = _audio_device_recovery_delay(attempt)
+                await self._wait_for_audio_recovery(delay)
+            finally:
+                if proc is not None and proc.returncode is None:
+                    proc.terminate()
+                    try:
+                        await asyncio.wait_for(proc.wait(), timeout=1.0)
+                    except asyncio.TimeoutError:
+                        proc.kill()
+                        await proc.wait()
 
     async def _wait_for_audio_recovery(self, delay: float) -> None:
         deadline = time.monotonic() + max(0.0, float(delay))
@@ -5040,18 +5355,55 @@ class JarvisLive:
 
 
 
+    _SILENCE_PRIME = b"\x00" * (CHUNK_SIZE * CHANNELS * 2)
+
+    def _open_playback_stream(self):
+        """Create and start a PortAudio output stream.
+
+        In headless mode the stream is primed with one silence block so the
+        internal ring buffer is never empty at the first real write.
+        """
+        output_device = getattr(self, "_audio_output_device_id", None)
+        stream = sd.RawOutputStream(
+            samplerate=RECEIVE_SAMPLE_RATE,
+            channels=CHANNELS,
+            dtype="int16",
+            blocksize=CHUNK_SIZE,
+            device=output_device,
+            latency="high" if self.headless else None,
+        )
+        t_open = time.monotonic()
+        stream.start()
+        if getattr(self, "headless", False):
+            stream.write(self._SILENCE_PRIME)
+            t_prime = time.monotonic()
+            wa = getattr(stream, "write_available", None)
+            logger.info(
+                "PLAYBACK_DIAG stream_open=%.4f prime_done=%.4f "
+                "prime_latency_ms=%.2f write_available=%s blocksize=%d",
+                t_open, t_prime, (t_prime - t_open) * 1000,
+                wa, CHUNK_SIZE,
+            )
+            self._playback_stream_opened_at = t_open
+            self._playback_first_chunk_logged = False
+        return stream
+
+    @staticmethod
+    def _close_playback_stream(stream):
+        if stream is not None:
+            try:
+                stream.stop()
+                stream.close()
+            except Exception:
+                pass
+
     async def _play_audio(self):
         print("[JARVIS] 🔊 Play started")
+        lazy_lifecycle = self.headless and not self.external_audio
 
         stream = None
-        if not self.external_audio:
-            stream = sd.RawOutputStream(
-                samplerate=RECEIVE_SAMPLE_RATE,
-                channels=CHANNELS,
-                dtype="int16",
-                blocksize=CHUNK_SIZE,
-            )
-            stream.start()
+        if not self.external_audio and not lazy_lifecycle:
+            stream = self._open_playback_stream()
 
         try:
             while True:
@@ -5070,6 +5422,9 @@ class JarvisLive:
                     ):
                         self.set_speaking(False)
                         self._turn_done_event.clear()
+                        if lazy_lifecycle and stream is not None:
+                            self._close_playback_stream(stream)
+                            stream = None
                         if self._complete_self_quit_after_audio():
                             return
                     continue
@@ -5077,6 +5432,8 @@ class JarvisLive:
                 if self._tts_engine and self._ext_tts_provider and self._ext_tts_provider != "gemini":
                     pass  # drain silently
                 else:
+                    if lazy_lifecycle and stream is None:
+                        stream = self._open_playback_stream()
                     self.set_speaking(True)
                     gate = getattr(self, "_barge_in_gate", None)
                     if gate is not None:
@@ -5087,15 +5444,28 @@ class JarvisLive:
                         if callable(send_audio):
                             send_audio(chunk, f"audio/pcm;rate={RECEIVE_SAMPLE_RATE}")
                     elif stream is not None:
+                        if (
+                            lazy_lifecycle
+                            and not getattr(self, "_playback_first_chunk_logged", True)
+                        ):
+                            t_now = time.monotonic()
+                            t_open = getattr(self, "_playback_stream_opened_at", t_now)
+                            wa = getattr(stream, "write_available", None)
+                            logger.info(
+                                "PLAYBACK_DIAG first_real_chunk=%.4f "
+                                "delay_since_open_ms=%.2f chunk_bytes=%d "
+                                "write_available=%s",
+                                t_now, (t_now - t_open) * 1000,
+                                len(chunk), wa,
+                            )
+                            self._playback_first_chunk_logged = True
                         await asyncio.to_thread(stream.write, chunk)
         except Exception as e:
             print(f"[JARVIS] ❌ Play: {e}")
             raise
         finally:
             self.set_speaking(False)
-            if stream is not None:
-                stream.stop()
-                stream.close()
+            self._close_playback_stream(stream)
 
     async def run(self):
         # JL-W003: one LILITH runtime inside this asyncio loop (same loop as send_text).
@@ -5153,7 +5523,9 @@ class JarvisLive:
             api_key=api_key,
             http_options={"api_version": "v1beta"}
         )
-        live_model = await asyncio.to_thread(pick_live_model, client, API_CONFIG_PATH)
+        live_model = await asyncio.to_thread(
+            pick_live_model, client, API_CONFIG_PATH, headless=self.headless,
+        )
         live_model_id = live_model.removeprefix("models/")
         self.ui.write_log(f"SYS: Modelo de Gemini Live seleccionado: {live_model_id}")
 
@@ -5277,6 +5649,7 @@ class JarvisLive:
                         else ""
                     ),
                     initial_history=attempt_initial_history,
+                    live_model_id=live_model_id,
                 )
 
                 if not self._conversation_requested.is_set():
@@ -5336,10 +5709,11 @@ class JarvisLive:
 
                     async with asyncio.TaskGroup() as tg:
                         tg.create_task(self._send_realtime())
-                        if not self.external_audio:
+                        if not self.no_audio and not self.external_audio:
                             tg.create_task(self._listen_audio())
                         tg.create_task(self._receive_audio())
-                        tg.create_task(self._play_audio())
+                        if not self.no_audio:
+                            tg.create_task(self._play_audio())
                         if first_connection:
                             tg.create_task(self._announce_startup())
 

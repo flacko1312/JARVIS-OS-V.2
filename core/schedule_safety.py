@@ -48,15 +48,66 @@ def schedule_semantics(text: str) -> str:
     return "immediate"
 
 
+def _resolve_period(value: str) -> str | None:
+    """Extract the day-period from normalised text (manana/tarde/noche/mediodia/am/pm)."""
+    pm = re.search(r"\bpm\b", value)
+    if pm:
+        return "pm"
+    am = re.search(r"\bam\b", value)
+    if am:
+        return "am"
+    sp = re.search(r"\b(?:de(?:l|\s+la)\s+)?(manana|tarde|noche|mediodia)\b", value)
+    if sp:
+        return sp.group(1)
+    return None
+
+
+def _apply_period(hour: int, period: str | None) -> int | None:
+    """Convert 1-12h + period to 0-23h.  Returns None when ambiguous."""
+    if period is None:
+        return hour if hour > 12 else None
+    if period in ("am", "manana"):
+        return hour % 12          # 12 AM / 12 de la mañana → 0
+    if period == "mediodia":
+        return 12
+    if period in ("pm", "tarde", "noche"):
+        if period == "noche" and 1 <= hour <= 5:
+            return None            # "3 de la noche" is too ambiguous
+        return hour if hour >= 13 else hour % 12 + 12  # already 24h keeps; else +12
+    return hour if hour > 12 else None
+
+
 def daily_time_from_text(text: str) -> tuple[int, int] | None:
     """Parse an unambiguous daily wall-clock time from Spanish or 24-hour text."""
     value = normalized_turn_text(text)
+    period = _resolve_period(value)
+
+    # "12 de la noche" / "12 del mediodía" — special-cased before numeric/spoken
+    if period == "mediodia":
+        return 12, 0
+    midnight = re.search(r"\b12\s*(?:de la\s+)?noche\b", value)
+    if midnight:
+        return 0, 0
+
+    # HH:MM or HH.MM (e.g. "9:30 de la noche", "21:30", "9:30 PM")
     numeric = re.search(r"\b([01]?\d|2[0-3])[:.]([0-5]\d)\b", value)
     if numeric:
-        return int(numeric.group(1)), int(numeric.group(2))
+        hour, minute = int(numeric.group(1)), int(numeric.group(2))
+        if hour > 12:
+            return hour, minute    # already unambiguous 24h
+        resolved = _apply_period(hour, period)
+        if resolved is None:
+            return None
+        return resolved, minute
+
+    # "9 AM", "9 PM", "9h pm"
     am_pm = re.search(r"\b(1[0-2]|0?[1-9])\s*(?:h\s*)?(am|pm)\b", value)
     if am_pm:
-        return int(am_pm.group(1)) % 12 + (12 if am_pm.group(2) == "pm" else 0), 0
+        hour = int(am_pm.group(1))
+        p = am_pm.group(2)
+        return _apply_period(hour, p), 0
+
+    # Spoken Spanish: "a las nueve de la noche", "a la una de la tarde"
     words = "|".join(_SPANISH_NUMBERS)
     spoken = re.search(
         rf"\b(?:(?:a las|a la)\s+)?(\d{{1,2}}|{words})\s*(?:h\s*)?"
@@ -71,16 +122,34 @@ def daily_time_from_text(text: str) -> tuple[int, int] | None:
     hour = int(raw_hour) if raw_hour.isdigit() else _SPANISH_NUMBERS[raw_hour]
     if not 1 <= hour <= 23:
         return None
-    period = spoken.group(2) if spoken.lastindex and spoken.lastindex >= 2 else None
-    if period is None:
-        period_match = re.search(r"\b(?:de la )?(manana|tarde|noche)\b", value)
-        period = period_match.group(1) if period_match else None
-    if hour <= 12 and period is None:
+    spoken_period = spoken.group(2) if spoken.lastindex and spoken.lastindex >= 2 else None
+    effective_period = spoken_period or period
+    resolved = _apply_period(hour, effective_period)
+    if resolved is None:
         return None
-    if period == "noche" and hour < 6:
+    return resolved, 0
+
+
+def user_confirmed(text: str) -> bool | None:
+    """Detect explicit user confirmation or rejection in normalised text.
+
+    Returns True for affirmative, False for negative, None for ambiguous.
+    """
+    value = normalized_turn_text(text)
+    if not value:
         return None
-    if period in {"tarde", "noche"} and hour < 12:
-        hour += 12
-    if period == "manana" and hour == 12:
-        hour = 0
-    return hour, 0
+    deny = re.search(
+        r"\b(?:no|cancela|cancelar|cancelalo|anula|anular|olvidalo|dejalo|nada"
+        r"|olvida|mejor no|no lo hagas|no quiero|cancel|never ?mind|don'?t|stop)\b",
+        value,
+    )
+    if deny:
+        return False
+    confirm = re.search(
+        r"\b(?:si|sí|ok|okey|vale|venga|dale|confirmo|confirmado|hazlo|adelante|perfecto"
+        r"|correcto|exacto|claro|por supuesto|yes|yeah|confirm|go ahead|do it|proceed)\b",
+        value,
+    )
+    if confirm:
+        return True
+    return None
