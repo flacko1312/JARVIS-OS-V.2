@@ -155,6 +155,10 @@ def main() -> None:
     signal.signal(signal.SIGTERM, _signal_handler)
     signal.signal(signal.SIGINT, _signal_handler)
 
+    import health_server
+    health_server.start(jarvis)
+    logger.info("Health server listening on 127.0.0.1:%d", 7470)
+
     jarvis.start_conversation()
 
     logger.info(
