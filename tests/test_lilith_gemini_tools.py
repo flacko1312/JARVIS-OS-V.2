@@ -525,6 +525,15 @@ class TestJlA9ScheduleExecutionGuard(unittest.TestCase):
     """The side-effect boundary must not trust Gemini's selected tool."""
 
     @staticmethod
+    def _confirm_pending(jarvis, client, *, operation="create"):
+        """Simulate user confirmation turn for a pending routine mutation."""
+        jarvis._begin_schedule_turn("Sí, confirmo.", "voice")
+        fc = _fake_fc("lilith_routine", {"operation": operation})
+        fc.id = "confirm-lilith_routine"
+        responses = _run(jarvis._execute_tool_batch([fc]))
+        return responses
+
+    @staticmethod
     def _home_client():
         client = AsyncMock()
         client.home_resolve.return_value = {
@@ -562,10 +571,14 @@ class TestJlA9ScheduleExecutionGuard(unittest.TestCase):
         client = self._home_client()
         jarvis = _make_jarvis(lilith_client=client)
         jarvis._begin_schedule_turn("Todos los días a las 21:00 enciende la bombilla", "voice")
-        _run(jarvis._execute_tool_batch([_fake_fc("lilith_home_action", {
+        responses = _run(jarvis._execute_tool_batch([_fake_fc("lilith_home_action", {
             "target": "bombilla", "action": "turn_on",
         })]))
         client.home_action.assert_not_awaited()
+        client.command_submit.assert_not_awaited()
+        self.assertIn("JARVIS confirmation required", responses[0].response["result"])
+        self.assertIn("LILITH was NOT called yet", responses[0].response["result"])
+        self._confirm_pending(jarvis, client)
         self.assertEqual(client.command_submit.await_args.kwargs["intent"], "routines.create")
         params = client.command_submit.await_args.kwargs["parameters"]
         self.assertEqual(params["schedule"], {"hour": 21, "minute": 0})
@@ -579,7 +592,10 @@ class TestJlA9ScheduleExecutionGuard(unittest.TestCase):
                 "schedule": {"hour": 21, "minute": 0}, "timezone": "Europe/Madrid",
                 "action_intent": "home.action",
                 "action_parameters": {"entity_id": "light.bombilla_mueble", "action": "turn_on"}}
-        _run(jarvis._execute_tool_batch([_fake_fc("lilith_routine", args)]))
+        responses = _run(jarvis._execute_tool_batch([_fake_fc("lilith_routine", args)]))
+        client.command_submit.assert_not_awaited()
+        self.assertIn("JARVIS confirmation required", responses[0].response["result"])
+        self._confirm_pending(jarvis, client)
         self.assertEqual(client.command_submit.await_args.kwargs["intent"], "routines.create")
 
     def test_e_recurring_batch_never_executes_home_action(self):
@@ -590,17 +606,18 @@ class TestJlA9ScheduleExecutionGuard(unittest.TestCase):
                    "schedule": {"hour": 21, "minute": 0}, "timezone": "Europe/Madrid",
                    "action_intent": "home.action",
                    "action_parameters": {"entity_id": "light.bombilla_mueble", "action": "turn_on"}}
-        with patch("builtins.print") as output:
-            _run(jarvis._execute_tool_batch([
-                _fake_fc("lilith_home_action", {"target": "bombilla del mueble", "action": "turn_on"}),
-                _fake_fc("lilith_routine", routine),
-            ]))
+        responses = _run(jarvis._execute_tool_batch([
+            _fake_fc("lilith_home_action", {"target": "bombilla del mueble", "action": "turn_on"}),
+            _fake_fc("lilith_routine", routine),
+        ]))
         client.home_action.assert_not_awaited()
+        client.command_submit.assert_not_awaited()
+        has_confirmation = any(
+            "JARVIS confirmation required" in r.response["result"] for r in responses
+        )
+        self.assertTrue(has_confirmation)
+        self._confirm_pending(jarvis, client)
         self.assertEqual(client.command_submit.await_count, 1)
-        console = " ".join(str(call) for call in output.call_args_list)
-        self.assertIn("lilith_routine", console)
-        self.assertNotIn("lilith_home_action", console)
-        self.assertNotIn("reminder", console)
 
     def test_f_recurring_batch_never_executes_reminder(self):
         client = self._home_client()
@@ -611,11 +628,17 @@ class TestJlA9ScheduleExecutionGuard(unittest.TestCase):
                    "action_intent": "home.action",
                    "action_parameters": {"entity_id": "light.bombilla_mueble", "action": "turn_on"}}
         with patch("main.reminder") as action:
-            _run(jarvis._execute_tool_batch([
+            responses = _run(jarvis._execute_tool_batch([
                 _fake_fc("reminder", {"time": "21:00", "message": "Encender bombilla"}),
                 _fake_fc("lilith_routine", routine),
             ]))
         action.assert_not_called()
+        client.command_submit.assert_not_awaited()
+        has_confirmation = any(
+            "JARVIS confirmation required" in r.response["result"] for r in responses
+        )
+        self.assertTrue(has_confirmation)
+        self._confirm_pending(jarvis, client)
         self.assertEqual(client.command_submit.await_count, 1)
 
     def test_g_incomplete_recurring_request_clarifies_with_zero_side_effects(self):
@@ -701,17 +724,20 @@ class TestJlA9ScheduleExecutionGuard(unittest.TestCase):
         text = "Todos los días a las 9 de la noche enciende la bombilla del mueble."
         jarvis._begin_schedule_turn(text, "voice")
         with patch("main.reminder") as reminder_action:
-            _run(jarvis._execute_tool_batch([_fake_fc("lilith_home_action", {
+            responses = _run(jarvis._execute_tool_batch([_fake_fc("lilith_home_action", {
                 "target": "bombilla del mueble", "action": "turn_on",
             })]))
+        client.command_submit.assert_not_awaited()
+        client.home_action.assert_not_awaited()
+        reminder_action.assert_not_called()
+        self.assertIn("JARVIS confirmation required", responses[0].response["result"])
+        self._confirm_pending(jarvis, client)
         kwargs = client.command_submit.await_args.kwargs
         self.assertEqual(kwargs["intent"], "routines.create")
         self.assertEqual(kwargs["parameters"]["schedule_type"], "daily")
         self.assertEqual(kwargs["parameters"]["schedule"], {"hour": 21, "minute": 0})
         self.assertEqual(kwargs["parameters"]["timezone"], "Europe/Madrid")
         self.assertEqual(kwargs["parameters"]["action_intent"], "home.action")
-        client.home_action.assert_not_awaited()
-        reminder_action.assert_not_called()
 
     def test_o_routine_tool_normalizes_madrid_before_client(self):
         client = self._home_client()
@@ -724,7 +750,10 @@ class TestJlA9ScheduleExecutionGuard(unittest.TestCase):
             "timezone": "Madrid", "action_intent": "home.action",
             "action_parameters": {"target": "bombilla del mueble", "action": "turn_on"},
         }
-        _run(jarvis._execute_tool_batch([_fake_fc("lilith_routine", args)]))
+        responses = _run(jarvis._execute_tool_batch([_fake_fc("lilith_routine", args)]))
+        client.command_submit.assert_not_awaited()
+        self.assertIn("JARVIS confirmation required", responses[0].response["result"])
+        self._confirm_pending(jarvis, client)
         params = client.command_submit.await_args.kwargs["parameters"]
         self.assertEqual(params["schedule"], {"hour": 21, "minute": 0})
         self.assertEqual(params["timezone"], "Europe/Madrid")
@@ -752,15 +781,17 @@ class TestJlA9ScheduleExecutionGuard(unittest.TestCase):
             },
         }
 
-        _run(jarvis._execute_tool_batch([_fake_fc("lilith_routine", args)]))
-
+        responses = _run(jarvis._execute_tool_batch([_fake_fc("lilith_routine", args)]))
+        client.command_submit.assert_not_awaited()
+        self.assertIn("JARVIS confirmation required", responses[0].response["result"])
+        self._confirm_pending(jarvis, client)
         self.assertEqual(client.command_submit.await_count, 1)
         kwargs = client.command_submit.await_args.kwargs
         self.assertEqual(kwargs["intent"], "routines.create")
         self.assertEqual(kwargs["parameters"]["schedule"], {"hour": 22, "minute": 0})
         self.assertEqual(kwargs["parameters"]["timezone"], "Europe/Madrid")
         self.assertEqual(kwargs["parameters"]["action_intent"], "home.action")
-        self.assertEqual(kwargs["idempotency_key"], "jarvis:routine:fake-lilith_routine")
+        self.assertEqual(kwargs["idempotency_key"], "jarvis:routine:confirm-lilith_routine")
         client.home_action.assert_not_awaited()
 
     def test_p_ambiguous_nine_requests_clarification_without_effect(self):
@@ -785,12 +816,15 @@ class TestJlA9ScheduleExecutionGuard(unittest.TestCase):
             "Todos los días a las 9 de la noche enciende la bombilla del mueble.", "voice"
         )
         jarvis._begin_schedule_turn("Sí, 21:00 hora de Madrid.", "voice")
-        _run(jarvis._execute_tool_batch([_fake_fc("lilith_routine", {
+        responses = _run(jarvis._execute_tool_batch([_fake_fc("lilith_routine", {
             "operation": "create", "name": "Bombilla habitación",
             "schedule_type": "daily", "schedule": {"hour": 21, "minute": 0},
             "timezone": "Madrid", "action_intent": "home.action",
             "action_parameters": {"target": "bombilla del mueble", "action": "turn_on"},
         })]))
+        client.command_submit.assert_not_awaited()
+        self.assertIn("JARVIS confirmation required", responses[0].response["result"])
+        self._confirm_pending(jarvis, client)
         self.assertEqual(client.command_submit.await_count, 1)
         client.home_action.assert_not_awaited()
 
@@ -851,16 +885,17 @@ class TestJlA9ScheduleExecutionGuard(unittest.TestCase):
         self.assertEqual(jarvis._pending_routine.pending_clarification, {"time"})
 
         jarvis._begin_schedule_turn("A las nueve de la noche, hora de Madrid.", "voice")
-        _run(jarvis._execute_tool_batch([_fake_fc("lilith_routine", {
+        responses = _run(jarvis._execute_tool_batch([_fake_fc("lilith_routine", {
             "operation": "create",
         })]))
-
+        client.command_submit.assert_not_awaited()
+        self.assertIn("JARVIS confirmation required", responses[0].response["result"])
+        self._confirm_pending(jarvis, client)
         params = client.command_submit.await_args.kwargs["parameters"]
         self.assertEqual(params["schedule"], {"hour": 21, "minute": 0})
         self.assertEqual(params["timezone"], "Europe/Madrid")
         self.assertEqual(params["action_parameters"]["entity_id"], "light.bombilla_mueble")
         self.assertEqual(params["action_parameters"]["action"], "turn_on")
-        self.assertIsNone(jarvis._pending_routine)
 
     def test_w_lifecycle_writes_do_not_require_recurring_words(self):
         cases = (
@@ -878,13 +913,16 @@ class TestJlA9ScheduleExecutionGuard(unittest.TestCase):
                     response = _run(jarvis._execute_tool_batch([_fake_fc(
                         "lilith_routine", {"operation": operation, **args}
                     )]))[0]
-                self.assertIn("confirmed routine", response.response["result"])
-                self.assertEqual(
-                    client.command_submit.await_args.kwargs["intent"],
-                    f"routines.{operation}",
-                )
+                self.assertIn("JARVIS confirmation required", response.response["result"])
+                self.assertIn("LILITH was NOT called yet", response.response["result"])
+                client.command_submit.assert_not_awaited()
                 client.home_action.assert_not_awaited()
                 reminder_action.assert_not_called()
+                self._confirm_pending(jarvis, client, operation=operation)
+                self.assertEqual(
+                    client.command_submit.await_args.kwargs["intent"],
+                    "routines." + operation,
+                )
 
     def test_x_duplicate_create_with_different_call_ids_executes_once(self):
         client = self._home_client()
@@ -899,8 +937,11 @@ class TestJlA9ScheduleExecutionGuard(unittest.TestCase):
         ]
         calls[1].id = "different-call-id"
         responses = _run(jarvis._execute_tool_batch(calls))
-        self.assertEqual(client.command_submit.await_count, 1)
+        client.command_submit.assert_not_awaited()
+        self.assertIn("JARVIS confirmation required", responses[0].response["result"])
         self.assertIn("duplicate", responses[1].response["result"])
+        self._confirm_pending(jarvis, client)
+        self.assertEqual(client.command_submit.await_count, 1)
 
     def test_y_guard_failure_is_attributed_to_jarvis_not_lilith(self):
         client = self._home_client()
@@ -953,8 +994,9 @@ class TestGeminiLiveSchedulePath(unittest.TestCase):
             "lilith_home_action", {"target": "bombilla del mueble", "action": "turn_on"}
         )
         client.home_action.assert_not_awaited()
-        self.assertEqual(client.command_submit.await_count, 1)
+        client.command_submit.assert_not_awaited()
         self.assertEqual(len(session.responses), 1)
+        self.assertIn("JARVIS confirmation required", session.responses[0].response["result"])
 
     def test_live_recurring_request_cannot_execute_reminder(self):
         with patch("main.reminder") as reminder_action:
@@ -962,8 +1004,9 @@ class TestGeminiLiveSchedulePath(unittest.TestCase):
                 "reminder", {"time": "21:00", "message": "Encender bombilla del mueble"}
             )
         reminder_action.assert_not_called()
-        self.assertEqual(client.command_submit.await_count, 1)
+        client.command_submit.assert_not_awaited()
         self.assertEqual(len(session.responses), 1)
+        self.assertIn("JARVIS confirmation required", session.responses[0].response["result"])
 
     def test_exact_real_voice_transcript_reaches_create_through_live_guard(self):
         exact = (
@@ -993,17 +1036,18 @@ class TestGeminiLiveSchedulePath(unittest.TestCase):
             _run(jarvis._receive_audio())
 
         log = "\n".join(captured.output)
-        self.assertIn(f"raw_transcript='{exact}'", log)
+        self.assertIn("raw_transcript=\'" + exact + "\'", log)
         self.assertIn("classification=recurring", log)
         self.assertIn("operation=create", log)
-        self.assertIn("decision=allowed", log)
-        self.assertIn("TOOL_CALL  lilith_routine", log)
+        self.assertIn("decision=pending_confirmation", log)
         self.assertNotIn("blocked_wrong_tool", log)
         self.assertNotIn("TOOL_CALL  lilith_home_action", log)
         self.assertNotIn("TOOL_CALL  reminder", log)
-        self.assertEqual(client.command_submit.await_count, 1)
+        client.command_submit.assert_not_awaited()
         client.home_action.assert_not_awaited()
         reminder_action.assert_not_called()
+        self.assertEqual(len(session.responses), 1)
+        self.assertIn("JARVIS confirmation required", session.responses[0].response["result"])
 
     def test_live_leading_transcript_fragment_uses_create_contract_state(self):
         args = {
@@ -1032,9 +1076,11 @@ class TestGeminiLiveSchedulePath(unittest.TestCase):
 
         log = "\n".join(captured.output)
         self.assertIn("classification=recurring", log)
-        self.assertIn("decision=allowed", log)
+        self.assertIn("decision=pending_confirmation", log)
         self.assertNotIn("blocked_wrong_tool", log)
-        self.assertEqual(client.command_submit.await_count, 1)
+        client.command_submit.assert_not_awaited()
+        self.assertEqual(len(session.responses), 1)
+        self.assertIn("JARVIS confirmation required", session.responses[0].response["result"])
 
     def test_live_physical_failure_description_time_overrides_bad_schedule(self):
         description = "Encender bombilla mueble todos los días a las 10 de la noche"
@@ -1063,15 +1109,12 @@ class TestGeminiLiveSchedulePath(unittest.TestCase):
         with patch("main.reminder") as reminder_action:
             _run(jarvis._receive_audio())
 
-        params = client.command_submit.await_args.kwargs["parameters"]
-        self.assertEqual(params["schedule"], {"hour": 22, "minute": 0})
-        self.assertEqual(params["timezone"], "Europe/Madrid")
-        self.assertEqual(client.command_submit.await_args.kwargs["intent"], "routines.create")
+        client.command_submit.assert_not_awaited()
         client.home_action.assert_not_awaited()
         reminder_action.assert_not_called()
         self.assertEqual(len(session.responses), 1)
+        self.assertIn("JARVIS confirmation required", session.responses[0].response["result"])
         self.assertNotIn("13", session.responses[0].response["result"])
-
 
 class TestPersistentMemoryFlow(unittest.TestCase):
     """Persistent facts share one LILITH path and one exactly-once guard."""
