@@ -2196,9 +2196,23 @@ LOCAL_MACHINE_ONLY_ACTIONS = frozenset({
     "computer_settings",
 })
 
+HEADLESS_ACTIONS = frozenset({
+    "lilith_memory_search",
+    "lilith_memory_store",
+    "lilith_memory_delete",
+    "lilith_home_action",
+    "lilith_routine",
+})
 
-def get_tool_declarations(*, cloud_safe: bool = False) -> list[dict]:
+
+def get_tool_declarations(*, cloud_safe: bool = False, headless: bool = False) -> list[dict]:
     """Return the Gemini tools available for the requested runtime."""
+    if headless:
+        return [
+            declaration
+            for declaration in TOOL_DECLARATIONS
+            if declaration.get("name") in HEADLESS_ACTIONS
+        ]
     if not cloud_safe:
         return list(TOOL_DECLARATIONS)
     return [
@@ -2232,6 +2246,7 @@ class JarvisLive:
         voice_name: str = "Puck",
         *,
         cloud_safe: bool = False,
+        headless: bool = False,
         api_key: str | None = None,
         external_audio: bool = False,
         conversation_store_path: Path | str | None = None,
@@ -2241,9 +2256,12 @@ class JarvisLive:
         self.client         = client
         self.ui             = client
         self.cloud_safe     = bool(cloud_safe)
+        self.headless       = bool(headless)
         self.external_audio = bool(external_audio)
         self._api_key       = api_key.strip() if isinstance(api_key, str) else None
-        self.tool_declarations = get_tool_declarations(cloud_safe=self.cloud_safe)
+        self.tool_declarations = get_tool_declarations(
+            cloud_safe=self.cloud_safe, headless=self.headless,
+        )
         self.session        = None
         self.audio_in_queue = None
         self.out_queue      = None
