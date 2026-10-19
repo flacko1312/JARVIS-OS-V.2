@@ -2476,6 +2476,30 @@ _INITIAL_HISTORY_UNSUPPORTED_MODELS = frozenset({
 })
 
 
+
+_NON_SEMANTIC_PATTERN = re.compile(
+    r"^[\s\.\,\;\:\!\?\-\—\…\<\>]*$"
+    r"|^<noise>$"
+    r"|^<silence>$"
+    r"|^\[.*\]$",
+    re.IGNORECASE,
+)
+
+
+def _is_semantic_transcript(text: str | None) -> bool:
+    """Return True if the transcript contains real human speech content."""
+    if not text:
+        return False
+    cleaned = text.strip()
+    if not cleaned:
+        return False
+    if _NON_SEMANTIC_PATTERN.match(cleaned):
+        return False
+    if len(cleaned) <= 1 and not cleaned.isalnum():
+        return False
+    return True
+
+
 class JarvisLive:
 
     def __init__(
@@ -5383,30 +5407,6 @@ class JarvisLive:
         for frame in decision.forward_frames:
             loop.call_soon_threadsafe(self._enqueue_microphone_audio, frame)
         return decision
-
-
-_NON_SEMANTIC_PATTERN = re.compile(
-    r"^[\s\.\,\;\:\!\?\-\—\…\<\>]*$"
-    r"|^<noise>$"
-    r"|^<silence>$"
-    r"|^\[.*\]$",
-    re.IGNORECASE,
-)
-
-
-def _is_semantic_transcript(text: str | None) -> bool:
-    """Return True if the transcript contains real human speech content."""
-    if not text:
-        return False
-    cleaned = text.strip()
-    if not cleaned:
-        return False
-    if _NON_SEMANTIC_PATTERN.match(cleaned):
-        return False
-    if len(cleaned) <= 1 and not cleaned.isalnum():
-        return False
-    return True
-
 
     @staticmethod
     def _drain_queue(queue: asyncio.Queue | None) -> int:
