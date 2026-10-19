@@ -48,6 +48,7 @@ class VoiceStabilityMonitor:
         self._lock = threading.Lock()
         self._reconnect_events: deque[ReconnectEvent] = deque(maxlen=_MAX_EVENTS)
         self._latency_samples: deque[float] = deque(maxlen=_MAX_LATENCY_SAMPLES)
+        self._latency_by_label: dict[str, deque[float]] = {}
         self._session_start: float = 0.0
         self._total_reconnects: int = 0
         self._successful_reconnects: int = 0
@@ -88,10 +89,14 @@ class VoiceStabilityMonitor:
                 self._failed_reconnects += 1
             self._last_disconnect = time.time()
 
-    def record_latency(self, latency_ms: float) -> None:
-        """Record a response latency sample."""
+    def record_latency(self, latency_ms: float, *, label: str = "") -> None:
+        """Record a response latency sample, optionally labeled."""
         with self._lock:
             self._latency_samples.append(latency_ms)
+            if label:
+                if label not in self._latency_by_label:
+                    self._latency_by_label[label] = deque(maxlen=_MAX_LATENCY_SAMPLES)
+                self._latency_by_label[label].append(latency_ms)
 
     def record_audio_frame(self, *, dropped: bool = False) -> None:
         """Record an audio frame event."""
@@ -155,6 +160,17 @@ class VoiceStabilityMonitor:
                     "p95": round(p95, 1),
                     "max": round(max_lat, 1),
                     "samples": len(latencies),
+                    "by_label": {
+                        lbl: {
+                            "avg": round(sum(vals) / len(vals), 1),
+                            "max": round(max(vals), 1),
+                            "samples": len(vals),
+                        }
+                        for lbl, vals in (
+                            (k, list(v)) for k, v in self._latency_by_label.items()
+                        )
+                        if vals
+                    },
                 },
                 "audio": {
                     "frames_sent": self._audio.frames_sent,

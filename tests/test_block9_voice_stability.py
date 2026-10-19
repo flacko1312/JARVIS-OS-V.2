@@ -193,3 +193,40 @@ class TestReconnectConstants(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestLabeledLatency(unittest.TestCase):
+    def _make_monitor(self):
+        from core.voice_stability import VoiceStabilityMonitor
+        m = VoiceStabilityMonitor()
+        m.start()
+        return m
+
+    def test_labeled_latency_stats(self):
+        m = self._make_monitor()
+        m.record_latency(100, label="speech_to_first_audio")
+        m.record_latency(200, label="speech_to_first_audio")
+        m.record_latency(50, label="first_audio_to_playback")
+        m.record_latency(500, label="turn_total")
+        metrics = m.get_metrics()
+        by_label = metrics["latency_ms"]["by_label"]
+        self.assertIn("speech_to_first_audio", by_label)
+        self.assertEqual(by_label["speech_to_first_audio"]["samples"], 2)
+        self.assertAlmostEqual(by_label["speech_to_first_audio"]["avg"], 150.0)
+        self.assertIn("first_audio_to_playback", by_label)
+        self.assertIn("turn_total", by_label)
+
+    def test_unlabeled_still_works(self):
+        m = self._make_monitor()
+        m.record_latency(100)
+        m.record_latency(200, label="")
+        metrics = m.get_metrics()
+        self.assertEqual(metrics["latency_ms"]["samples"], 2)
+        self.assertEqual(len(metrics["latency_ms"]["by_label"]), 0)
+
+    def test_labeled_goes_to_global_too(self):
+        m = self._make_monitor()
+        m.record_latency(100, label="speech_to_first_audio")
+        metrics = m.get_metrics()
+        self.assertEqual(metrics["latency_ms"]["samples"], 1)
+        self.assertEqual(metrics["latency_ms"]["by_label"]["speech_to_first_audio"]["samples"], 1)

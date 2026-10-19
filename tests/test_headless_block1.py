@@ -177,8 +177,6 @@ class TestHeadlessToolProfile(unittest.TestCase):
             "lilith_home_action",
             "lilith_home_status",
             "lilith_health",
-            "lilith_request_approval",
-            "lilith_resolve_approval",
             "lilith_routine",
             "open_capabilities_catalog",
         }

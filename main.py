@@ -2025,38 +2025,6 @@ TOOL_DECLARATIONS = [
         }
     },
     {
-        "name": "lilith_request_approval",
-        "description": (
-            "Request approval for a home action that LILITH requires confirmation for. "
-            "Use ONLY when lilith_home_action returned 'approval_required'. "
-            "Returns a token — ask the user to approve or reject, then call lilith_resolve_approval."
-        ),
-        "parameters": {
-            "type": "OBJECT",
-            "properties": {
-                "entity_id": {"type": "STRING", "description": "The entity_id from the resolve step"},
-                "action": {"type": "STRING", "enum": ["turn_on", "turn_off"], "description": "The action"},
-            },
-            "required": ["entity_id", "action"]
-        }
-    },
-    {
-        "name": "lilith_resolve_approval",
-        "description": (
-            "Approve or reject a pending home-action approval. "
-            "Use ONLY after the user explicitly said yes or no to the approval request. "
-            "Never approve without explicit user consent."
-        ),
-        "parameters": {
-            "type": "OBJECT",
-            "properties": {
-                "token": {"type": "STRING", "description": "The approval token from lilith_request_approval"},
-                "resolution": {"type": "STRING", "enum": ["approved", "rejected"], "description": "User's decision"},
-            },
-            "required": ["token", "resolution"]
-        }
-    },
-    {
         "name": "lilith_health",
         "description": (
             "Check LILITH system health and service status. "
@@ -2451,8 +2419,7 @@ HEADLESS_ACTIONS = frozenset({
     "lilith_home_action",
     "lilith_home_status",
     "lilith_health",
-    "lilith_request_approval",
-    "lilith_resolve_approval",
+
     "lilith_routine",
     "open_capabilities_catalog",
 })
@@ -5073,7 +5040,7 @@ class JarvisLive:
             "create_presentation", "deep_research", "task_status", "save_memory",
             "jarvis_ui_control", "graphics_quality",
             "lilith_memory_store", "lilith_memory_delete", "lilith_home_action",
-            "lilith_request_approval", "lilith_resolve_approval", "lilith_command_submit",
+            "lilith_command_submit",
             "lilith_routine",
         }
         call_list = list(calls or [])
@@ -5411,6 +5378,9 @@ class JarvisLive:
                 _new_turn = True
                 turn_had_audio = False
                 received_message = False
+                _turn_start_t = time.monotonic()
+                _last_input_transcript_t = None
+                _first_response_audio_t = None
                 async for response in self.session.receive():
                     received_message = True
 
@@ -5443,6 +5413,9 @@ class JarvisLive:
 
                     response_audio = _live_response_audio_bytes(response)
                     if response_audio:
+                        if not turn_had_audio:
+                            _first_response_audio_t = time.monotonic()
+                            self._first_response_audio_t = _first_response_audio_t
                         turn_had_audio = True
                         if self._turn_done_event and self._turn_done_event.is_set():
                             self._turn_done_event.clear()
@@ -5477,6 +5450,7 @@ class JarvisLive:
                         if sc.input_transcription and sc.input_transcription.text:
                             txt = _clean_transcript(sc.input_transcription.text)
                             if txt:
+                                _last_input_transcript_t = time.monotonic()
                                 if not in_buf:
                                     self._begin_schedule_turn("", "voice")
                                 current_input = _merge_transcript_text(
@@ -5500,6 +5474,22 @@ class JarvisLive:
                             print("[JARVIS] Turn complete; Live session remains open.")
                             if self._turn_done_event:
                                 self._turn_done_event.set()
+                            try:
+                                from core.voice_stability import get_monitor as _get_voice_monitor
+                                _vm = _get_voice_monitor()
+                                _tc_t = time.monotonic()
+                                if _last_input_transcript_t and _first_response_audio_t:
+                                    _vm.record_latency(
+                                        (_first_response_audio_t - _last_input_transcript_t) * 1000,
+                                        label="speech_to_first_audio",
+                                    )
+                                if _first_response_audio_t and _turn_start_t:
+                                    _vm.record_latency(
+                                        (_tc_t - _turn_start_t) * 1000,
+                                        label="turn_total",
+                                    )
+                            except Exception:
+                                pass
 
                             full_in = " ".join(in_buf).strip()
                             if full_in:
@@ -5695,6 +5685,16 @@ class JarvisLive:
                                 len(chunk), wa,
                             )
                             self._playback_first_chunk_logged = True
+                            try:
+                                from core.voice_stability import get_monitor as _get_voice_monitor
+                                _fra_t = getattr(self, "_first_response_audio_t", None)
+                                if _fra_t:
+                                    _get_voice_monitor().record_latency(
+                                        (t_now - _fra_t) * 1000,
+                                        label="first_audio_to_playback",
+                                    )
+                            except Exception:
+                                pass
                         await asyncio.to_thread(stream.write, chunk)
         except Exception as e:
             print(f"[JARVIS] ❌ Play: {e}")

@@ -39,7 +39,7 @@ class TestHeadlessActions(unittest.TestCase):
             self.assertIn(tool, actions, f"{tool} missing from HEADLESS_ACTIONS")
 
     def test_headless_actions_size(self):
-        """HEADLESS_ACTIONS should have at least 18 tools (Block 6+7 combined)."""
+        """HEADLESS_ACTIONS should have at least 16 tools (Block 6+7 combined)."""
         import ast
         with open("main.py") as f:
             tree = ast.parse(f.read())
@@ -49,7 +49,7 @@ class TestHeadlessActions(unittest.TestCase):
                     if isinstance(target, ast.Name) and target.id == "HEADLESS_ACTIONS":
                         if isinstance(node.value, ast.Call) and node.value.args:
                             count = len(node.value.args[0].elts)
-                            self.assertGreaterEqual(count, 18)
+                            self.assertGreaterEqual(count, 16)
                             return
         self.fail("HEADLESS_ACTIONS not found")
 
