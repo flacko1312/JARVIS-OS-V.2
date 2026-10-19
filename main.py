@@ -6062,6 +6062,13 @@ class JarvisLive:
                 return
             if "connected_at" in locals() and time.monotonic() - connected_at >= 30.0:
                 reconnect_attempt = 0
+                try:
+                    from core.voice_stability import get_monitor as _get_voice_monitor
+                    _get_voice_monitor().record_reconnect(
+                        attempt=0, delay=0, success=True, reason="connected",
+                    )
+                except Exception:
+                    pass
             reconnect_attempt += 1
             if reconnect_attempt > MAX_LIVE_RECONNECT_ATTEMPTS:
                 self.ui.write_log(
@@ -6070,6 +6077,14 @@ class JarvisLive:
                 return
             self._set_conversation_state(ConversationState.RECONNECTING)
             delay = _live_reconnect_delay(reconnect_attempt)
+            try:
+                from core.voice_stability import get_monitor as _get_voice_monitor
+                _get_voice_monitor().record_reconnect(
+                    attempt=reconnect_attempt, delay=delay, success=False,
+                    reason="session_lost",
+                )
+            except Exception:
+                pass
             logger.info(
                 "LIVE_SESSION reconnect_wait attempt=%d/%d delay=%.1fs",
                 reconnect_attempt, MAX_LIVE_RECONNECT_ATTEMPTS, delay,

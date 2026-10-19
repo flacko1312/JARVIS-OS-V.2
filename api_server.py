@@ -102,6 +102,10 @@ class _APIHandler(BaseHTTPRequestHandler):
             if not self._check_auth():
                 return
             self._send_json(200, _tailscale_status())
+        elif path == "/api/voice":
+            if not self._check_auth():
+                return
+            self._respond_voice_metrics()
         else:
             self._send_json(404, {"error": "not found"})
 
@@ -172,6 +176,18 @@ class _APIHandler(BaseHTTPRequestHandler):
                 "description": rule.description,
             })
         self._send_json(200, {"tools": tools})
+
+    def _respond_voice_metrics(self):
+        """Voice and connection stability metrics."""
+        try:
+            from core.voice_stability import get_monitor
+            monitor = get_monitor()
+            data = monitor.get_metrics()
+            data["healthy"] = monitor.is_healthy()
+            data["reconnect_history"] = monitor.get_reconnect_history(limit=10)
+            self._send_json(200, data)
+        except Exception as e:
+            self._send_json(500, {"error": str(e)})
 
     def _respond_invoke(self):
         """Invoke a tool via API. Only READ_ONLY and SAFE_WRITE allowed remotely."""

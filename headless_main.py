@@ -157,6 +157,8 @@ def main() -> None:
 
     import health_server
     health_server.start(jarvis)
+    from core.voice_stability import get_monitor as _get_voice_monitor
+    _get_voice_monitor().start()
     logger.info("Health server listening on 127.0.0.1:%d", 7470)
 
     jarvis.start_conversation()
