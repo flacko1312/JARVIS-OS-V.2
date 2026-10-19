@@ -5366,6 +5366,7 @@ class JarvisLive:
                 pass
         if decision.accepted and not previously_accepted:
             loop.call_soon_threadsafe(self._log_barge_in, "accepted", decision)
+            loop.call_soon_threadsafe(self._interrupt_live_playback, "local_barge_in")
             try:
                 from core.voice_stability import get_monitor as _get_voice_monitor
                 _get_voice_monitor().record_barge_in(accepted=True)
