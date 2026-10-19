@@ -1853,9 +1853,9 @@ class TestLilithHomeActionSafety(unittest.TestCase):
     def test_unsupported_action(self):
         jarvis = _make_jarvis(lilith_client=AsyncMock())
         resp = _run(jarvis._execute_tool(_fake_fc("lilith_home_action", {
-            "target": "luz", "action": "toggle",
+            "target": "luz", "action": "set_temperature",
         })))
-        self.assertIn("Only turn_on and turn_off", resp.response["result"])
+        self.assertIn("Only turn_on, turn_off, and toggle are supported", resp.response["result"])
 
     def test_empty_target(self):
         jarvis = _make_jarvis(lilith_client=AsyncMock())

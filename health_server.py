@@ -40,6 +40,8 @@ class _Handler(BaseHTTPRequestHandler):
             self._respond_health()
         elif self.path == "/status":
             self._respond_status()
+        elif self.path == "/voice":
+            self._respond_voice()
         else:
             self._send(404, {"error": "not found"})
 
@@ -79,6 +81,16 @@ class _Handler(BaseHTTPRequestHandler):
             "checked_at": time.time(),
             "uptime": f"{hours}h{minutes:02d}m{seconds:02d}s",
         })
+
+    def _respond_voice(self):
+        try:
+            from core.voice_stability import get_monitor
+            monitor = get_monitor()
+            metrics = monitor.get_metrics()
+            metrics["healthy"] = monitor.is_healthy()
+            self._send(200, metrics)
+        except Exception as e:
+            self._send(500, {"error": str(e)})
 
     def _send(self, code: int, body: dict):
         payload = json.dumps(body, ensure_ascii=False).encode()

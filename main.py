@@ -1093,7 +1093,7 @@ TOOL_DECLARATIONS = [
     {
         "name": "date_time",
         "description": (
-            "Reads the real current date or time from the Windows host. Mandatory for every "
+            "Reads the real current date or time from the host system. Mandatory for every "
             "current-time/current-date question; never guess from model knowledge."
         ),
         "parameters": {
@@ -2007,7 +2007,7 @@ TOOL_DECLARATIONS = [
                 },
                 "action": {
                     "type": "STRING",
-                    "enum": ["turn_on", "turn_off"],
+                    "enum": ["turn_on", "turn_off", "toggle"],
                     "description": "The action to perform"
                 },
                 "parameters": {
@@ -2022,38 +2022,6 @@ TOOL_DECLARATIONS = [
                 },
             },
             "required": ["target", "action"]
-        }
-    },
-    {
-        "name": "lilith_request_approval",
-        "description": (
-            "Request approval for a home action that LILITH requires confirmation for. "
-            "Use ONLY when lilith_home_action returned 'approval_required'. "
-            "Returns a token — ask the user to approve or reject, then call lilith_resolve_approval."
-        ),
-        "parameters": {
-            "type": "OBJECT",
-            "properties": {
-                "entity_id": {"type": "STRING", "description": "The entity_id from the resolve step"},
-                "action": {"type": "STRING", "enum": ["turn_on", "turn_off"], "description": "The action"},
-            },
-            "required": ["entity_id", "action"]
-        }
-    },
-    {
-        "name": "lilith_resolve_approval",
-        "description": (
-            "Approve or reject a pending home-action approval. "
-            "Use ONLY after the user explicitly said yes or no to the approval request. "
-            "Never approve without explicit user consent."
-        ),
-        "parameters": {
-            "type": "OBJECT",
-            "properties": {
-                "token": {"type": "STRING", "description": "The approval token from lilith_request_approval"},
-                "resolution": {"type": "STRING", "enum": ["approved", "rejected"], "description": "User's decision"},
-            },
-            "required": ["token", "resolution"]
         }
     },
     {
@@ -2253,6 +2221,140 @@ TOOL_DECLARATIONS = [
             "required": ["operation"]
         }
     },
+
+    {
+        "name": "system_status",
+        "description": (
+            "Read the server's current system status: CPU, RAM, swap, load, disk space, "
+            "uptime, temperature, and network interfaces. Use when the user asks about "
+            "the server, system health, resources, or performance. Read-only, no side effects."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {},
+            "required": [],
+        },
+    },
+    {
+        "name": "process_list",
+        "description": (
+            "List running processes sorted by memory usage. Optional filter by name. "
+            "Use when the user asks what's running, or about a specific process. Read-only."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "filter": {
+                    "type": "STRING",
+                    "description": "Optional process name filter (case-insensitive substring match)",
+                },
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "process_info",
+        "description": (
+            "Get detailed info for a specific process by PID: CPU, memory, uptime, command. "
+            "Read-only."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "pid": {"type": "INTEGER", "description": "Process ID to inspect"},
+            },
+            "required": ["pid"],
+        },
+    },
+    {
+        "name": "systemd_status",
+        "description": (
+            "Check the status of a systemd user service. Only works for allowlisted services: "
+            "jarvis-headless, jarvis-soak, lilith, lilith-worker, nginx, tailscaled. "
+            "Returns active state, PID, restart count, start time. Read-only."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "service": {"type": "STRING", "description": "Service name (e.g. 'jarvis-headless')"},
+            },
+            "required": ["service"],
+        },
+    },
+    {
+        "name": "systemd_action",
+        "description": (
+            "Perform a mutating action on a systemd user service: restart, start, or stop. "
+            "Only works for allowlisted services. REQUIRES USER CONFIRMATION before executing. "
+            "First call returns a confirmation request; user must approve before execution."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "service": {"type": "STRING", "description": "Service name"},
+                "action": {
+                    "type": "STRING",
+                    "enum": ["restart", "start", "stop"],
+                    "description": "Action to perform",
+                },
+            },
+            "required": ["service", "action"],
+        },
+    },
+    {
+        "name": "systemd_list_failed",
+        "description": (
+            "List all failed systemd user units. Use when the user asks about failed services "
+            "or system problems. Read-only."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {},
+            "required": [],
+        },
+    },
+    {
+        "name": "journal_read",
+        "description": (
+            "Read recent log entries from an allowlisted systemd service journal. "
+            "Supports filtering by priority and time. Max 100 lines. "
+            "Allowlisted: jarvis-headless, jarvis-soak, lilith, lilith-worker, nginx, "
+            "tailscaled, pulseaudio. Read-only. Secrets are automatically redacted."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "service": {"type": "STRING", "description": "Service name"},
+                "lines": {"type": "INTEGER", "description": "Max lines to return (default 50, max 100)"},
+                "priority": {
+                    "type": "STRING",
+                    "enum": ["emerg", "alert", "crit", "err", "warning", "notice", "info", "debug"],
+                    "description": "Filter by minimum priority level",
+                },
+                "since": {"type": "STRING", "description": "Show entries since (e.g. '1 hour ago', '2026-10-19')"},
+            },
+            "required": ["service"],
+        },
+    },
+    {
+        "name": "lilith_home_status",
+        "description": (
+            "Query the current state of a Home Assistant device or sensor through LILITH. "
+            "Use for checking temperature, humidity, light state, switch state, presence, "
+            "energy, battery, or any sensor value. Describe the device in natural language. "
+            "Read-only — does not change any device state."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "target": {
+                    "type": "STRING",
+                    "description": "Device or sensor name in natural language (e.g. 'temperatura salón', 'luz cocina', 'sensor humedad')",
+                },
+            },
+            "required": ["target"],
+        },
+    },
     {
         "name": "open_capabilities_catalog",
         "description": (
@@ -2303,11 +2405,23 @@ LOCAL_MACHINE_ONLY_ACTIONS = frozenset({
 })
 
 HEADLESS_ACTIONS = frozenset({
+    "date_time",
+    "system_status",
+    "process_list",
+    "process_info",
+    "systemd_status",
+    "systemd_action",
+    "systemd_list_failed",
+    "journal_read",
     "lilith_memory_search",
     "lilith_memory_store",
     "lilith_memory_delete",
     "lilith_home_action",
+    "lilith_home_status",
+    "lilith_health",
+
     "lilith_routine",
+    "open_capabilities_catalog",
 })
 
 
@@ -3657,8 +3771,12 @@ class JarvisLive:
                         ha_params = {k: v for k, v in ha_params.items() if v is not None} or None
                     else:
                         ha_params = None
-                    if action_name not in ("turn_on", "turn_off"):
-                        result = f"Only turn_on and turn_off are supported, not '{action_name}'."
+                    from core.headless_permissions import check_permission, PermissionLevel
+                    perm = check_permission("lilith_home_action", action_name)
+                    if perm.level == PermissionLevel.DENIED:
+                        result = f"Action '{action_name}' is not allowed on home devices."
+                    elif action_name not in ("turn_on", "turn_off", "toggle"):
+                        result = f"Only turn_on, turn_off, and toggle are supported, not '{action_name}'."
                     elif not target:
                         result = "No device target specified."
                     else:
@@ -3681,13 +3799,16 @@ class JarvisLive:
                                 await client.home_action(entity_id, action_name, parameters=ha_params)
                                 # Home Assistant state propagation can lag the service response.
                                 try:
-                                    expected = "on" if action_name == "turn_on" else "off"
+                                    if action_name == "toggle":
+                                        expected = None
+                                    else:
+                                        expected = "on" if action_name == "turn_on" else "off"
                                     state_data = {}
                                     current = "unknown"
                                     for attempt in range(4):
                                         state_data = await client.home_entity(entity_id)
                                         current = state_data.get("state", "unknown")
-                                        if current == expected:
+                                        if expected is None or current == expected:
                                             break
                                         if attempt < 3:
                                             await asyncio.sleep(0.25)
@@ -3696,7 +3817,9 @@ class JarvisLive:
                                         brightness = state_data["attributes"].get("brightness")
                                         if brightness is not None:
                                             attrs = f" Brightness: {round(brightness/255*100)}%."
-                                    if current == expected:
+                                    if expected is None:
+                                        result = f"{action_name} on '{friendly}' ({entity_id}). Current state: {current}.{attrs}"
+                                    elif current == expected:
                                         result = f"{action_name} on '{friendly}' ({entity_id}). Verified state: {current}.{attrs}"
                                     else:
                                         result = (
@@ -4015,8 +4138,12 @@ class JarvisLive:
                                    if k not in params]
                     elif operation not in {"list"} and "routine_id" not in params:
                         missing = ["routine_id"]
+                    from core.headless_permissions import check_permission, PermissionLevel
+                    perm = check_permission("lilith_routine", operation)
                     if operation not in allowed:
                         result = "Unknown routine operation; no routine was changed."
+                    elif perm.level == PermissionLevel.DENIED:
+                        result = f"Routine operation '{operation}' is denied."
                     elif missing:
                         result = "Routine request is ambiguous: missing " + ", ".join(missing) + "."
                     else:
@@ -4083,16 +4210,92 @@ class JarvisLive:
                             )
                             result = f"LILITH routine request failed; no success confirmed: {exc}"
 
-            elif name == "open_capabilities_catalog":
-                from core.green.capability_catalog import refresh_catalog, open_catalog
-                action = str(args.get("action", "open")).strip().lower()
-                if action == "refresh":
-                    path = await asyncio.to_thread(refresh_catalog)
-                    result = f"Capability catalog refreshed at {path}."
+            elif name == "system_status":
+                from core.headless_tools import system_status
+                result = str(system_status())
+
+            elif name == "process_list":
+                from core.headless_tools import process_list
+                filt = str(args.get("filter", ""))
+                result = str(process_list(filt))
+
+            elif name == "process_info":
+                from core.headless_tools import process_info
+                pid_val = int(args.get("pid", 0))
+                result = str(process_info(pid_val))
+
+            elif name == "systemd_status":
+                from core.headless_tools import systemd_status
+                svc = str(args.get("service", ""))
+                result = str(systemd_status(svc))
+
+            elif name == "systemd_action":
+                from core.headless_tools import systemd_action, systemd_execute
+                from core.headless_permissions import requires_confirmation
+                svc = str(args.get("service", ""))
+                act = str(args.get("action", ""))
+                if requires_confirmation("systemd_action", act):
+                    check = systemd_action(svc, act)
+                    if check.get("confirmation_required"):
+                        result = (
+                            f"JARVIS confirmation required: {check['summary']}\n"
+                            f"Di 'sí' o 'confirmo' para ejecutar."
+                        )
+                    else:
+                        result = str(check)
                 else:
-                    await asyncio.to_thread(refresh_catalog)
-                    msg = await asyncio.to_thread(open_catalog)
-                    result = msg
+                    result = str(systemd_execute(svc, act))
+
+            elif name == "systemd_list_failed":
+                from core.headless_tools import systemd_list_failed
+                result = str(systemd_list_failed())
+
+            elif name == "journal_read":
+                from core.headless_tools import journal_read
+                svc = str(args.get("service", ""))
+                lines_n = int(args.get("lines", 50))
+                prio = str(args.get("priority", ""))
+                since = str(args.get("since", ""))
+                result = journal_read(svc, lines=lines_n, priority=prio, since=since)
+
+            elif name == "lilith_home_status":
+                if not client:
+                    result = "LILITH is not connected."
+                else:
+                    target = str(args.get("target", ""))
+                    if not target:
+                        result = "No device/sensor specified."
+                    else:
+                        resolved = await client.home_resolve(target)
+                        status_val = resolved.get("status", "unknown")
+                        if status_val == "resolved":
+                            entity_id = resolved["entity_id"]
+                            state_data = await client.home_entity(entity_id)
+                            result = (
+                                f"Device: {resolved.get('friendly_name', entity_id)}\n"
+                                f"Entity: {entity_id}\n"
+                                f"State: {state_data}"
+                            )
+                        elif status_val == "ambiguous":
+                            candidates = resolved.get("candidates", [])
+                            result = f"Ambiguous — multiple devices match: {candidates}"
+                        else:
+                            result = f"Could not resolve '{target}': {resolved}"
+
+            elif name == "open_capabilities_catalog":
+                action = str(args.get("action", "open")).strip().lower()
+                if getattr(self, "headless", False):
+                    from core.headless_tools import build_headless_catalog
+                    result = build_headless_catalog()
+                else:
+                    from core.green.capability_catalog import refresh_catalog, open_catalog
+                    if action == "refresh":
+                        path = await asyncio.to_thread(refresh_catalog)
+                        result = f"Capability catalog refreshed at {path}."
+                    else:
+                        await asyncio.to_thread(refresh_catalog)
+                        msg = await asyncio.to_thread(open_catalog)
+                        result = msg
 
             else:
                 result = f"Unknown tool: {name}"
@@ -4837,7 +5040,7 @@ class JarvisLive:
             "create_presentation", "deep_research", "task_status", "save_memory",
             "jarvis_ui_control", "graphics_quality",
             "lilith_memory_store", "lilith_memory_delete", "lilith_home_action",
-            "lilith_request_approval", "lilith_resolve_approval", "lilith_command_submit",
+            "lilith_command_submit",
             "lilith_routine",
         }
         call_list = list(calls or [])
@@ -5175,6 +5378,9 @@ class JarvisLive:
                 _new_turn = True
                 turn_had_audio = False
                 received_message = False
+                _turn_start_t = time.monotonic()
+                _last_input_transcript_t = None
+                _first_response_audio_t = None
                 async for response in self.session.receive():
                     received_message = True
 
@@ -5207,6 +5413,9 @@ class JarvisLive:
 
                     response_audio = _live_response_audio_bytes(response)
                     if response_audio:
+                        if not turn_had_audio:
+                            _first_response_audio_t = time.monotonic()
+                            self._first_response_audio_t = _first_response_audio_t
                         turn_had_audio = True
                         if self._turn_done_event and self._turn_done_event.is_set():
                             self._turn_done_event.clear()
@@ -5241,6 +5450,7 @@ class JarvisLive:
                         if sc.input_transcription and sc.input_transcription.text:
                             txt = _clean_transcript(sc.input_transcription.text)
                             if txt:
+                                _last_input_transcript_t = time.monotonic()
                                 if not in_buf:
                                     self._begin_schedule_turn("", "voice")
                                 current_input = _merge_transcript_text(
@@ -5264,6 +5474,22 @@ class JarvisLive:
                             print("[JARVIS] Turn complete; Live session remains open.")
                             if self._turn_done_event:
                                 self._turn_done_event.set()
+                            try:
+                                from core.voice_stability import get_monitor as _get_voice_monitor
+                                _vm = _get_voice_monitor()
+                                _tc_t = time.monotonic()
+                                if _last_input_transcript_t and _first_response_audio_t:
+                                    _vm.record_latency(
+                                        (_first_response_audio_t - _last_input_transcript_t) * 1000,
+                                        label="speech_to_first_audio",
+                                    )
+                                if _first_response_audio_t and _turn_start_t:
+                                    _vm.record_latency(
+                                        (_tc_t - _turn_start_t) * 1000,
+                                        label="turn_total",
+                                    )
+                            except Exception:
+                                pass
 
                             full_in = " ".join(in_buf).strip()
                             if full_in:
@@ -5459,6 +5685,16 @@ class JarvisLive:
                                 len(chunk), wa,
                             )
                             self._playback_first_chunk_logged = True
+                            try:
+                                from core.voice_stability import get_monitor as _get_voice_monitor
+                                _fra_t = getattr(self, "_first_response_audio_t", None)
+                                if _fra_t:
+                                    _get_voice_monitor().record_latency(
+                                        (t_now - _fra_t) * 1000,
+                                        label="first_audio_to_playback",
+                                    )
+                            except Exception:
+                                pass
                         await asyncio.to_thread(stream.write, chunk)
         except Exception as e:
             print(f"[JARVIS] ❌ Play: {e}")
@@ -5826,6 +6062,13 @@ class JarvisLive:
                 return
             if "connected_at" in locals() and time.monotonic() - connected_at >= 30.0:
                 reconnect_attempt = 0
+                try:
+                    from core.voice_stability import get_monitor as _get_voice_monitor
+                    _get_voice_monitor().record_reconnect(
+                        attempt=0, delay=0, success=True, reason="connected",
+                    )
+                except Exception:
+                    pass
             reconnect_attempt += 1
             if reconnect_attempt > MAX_LIVE_RECONNECT_ATTEMPTS:
                 self.ui.write_log(
@@ -5834,6 +6077,14 @@ class JarvisLive:
                 return
             self._set_conversation_state(ConversationState.RECONNECTING)
             delay = _live_reconnect_delay(reconnect_attempt)
+            try:
+                from core.voice_stability import get_monitor as _get_voice_monitor
+                _get_voice_monitor().record_reconnect(
+                    attempt=reconnect_attempt, delay=delay, success=False,
+                    reason="session_lost",
+                )
+            except Exception:
+                pass
             logger.info(
                 "LIVE_SESSION reconnect_wait attempt=%d/%d delay=%.1fs",
                 reconnect_attempt, MAX_LIVE_RECONNECT_ATTEMPTS, delay,
