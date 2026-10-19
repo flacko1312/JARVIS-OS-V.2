@@ -276,7 +276,9 @@ Tool routing:
 - lilith_health: LILITH integration health check, always safe.
 - lilith_routine: list/get/history are read-only; create/update/enable/disable/delete
   REQUIRE user confirmation. Recurring schedules use lilith_routine, not reminders.
-- open_capabilities_catalog: shows what you can do, always safe.
+- open_capabilities_catalog: when the user asks what you can do, call this tool.
+  Read the result aloud naturally: summarize the capability groups and give a few examples.
+  NEVER say you "opened" anything or reference a visual catalog. You are voice-only.
 
 One-shot local reminders are not available in this profile.
 Answer ordinary conversation and current-context follow-ups directly without a tool.
@@ -4304,7 +4306,12 @@ class JarvisLive:
                 action = str(args.get("action", "open")).strip().lower()
                 if getattr(self, "headless", False):
                     from core.headless_tools import build_headless_catalog
-                    result = build_headless_catalog()
+                    catalog_text = build_headless_catalog()
+                    result = (
+                        "[VOZ: Resume estas capacidades de forma natural y breve. "
+                        "NO digas que abriste nada. Eres solo voz.]\n\n"
+                        + catalog_text
+                    )
                 else:
                     from core.green.capability_catalog import refresh_catalog, open_catalog
                     if action == "refresh":
@@ -5303,6 +5310,11 @@ class JarvisLive:
             queue.put_nowait({"data": data, "mime_type": "audio/pcm"})
         except asyncio.QueueFull:
             logger.warning("BARGE_IN microphone_frame_dropped reason=input_queue_full")
+            try:
+                from core.voice_stability import get_monitor as _get_voice_monitor
+                _get_voice_monitor().record_audio_frame(dropped=True)
+            except Exception:
+                pass
 
     @staticmethod
     def _barge_in_metrics(decision: BargeInDecision) -> tuple[int, float, float, float]:
@@ -5332,6 +5344,14 @@ class JarvisLive:
         previously_accepted = gate.accepted
         decision = gate.process(data, playback_active=speaking)
         now = time.monotonic()
+        # ── voice stability metrics ──
+        try:
+            from core.voice_stability import get_monitor as _get_voice_monitor
+            _vm = _get_voice_monitor()
+            _vm.record_audio_frame(dropped=False)
+            _vm.update_noise_floor(decision.rms, decision.noise_floor)
+        except Exception:
+            pass
         if decision.candidate and not self._barge_in_candidate_logged:
             self._barge_in_candidate_logged = True
             loop.call_soon_threadsafe(self._log_barge_in, "candidate", decision)
@@ -5339,8 +5359,18 @@ class JarvisLive:
             self._barge_in_last_reject_log = now
             event = f"rejected reason={decision.rejected_reason}"
             loop.call_soon_threadsafe(self._log_barge_in, event, decision)
+            try:
+                from core.voice_stability import get_monitor as _get_voice_monitor
+                _get_voice_monitor().record_barge_in(accepted=False)
+            except Exception:
+                pass
         if decision.accepted and not previously_accepted:
             loop.call_soon_threadsafe(self._log_barge_in, "accepted", decision)
+            try:
+                from core.voice_stability import get_monitor as _get_voice_monitor
+                _get_voice_monitor().record_barge_in(accepted=True)
+            except Exception:
+                pass
         for frame in decision.forward_frames:
             loop.call_soon_threadsafe(self._enqueue_microphone_audio, frame)
         return decision
@@ -5683,6 +5713,11 @@ class JarvisLive:
                     if gate is not None:
                         gate.observe_playback(chunk, sample_rate=RECEIVE_SAMPLE_RATE)
                     _report_audio_level(self.ui, "output", chunk)
+                    try:
+                        from core.voice_stability import get_monitor as _get_voice_monitor
+                        _get_voice_monitor().record_audio_frame(dropped=False)
+                    except Exception:
+                        pass
                     if self.external_audio:
                         send_audio = getattr(self.client, "send_audio", None)
                         if callable(send_audio):

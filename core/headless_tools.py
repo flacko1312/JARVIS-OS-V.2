@@ -324,58 +324,149 @@ def journal_read(service: str, lines: int = 50, priority: str = "", since: str =
 # ── Capability Catalog (headless version) ──
 
 
+
+_VOICE_CAPABILITIES = [
+    {
+        "group": "Fecha y hora",
+        "tools": ["date_time"],
+        "description": "Consulta la fecha y hora reales del servidor.",
+        "examples": [
+            "¿Qué hora es?",
+            "¿Qué día es hoy?",
+        ],
+    },
+    {
+        "group": "Estado del sistema",
+        "tools": ["system_status"],
+        "description": "Consulta CPU, memoria, disco, uptime y carga del servidor.",
+        "examples": [
+            "¿Cómo está el servidor?",
+            "¿Cuánta RAM queda libre?",
+        ],
+    },
+    {
+        "group": "Procesos",
+        "tools": ["process_list", "process_info"],
+        "description": "Consulta los procesos que se están ejecutando.",
+        "examples": [
+            "¿Qué procesos están consumiendo más?",
+            "¿Está JARVIS ejecutándose?",
+        ],
+    },
+    {
+        "group": "Servicios",
+        "tools": ["systemd_status", "systemd_action", "systemd_list_failed"],
+        "description": "Consulta y controla servicios permitidos del servidor.",
+        "examples": [
+            "¿Está activo Home Assistant?",
+            "¿Está fallando algún servicio?",
+        ],
+    },
+    {
+        "group": "Logs",
+        "tools": ["journal_read"],
+        "description": "Consulta registros recientes de servicios permitidos.",
+        "examples": [
+            "Mira los últimos errores de JARVIS.",
+            "¿Qué ha pasado en el servicio de LILITH?",
+        ],
+    },
+    {
+        "group": "Memoria persistente",
+        "tools": ["lilith_memory_search", "lilith_memory_store", "lilith_memory_delete"],
+        "description": "Busca, guarda o elimina recuerdos persistentes a través de LILITH.",
+        "examples": [
+            "Recuerda que prefiero respuestas en castellano.",
+            "¿Qué recuerdas sobre este proyecto?",
+        ],
+    },
+    {
+        "group": "Home Assistant",
+        "tools": ["lilith_home_action", "lilith_home_status"],
+        "description": "Consulta estados y controla dispositivos permitidos.",
+        "examples": [
+            "¿Está encendida la luz del mueble?",
+            "Enciende la bombilla de la habitación.",
+        ],
+    },
+    {
+        "group": "Rutinas",
+        "tools": ["lilith_routine"],
+        "description": "Consulta y gestiona rutinas persistentes.",
+        "examples": [
+            "¿Qué rutinas tengo?",
+            "Crea una rutina para apagar la luz a las diez.",
+        ],
+    },
+    {
+        "group": "Estado de LILITH",
+        "tools": ["lilith_health"],
+        "description": "Consulta si LILITH está disponible.",
+        "examples": [
+            "¿LILITH está conectada?",
+            "¿Está funcionando LILITH?",
+        ],
+    },
+    {
+        "group": "Catálogo de capacidades",
+        "tools": ["open_capabilities_catalog"],
+        "description": "Explica qué puede hacer JARVIS Headless.",
+        "examples": [
+            "¿Qué sabes hacer?",
+            "Dime tus funciones.",
+        ],
+    },
+]
+
+
 def _headless_capability_entries() -> list[dict[str, Any]]:
     """Build capability catalog from actual HEADLESS_ACTIONS + headless-specific tools."""
     entries = []
-
-    def _add(name: str, category: str, description: str, *,
-             read_only: bool = True, confirmation: bool = False, platform: str = "linux"):
-        entries.append({
-            "name": name,
-            "category": category,
-            "description": description,
-            "read_only": read_only,
-            "confirmation_required": confirmation,
-            "platform": platform,
-        })
-
-    _add("date_time", "System", "Current date, time, day, timezone, relative dates")
-    _add("system_status", "System", "CPU, RAM, swap, load, disk, uptime, temperature, network")
-    _add("process_list", "System", "List/search running processes with CPU/RAM usage")
-    _add("process_info", "System", "Detailed info for a specific process ID")
-    _add("systemd_status", "System", "Status of allowlisted systemd services")
-    _add("systemd_action", "System", "Restart/start/stop allowlisted services",
-         read_only=False, confirmation=True)
-    _add("systemd_list_failed", "System", "List failed systemd user units")
-    _add("journal_read", "System", "Read recent logs for allowlisted services")
-    _add("lilith_memory_search", "Memory", "Search LILITH persistent memory", platform="any")
-    _add("lilith_memory_store", "Memory", "Store facts in LILITH memory",
-         read_only=False, platform="any")
-    _add("lilith_memory_delete", "Memory", "Delete LILITH memory entries",
-         read_only=False, confirmation=True, platform="any")
-    _add("lilith_home_action", "Home Assistant", "Control home devices via LILITH",
-         read_only=False, confirmation=True, platform="any")
-    _add("lilith_routine", "Routines", "Manage scheduled routines via LILITH",
-         read_only=False, confirmation=True, platform="any")
-    _add("lilith_home_status", "Home Assistant", "Query device/sensor states via LILITH", platform="any")
-    _add("lilith_health", "LILITH", "Check LILITH integration health", platform="any")
-    _add("open_capabilities_catalog", "System", "Show this capability catalog")
-
+    for cap in _VOICE_CAPABILITIES:
+        for tool in cap["tools"]:
+            entries.append({
+                "name": tool,
+                "category": cap["group"],
+                "description": cap["description"],
+                "read_only": tool not in (
+                    "systemd_action", "lilith_memory_store", "lilith_memory_delete",
+                    "lilith_home_action", "lilith_routine",
+                ),
+                "confirmation_required": tool in (
+                    "systemd_action", "lilith_memory_delete",
+                ),
+                "platform": "any" if tool.startswith("lilith") else "linux",
+            })
     return entries
 
 
 def build_headless_catalog() -> str:
-    """Generate a Markdown catalog of headless capabilities."""
+    """Generate a voice-friendly catalog of headless capabilities.
+
+    Returns text suitable for JARVIS to read aloud — no visual language,
+    grouped by human capability with natural-language examples.
+    """
+    lines = []
+    for cap in _VOICE_CAPABILITIES:
+        lines.append(cap["group"])
+        lines.append(f"  {cap['description']}")
+        for ex in cap["examples"]:
+            lines.append(f"  Ejemplo: {ex}")
+        lines.append("")
+    return "\n".join(lines)
+
+
+def build_headless_catalog_technical() -> str:
+    """Generate a detailed Markdown catalog for debug/API use."""
     entries = _headless_capability_entries()
     lines = [
-        "# JARVIS Headless — Capability Catalog",
+        "# JARVIS Headless — Capability Catalog (Technical)",
         f"Generated: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}",
         "",
     ]
     categories: dict[str, list] = {}
     for e in entries:
         categories.setdefault(e["category"], []).append(e)
-
     for cat, items in categories.items():
         lines.append(f"## {cat}")
         lines.append("")
@@ -388,7 +479,14 @@ def build_headless_catalog() -> str:
             if item["confirmation_required"]:
                 flags.append("CONFIRM_REQUIRED")
             lines.append(f"- **{item['name']}** — {item['description']}  ")
-            lines.append(f"  `{'` `'.join(flags)}` | platform: {item['platform']}")
+            lines.append(f"  {' '.join(flags)} | platform: {item['platform']}")
         lines.append("")
-
     return "\n".join(lines)
+
+
+def build_headless_catalog_voice_summary() -> str:
+    """One-line voice summary of all capabilities."""
+    groups = [cap["group"].lower() for cap in _VOICE_CAPABILITIES]
+    if len(groups) > 1:
+        return ", ".join(groups[:-1]) + " y " + groups[-1]
+    return groups[0] if groups else ""

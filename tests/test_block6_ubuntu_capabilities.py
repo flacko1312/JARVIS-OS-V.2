@@ -303,32 +303,33 @@ class TestPermissions(unittest.TestCase):
 
 
 class TestBuildHeadlessCatalog(unittest.TestCase):
-    """Test the headless capability catalog generator."""
+    """Test the headless capability catalog generator (voice-friendly format)."""
 
-    def test_returns_markdown(self):
+    def test_voice_friendly_format(self):
         from core.headless_tools import build_headless_catalog
         result = build_headless_catalog()
-        self.assertIn("# JARVIS Headless", result)
-        self.assertIn("## System", result)
+        self.assertIn("Fecha y hora", result)
+        self.assertIn("Ejemplo:", result)
+        self.assertNotIn("# JARVIS Headless", result)
 
-    def test_contains_all_tools(self):
+    def test_contains_all_capability_groups(self):
         from core.headless_tools import build_headless_catalog
         result = build_headless_catalog()
-        tools = [
-            "date_time", "system_status", "process_list", "process_info",
-            "systemd_status", "systemd_action", "journal_read",
-            "lilith_memory_search", "lilith_home_action", "lilith_home_status",
-            "open_capabilities_catalog",
+        groups = [
+            "Fecha y hora", "Estado del sistema", "Procesos", "Servicios",
+            "Logs", "Memoria persistente", "Home Assistant", "Rutinas",
+            "Estado de LILITH", "Cat\u00e1logo de capacidades",
         ]
-        for tool in tools:
-            self.assertIn(tool, result, f"{tool} missing from catalog")
+        for group in groups:
+            self.assertIn(group, result, f"{group} missing from voice catalog")
 
-    def test_flags_present(self):
-        from core.headless_tools import build_headless_catalog
-        result = build_headless_catalog()
+    def test_technical_catalog_has_flags(self):
+        from core.headless_tools import build_headless_catalog_technical
+        result = build_headless_catalog_technical()
         self.assertIn("READ_ONLY", result)
         self.assertIn("CONFIRM_REQUIRED", result)
         self.assertIn("MUTATING", result)
+        self.assertIn("# JARVIS Headless", result)
 
 
 if __name__ == "__main__":
