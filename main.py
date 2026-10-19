@@ -2517,6 +2517,7 @@ class JarvisLive:
         self._barge_in_gate = SpeechAwareBargeInGate(input_sample_rate=SEND_SAMPLE_RATE)
         self._barge_in_candidate_logged = False
         self._local_barge_in_active = False
+        self._suppress_interrupted_output = False
         self._barge_in_last_reject_log = 0.0
         self._audio_input_worker_lock = threading.Lock()
         self._audio_input_device_id: int | None = None
@@ -2960,7 +2961,6 @@ class JarvisLive:
             if value:
                 gate.start_playback()
                 self._barge_in_candidate_logged = False
-                self._local_barge_in_active = False
             else:
                 gate.stop_playback()
         if value:
@@ -5368,6 +5368,7 @@ class JarvisLive:
                 pass
         if decision.accepted and not previously_accepted and not self._local_barge_in_active:
             self._local_barge_in_active = True
+            self._suppress_interrupted_output = True
             loop.call_soon_threadsafe(self._log_barge_in, "accepted", decision)
             loop.call_soon_threadsafe(self._interrupt_live_playback, "local_barge_in")
             try:
@@ -5429,6 +5430,8 @@ class JarvisLive:
                 live_turn_id = uuid.uuid4().hex
                 _new_turn = True
                 turn_had_audio = False
+                self._suppress_interrupted_output = False
+                self._local_barge_in_active = False
                 received_message = False
                 _turn_start_t = time.monotonic()
                 _last_input_transcript_t = None
@@ -5465,19 +5468,27 @@ class JarvisLive:
 
                     response_audio = _live_response_audio_bytes(response)
                     if response_audio:
-                        if not turn_had_audio:
-                            _first_response_audio_t = time.monotonic()
-                            self._first_response_audio_t = _first_response_audio_t
-                        turn_had_audio = True
-                        if self._turn_done_event and self._turn_done_event.is_set():
-                            self._turn_done_event.clear()
-                        self.audio_in_queue.put_nowait(response_audio)
+                        if self._suppress_interrupted_output:
+                            logger.debug(
+                                "LIVE_AUDIO suppressed reason=local_barge_in bytes=%d",
+                                len(response_audio),
+                            )
+                        else:
+                            if not turn_had_audio:
+                                _first_response_audio_t = time.monotonic()
+                                self._first_response_audio_t = _first_response_audio_t
+                            turn_had_audio = True
+                            if self._turn_done_event and self._turn_done_event.is_set():
+                                self._turn_done_event.clear()
+                            self.audio_in_queue.put_nowait(response_audio)
 
                     if response.server_content:
                         sc = response.server_content
 
                         if getattr(sc, "interrupted", False):
                             self._interrupt_live_playback("provider_interruption")
+                            self._suppress_interrupted_output = False
+                            self._local_barge_in_active = False
 
                         if sc.output_transcription and sc.output_transcription.text:
                             txt = _clean_transcript(sc.output_transcription.text)
@@ -5524,6 +5535,8 @@ class JarvisLive:
 
                         if sc.turn_complete:
                             print("[JARVIS] Turn complete; Live session remains open.")
+                            self._suppress_interrupted_output = False
+                            self._local_barge_in_active = False
                             if self._turn_done_event:
                                 self._turn_done_event.set()
                             try:
