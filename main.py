@@ -2518,6 +2518,9 @@ class JarvisLive:
         self._barge_in_candidate_logged = False
         self._local_barge_in_active = False
         self._suppress_interrupted_output = False
+        self._active_turn_id: str | None = None
+        self._turn_interrupted = False
+        self._turn_tool_signatures: set[str] = set()
         self._barge_in_last_reject_log = 0.0
         self._audio_input_worker_lock = threading.Lock()
         self._audio_input_device_id: int | None = None
@@ -5369,6 +5372,7 @@ class JarvisLive:
         if decision.accepted and not previously_accepted and not self._local_barge_in_active:
             self._local_barge_in_active = True
             self._suppress_interrupted_output = True
+            self._turn_interrupted = True
             loop.call_soon_threadsafe(self._log_barge_in, "accepted", decision)
             loop.call_soon_threadsafe(self._interrupt_live_playback, "local_barge_in")
             try:
@@ -5379,6 +5383,30 @@ class JarvisLive:
         for frame in decision.forward_frames:
             loop.call_soon_threadsafe(self._enqueue_microphone_audio, frame)
         return decision
+
+
+_NON_SEMANTIC_PATTERN = re.compile(
+    r"^[\s\.\,\;\:\!\?\-\—\…\<\>]*$"
+    r"|^<noise>$"
+    r"|^<silence>$"
+    r"|^\[.*\]$",
+    re.IGNORECASE,
+)
+
+
+def _is_semantic_transcript(text: str | None) -> bool:
+    """Return True if the transcript contains real human speech content."""
+    if not text:
+        return False
+    cleaned = text.strip()
+    if not cleaned:
+        return False
+    if _NON_SEMANTIC_PATTERN.match(cleaned):
+        return False
+    if len(cleaned) <= 1 and not cleaned.isalnum():
+        return False
+    return True
+
 
     @staticmethod
     def _drain_queue(queue: asyncio.Queue | None) -> int:
@@ -5432,10 +5460,14 @@ class JarvisLive:
                 turn_had_audio = False
                 self._suppress_interrupted_output = False
                 self._local_barge_in_active = False
+                self._active_turn_id = live_turn_id
+                self._turn_interrupted = False
+                self._turn_tool_signatures = set()
                 received_message = False
                 _turn_start_t = time.monotonic()
                 _last_input_transcript_t = None
                 _first_response_audio_t = None
+                logger.info("TURN start id=%s", live_turn_id)
                 async for response in self.session.receive():
                     received_message = True
 
@@ -5487,6 +5519,7 @@ class JarvisLive:
 
                         if getattr(sc, "interrupted", False):
                             self._interrupt_live_playback("provider_interruption")
+                            self._turn_interrupted = True
                             self._suppress_interrupted_output = False
                             self._local_barge_in_active = False
 
@@ -5534,6 +5567,10 @@ class JarvisLive:
                                     self._queue_self_quit_after_farewell()
 
                         if sc.turn_complete:
+                            logger.info(
+                                "TURN close id=%s reason=turn_complete interrupted=%s",
+                                live_turn_id, self._turn_interrupted,
+                            )
                             print("[JARVIS] Turn complete; Live session remains open.")
                             self._suppress_interrupted_output = False
                             self._local_barge_in_active = False
@@ -5603,7 +5640,67 @@ class JarvisLive:
 
                     if response.tool_call:
                         function_calls = list(response.tool_call.function_calls)
-                        fn_responses = await self._execute_tool_batch(function_calls)
+                        # ── turn integrity guards ──
+                        if self._turn_interrupted or self._suppress_interrupted_output:
+                            logger.info(
+                                "TOOL_CALL rejected reason=stale_turn turn_id=%s tools=%s",
+                                live_turn_id,
+                                [getattr(fc, "name", "?") for fc in function_calls],
+                            )
+                            fn_responses = [
+                                types.FunctionResponse(
+                                    id=fc.id,
+                                    name=getattr(fc, "name", "tool"),
+                                    response={"result": "Turn was interrupted; tool call discarded."},
+                                )
+                                for fc in function_calls
+                            ]
+                        else:
+                            current_input = " ".join(in_buf).strip()
+                            if in_buf and not _is_semantic_transcript(current_input):
+                                logger.info(
+                                    "VOICE_INPUT ignored reason=non_semantic_transcript turn_id=%s text=%r",
+                                    live_turn_id, current_input[:80],
+                                )
+                                fn_responses = [
+                                    types.FunctionResponse(
+                                        id=fc.id,
+                                        name=getattr(fc, "name", "tool"),
+                                        response={"result": "Non-semantic input; tool call skipped."},
+                                    )
+                                    for fc in function_calls
+                                ]
+                            else:
+                                filtered_calls = []
+                                dup_responses = []
+                                for fc in function_calls:
+                                    sig = f"{getattr(fc, 'name', '')}:{getattr(fc, 'id', '')}"
+                                    if sig in self._turn_tool_signatures:
+                                        logger.info(
+                                            "TOOL_CALL rejected reason=duplicate_turn_call turn_id=%s tool=%s",
+                                            live_turn_id, getattr(fc, "name", "?"),
+                                        )
+                                        dup_responses.append(types.FunctionResponse(
+                                            id=fc.id,
+                                            name=getattr(fc, "name", "tool"),
+                                            response={"result": "Duplicate call in same turn; skipped."},
+                                        ))
+                                    else:
+                                        self._turn_tool_signatures.add(sig)
+                                        filtered_calls.append(fc)
+                                if filtered_calls:
+                                    exec_responses = await self._execute_tool_batch(filtered_calls)
+                                    fn_responses = []
+                                    exec_iter = iter(exec_responses)
+                                    dup_iter = iter(dup_responses)
+                                    for fc in function_calls:
+                                        sig = f"{getattr(fc, 'name', '')}:{getattr(fc, 'id', '')}"
+                                        if any(getattr(d, 'id', None) == fc.id for d in dup_responses):
+                                            fn_responses.append(next(d for d in dup_responses if getattr(d, 'id', None) == fc.id))
+                                        else:
+                                            fn_responses.append(next(exec_iter))
+                                else:
+                                    fn_responses = dup_responses
                         for function_call, function_response in zip(function_calls, fn_responses):
                             self._remember_conversation_tool_result(
                                 str(getattr(function_call, "name", "tool")),
