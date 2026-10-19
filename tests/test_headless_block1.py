@@ -163,11 +163,24 @@ class TestHeadlessToolProfile(unittest.TestCase):
         from main import HEADLESS_ACTIONS
 
         EXPECTED_HEADLESS_TOOLS = {
+            "date_time",
+            "system_status",
+            "process_list",
+            "process_info",
+            "systemd_status",
+            "systemd_action",
+            "systemd_list_failed",
+            "journal_read",
             "lilith_memory_search",
             "lilith_memory_store",
             "lilith_memory_delete",
             "lilith_home_action",
+            "lilith_home_status",
+            "lilith_health",
+            "lilith_request_approval",
+            "lilith_resolve_approval",
             "lilith_routine",
+            "open_capabilities_catalog",
         }
         self.assertEqual(
             HEADLESS_ACTIONS,

@@ -1093,7 +1093,7 @@ TOOL_DECLARATIONS = [
     {
         "name": "date_time",
         "description": (
-            "Reads the real current date or time from the Windows host. Mandatory for every "
+            "Reads the real current date or time from the host system. Mandatory for every "
             "current-time/current-date question; never guess from model knowledge."
         ),
         "parameters": {
@@ -2253,6 +2253,140 @@ TOOL_DECLARATIONS = [
             "required": ["operation"]
         }
     },
+
+    {
+        "name": "system_status",
+        "description": (
+            "Read the server's current system status: CPU, RAM, swap, load, disk space, "
+            "uptime, temperature, and network interfaces. Use when the user asks about "
+            "the server, system health, resources, or performance. Read-only, no side effects."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {},
+            "required": [],
+        },
+    },
+    {
+        "name": "process_list",
+        "description": (
+            "List running processes sorted by memory usage. Optional filter by name. "
+            "Use when the user asks what's running, or about a specific process. Read-only."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "filter": {
+                    "type": "STRING",
+                    "description": "Optional process name filter (case-insensitive substring match)",
+                },
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "process_info",
+        "description": (
+            "Get detailed info for a specific process by PID: CPU, memory, uptime, command. "
+            "Read-only."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "pid": {"type": "INTEGER", "description": "Process ID to inspect"},
+            },
+            "required": ["pid"],
+        },
+    },
+    {
+        "name": "systemd_status",
+        "description": (
+            "Check the status of a systemd user service. Only works for allowlisted services: "
+            "jarvis-headless, jarvis-soak, lilith, lilith-worker, nginx, tailscaled. "
+            "Returns active state, PID, restart count, start time. Read-only."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "service": {"type": "STRING", "description": "Service name (e.g. 'jarvis-headless')"},
+            },
+            "required": ["service"],
+        },
+    },
+    {
+        "name": "systemd_action",
+        "description": (
+            "Perform a mutating action on a systemd user service: restart, start, or stop. "
+            "Only works for allowlisted services. REQUIRES USER CONFIRMATION before executing. "
+            "First call returns a confirmation request; user must approve before execution."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "service": {"type": "STRING", "description": "Service name"},
+                "action": {
+                    "type": "STRING",
+                    "enum": ["restart", "start", "stop"],
+                    "description": "Action to perform",
+                },
+            },
+            "required": ["service", "action"],
+        },
+    },
+    {
+        "name": "systemd_list_failed",
+        "description": (
+            "List all failed systemd user units. Use when the user asks about failed services "
+            "or system problems. Read-only."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {},
+            "required": [],
+        },
+    },
+    {
+        "name": "journal_read",
+        "description": (
+            "Read recent log entries from an allowlisted systemd service journal. "
+            "Supports filtering by priority and time. Max 100 lines. "
+            "Allowlisted: jarvis-headless, jarvis-soak, lilith, lilith-worker, nginx, "
+            "tailscaled, pulseaudio. Read-only. Secrets are automatically redacted."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "service": {"type": "STRING", "description": "Service name"},
+                "lines": {"type": "INTEGER", "description": "Max lines to return (default 50, max 100)"},
+                "priority": {
+                    "type": "STRING",
+                    "enum": ["emerg", "alert", "crit", "err", "warning", "notice", "info", "debug"],
+                    "description": "Filter by minimum priority level",
+                },
+                "since": {"type": "STRING", "description": "Show entries since (e.g. '1 hour ago', '2026-10-19')"},
+            },
+            "required": ["service"],
+        },
+    },
+    {
+        "name": "lilith_home_status",
+        "description": (
+            "Query the current state of a Home Assistant device or sensor through LILITH. "
+            "Use for checking temperature, humidity, light state, switch state, presence, "
+            "energy, battery, or any sensor value. Describe the device in natural language. "
+            "Read-only — does not change any device state."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "target": {
+                    "type": "STRING",
+                    "description": "Device or sensor name in natural language (e.g. 'temperatura salón', 'luz cocina', 'sensor humedad')",
+                },
+            },
+            "required": ["target"],
+        },
+    },
     {
         "name": "open_capabilities_catalog",
         "description": (
@@ -2303,11 +2437,24 @@ LOCAL_MACHINE_ONLY_ACTIONS = frozenset({
 })
 
 HEADLESS_ACTIONS = frozenset({
+    "date_time",
+    "system_status",
+    "process_list",
+    "process_info",
+    "systemd_status",
+    "systemd_action",
+    "systemd_list_failed",
+    "journal_read",
     "lilith_memory_search",
     "lilith_memory_store",
     "lilith_memory_delete",
     "lilith_home_action",
+    "lilith_home_status",
+    "lilith_health",
+    "lilith_request_approval",
+    "lilith_resolve_approval",
     "lilith_routine",
+    "open_capabilities_catalog",
 })
 
 
@@ -4083,16 +4230,92 @@ class JarvisLive:
                             )
                             result = f"LILITH routine request failed; no success confirmed: {exc}"
 
-            elif name == "open_capabilities_catalog":
-                from core.green.capability_catalog import refresh_catalog, open_catalog
-                action = str(args.get("action", "open")).strip().lower()
-                if action == "refresh":
-                    path = await asyncio.to_thread(refresh_catalog)
-                    result = f"Capability catalog refreshed at {path}."
+            elif name == "system_status":
+                from core.headless_tools import system_status
+                result = str(system_status())
+
+            elif name == "process_list":
+                from core.headless_tools import process_list
+                filt = str(args.get("filter", ""))
+                result = str(process_list(filt))
+
+            elif name == "process_info":
+                from core.headless_tools import process_info
+                pid_val = int(args.get("pid", 0))
+                result = str(process_info(pid_val))
+
+            elif name == "systemd_status":
+                from core.headless_tools import systemd_status
+                svc = str(args.get("service", ""))
+                result = str(systemd_status(svc))
+
+            elif name == "systemd_action":
+                from core.headless_tools import systemd_action, systemd_execute
+                from core.headless_permissions import requires_confirmation
+                svc = str(args.get("service", ""))
+                act = str(args.get("action", ""))
+                if requires_confirmation("systemd_action", act):
+                    check = systemd_action(svc, act)
+                    if check.get("confirmation_required"):
+                        result = (
+                            f"JARVIS confirmation required: {check['summary']}\n"
+                            f"Di 'sí' o 'confirmo' para ejecutar."
+                        )
+                    else:
+                        result = str(check)
                 else:
-                    await asyncio.to_thread(refresh_catalog)
-                    msg = await asyncio.to_thread(open_catalog)
-                    result = msg
+                    result = str(systemd_execute(svc, act))
+
+            elif name == "systemd_list_failed":
+                from core.headless_tools import systemd_list_failed
+                result = str(systemd_list_failed())
+
+            elif name == "journal_read":
+                from core.headless_tools import journal_read
+                svc = str(args.get("service", ""))
+                lines_n = int(args.get("lines", 50))
+                prio = str(args.get("priority", ""))
+                since = str(args.get("since", ""))
+                result = journal_read(svc, lines=lines_n, priority=prio, since=since)
+
+            elif name == "lilith_home_status":
+                if not client:
+                    result = "LILITH is not connected."
+                else:
+                    target = str(args.get("target", ""))
+                    if not target:
+                        result = "No device/sensor specified."
+                    else:
+                        resolved = await client.home_resolve(target)
+                        status_val = resolved.get("status", "unknown")
+                        if status_val == "resolved":
+                            entity_id = resolved["entity_id"]
+                            state_data = await client.home_entity(entity_id)
+                            result = (
+                                f"Device: {resolved.get('friendly_name', entity_id)}\n"
+                                f"Entity: {entity_id}\n"
+                                f"State: {state_data}"
+                            )
+                        elif status_val == "ambiguous":
+                            candidates = resolved.get("candidates", [])
+                            result = f"Ambiguous — multiple devices match: {candidates}"
+                        else:
+                            result = f"Could not resolve '{target}': {resolved}"
+
+            elif name == "open_capabilities_catalog":
+                action = str(args.get("action", "open")).strip().lower()
+                if getattr(self, "headless", False):
+                    from core.headless_tools import build_headless_catalog
+                    result = build_headless_catalog()
+                else:
+                    from core.green.capability_catalog import refresh_catalog, open_catalog
+                    if action == "refresh":
+                        path = await asyncio.to_thread(refresh_catalog)
+                        result = f"Capability catalog refreshed at {path}."
+                    else:
+                        await asyncio.to_thread(refresh_catalog)
+                        msg = await asyncio.to_thread(open_catalog)
+                        result = msg
 
             else:
                 result = f"Unknown tool: {name}"
