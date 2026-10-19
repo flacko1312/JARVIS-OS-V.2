@@ -2486,6 +2486,17 @@ _NON_SEMANTIC_PATTERN = re.compile(
 )
 
 
+def _strip_noise_tags(text: str) -> str:
+    """Remove <noise>, <silence> tags from transcript, collapse whitespace."""
+    if not text:
+        return ""
+    cleaned = _re_sub_noise(text)
+    return " ".join(cleaned.split()).strip()
+
+_re_sub_noise = lambda t: _RE_NOISE_TAG.sub("", t)
+_RE_NOISE_TAG = re.compile(r"<noise>|<silence>", re.IGNORECASE)
+
+
 def _is_semantic_transcript(text: str | None) -> bool:
     """Return True if the transcript contains real human speech content."""
     if not text:
@@ -5594,26 +5605,41 @@ class JarvisLive:
                                 pass
 
                             full_in = " ".join(in_buf).strip()
-                            if full_in:
-                                self._current_input_transcript = full_in
-                                self._last_input_transcript = full_in
+                            _clean_in = _strip_noise_tags(full_in) if full_in else ""
+                            _void_turn = bool(full_in) and not _is_semantic_transcript(_clean_in)
+
+                            if _void_turn:
+                                logger.info(
+                                    "VOID_TURN id=%s raw=%r",
+                                    live_turn_id, full_in[:80],
+                                )
+                                with self._conversation_lock:
+                                    self._conversation_continuity = [
+                                        t for t in self._conversation_continuity
+                                        if t.get("turn_id") != live_turn_id
+                                    ]
+                                    self._persist_conversation_state()
+                            elif full_in:
+                                save_in = _clean_in if _clean_in != full_in else full_in
+                                self._current_input_transcript = save_in
+                                self._last_input_transcript = save_in
                                 self._last_input_transcript_at = time.monotonic()
                                 if (
                                     not getattr(self, "_pending_self_quit", False)
-                                    and self._is_explicit_self_quit_transcript(full_in)
+                                    and self._is_explicit_self_quit_transcript(save_in)
                                 ):
                                     self._queue_self_quit_after_farewell()
-                                self.ui.write_log(f"Tú: {full_in}")
+                                self.ui.write_log(f"Tú: {save_in}")
                                 self._remember_conversation_text(
                                     "user",
-                                    full_in,
+                                    save_in,
                                     expected_conversation_id=receive_conversation_id,
                                     turn_id=live_turn_id,
                                 )
                             in_buf = []
 
                             full_out = " ".join(out_buf).strip()
-                            if full_out:
+                            if full_out and not _void_turn:
                                 self.ui.write_log(f"AURORA: {full_out}")
                                 self._remember_conversation_text(
                                     "assistant",
