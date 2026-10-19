@@ -2007,7 +2007,7 @@ TOOL_DECLARATIONS = [
                 },
                 "action": {
                     "type": "STRING",
-                    "enum": ["turn_on", "turn_off"],
+                    "enum": ["turn_on", "turn_off", "toggle"],
                     "description": "The action to perform"
                 },
                 "parameters": {
@@ -3804,8 +3804,12 @@ class JarvisLive:
                         ha_params = {k: v for k, v in ha_params.items() if v is not None} or None
                     else:
                         ha_params = None
-                    if action_name not in ("turn_on", "turn_off"):
-                        result = f"Only turn_on and turn_off are supported, not '{action_name}'."
+                    from core.headless_permissions import check_permission, PermissionLevel
+                    perm = check_permission("lilith_home_action", action_name)
+                    if perm.level == PermissionLevel.DENIED:
+                        result = f"Action '{action_name}' is not allowed on home devices."
+                    elif action_name not in ("turn_on", "turn_off", "toggle"):
+                        result = f"Only turn_on, turn_off, and toggle are supported, not '{action_name}'."
                     elif not target:
                         result = "No device target specified."
                     else:
@@ -3828,13 +3832,16 @@ class JarvisLive:
                                 await client.home_action(entity_id, action_name, parameters=ha_params)
                                 # Home Assistant state propagation can lag the service response.
                                 try:
-                                    expected = "on" if action_name == "turn_on" else "off"
+                                    if action_name == "toggle":
+                                        expected = None
+                                    else:
+                                        expected = "on" if action_name == "turn_on" else "off"
                                     state_data = {}
                                     current = "unknown"
                                     for attempt in range(4):
                                         state_data = await client.home_entity(entity_id)
                                         current = state_data.get("state", "unknown")
-                                        if current == expected:
+                                        if expected is None or current == expected:
                                             break
                                         if attempt < 3:
                                             await asyncio.sleep(0.25)
@@ -3843,7 +3850,9 @@ class JarvisLive:
                                         brightness = state_data["attributes"].get("brightness")
                                         if brightness is not None:
                                             attrs = f" Brightness: {round(brightness/255*100)}%."
-                                    if current == expected:
+                                    if expected is None:
+                                        result = f"{action_name} on '{friendly}' ({entity_id}). Current state: {current}.{attrs}"
+                                    elif current == expected:
                                         result = f"{action_name} on '{friendly}' ({entity_id}). Verified state: {current}.{attrs}"
                                     else:
                                         result = (
@@ -4162,8 +4171,12 @@ class JarvisLive:
                                    if k not in params]
                     elif operation not in {"list"} and "routine_id" not in params:
                         missing = ["routine_id"]
+                    from core.headless_permissions import check_permission, PermissionLevel
+                    perm = check_permission("lilith_routine", operation)
                     if operation not in allowed:
                         result = "Unknown routine operation; no routine was changed."
+                    elif perm.level == PermissionLevel.DENIED:
+                        result = f"Routine operation '{operation}' is denied."
                     elif missing:
                         result = "Routine request is ambiguous: missing " + ", ".join(missing) + "."
                     else:
