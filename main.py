@@ -2516,6 +2516,7 @@ class JarvisLive:
         self._speaking_lock = threading.Lock()
         self._barge_in_gate = SpeechAwareBargeInGate(input_sample_rate=SEND_SAMPLE_RATE)
         self._barge_in_candidate_logged = False
+        self._local_barge_in_active = False
         self._barge_in_last_reject_log = 0.0
         self._audio_input_worker_lock = threading.Lock()
         self._audio_input_device_id: int | None = None
@@ -2959,6 +2960,7 @@ class JarvisLive:
             if value:
                 gate.start_playback()
                 self._barge_in_candidate_logged = False
+                self._local_barge_in_active = False
             else:
                 gate.stop_playback()
         if value:
@@ -5364,7 +5366,8 @@ class JarvisLive:
                 _get_voice_monitor().record_barge_in(accepted=False)
             except Exception:
                 pass
-        if decision.accepted and not previously_accepted:
+        if decision.accepted and not previously_accepted and not self._local_barge_in_active:
+            self._local_barge_in_active = True
             loop.call_soon_threadsafe(self._log_barge_in, "accepted", decision)
             loop.call_soon_threadsafe(self._interrupt_live_playback, "local_barge_in")
             try:
