@@ -5607,8 +5607,16 @@ class JarvisLive:
                                     _canon = _canonicalize_for_replay(current_input)
                                     _is_replay = False
                                     if self._last_interrupted_turn is not None:
-                                        _prev_canon = self._last_interrupted_turn.get("canonical_input", "")
-                                        _is_replay = _is_fuzzy_replay(_prev_canon, _canon)
+                                        _replay_age = time.monotonic() - self._last_interrupted_turn.get("timestamp", 0)
+                                        if _replay_age > _INTERRUPTED_REPLAY_WINDOW_S:
+                                            logger.info(
+                                                "REPLAY_WINDOW expired age=%.1fs turn=%s; clearing stale candidate",
+                                                _replay_age, self._last_interrupted_turn.get("turn_id", "?"),
+                                            )
+                                            self._last_interrupted_turn = None
+                                        else:
+                                            _prev_canon = self._last_interrupted_turn.get("canonical_input", "")
+                                            _is_replay = _is_fuzzy_replay(_prev_canon, _canon)
                                     _is_stop_ctrl = (
                                         _is_standalone_stop_control(current_input)
                                         and (time.monotonic() - self._last_barge_in_accepted_t) < _POST_BARGE_IN_CONTROL_WINDOW_S
@@ -5901,12 +5909,20 @@ class JarvisLive:
                                             fn_responses.append(next(exec_iter))
                                 else:
                                     fn_responses = dup_responses
-                        for function_call, function_response in zip(function_calls, fn_responses):
-                            self._remember_conversation_tool_result(
-                                str(getattr(function_call, "name", "tool")),
-                                getattr(function_response, "response", function_response),
-                                expected_conversation_id=receive_conversation_id,
-                            )
+                        _genuinely_executed = (
+                            not (self._turn_interrupted or self._suppress_interrupted_output)
+                            and not _replay_rejected
+                            and _input_validated
+                        )
+                        if _genuinely_executed:
+                            _executed_ids = {fc.id for fc in filtered_calls} if 'filtered_calls' in locals() else set()
+                            for function_call, function_response in zip(function_calls, fn_responses):
+                                if function_call.id in _executed_ids:
+                                    self._remember_conversation_tool_result(
+                                        str(getattr(function_call, "name", "tool")),
+                                        getattr(function_response, "response", function_response),
+                                        expected_conversation_id=receive_conversation_id,
+                                    )
                         await self.session.send_tool_response(
                             function_responses=fn_responses
                         )
@@ -6639,6 +6655,7 @@ _STOP_CONTROL_RE = _re_mod.compile(
     _re_mod.IGNORECASE,
 )
 _POST_BARGE_IN_CONTROL_WINDOW_S = 5.0
+_INTERRUPTED_REPLAY_WINDOW_S = 5.0
 
 
 def _is_standalone_stop_control(text: str) -> bool:

@@ -135,6 +135,73 @@ class TestConversationContinuity(unittest.TestCase):
         self.assertTrue(p["input_validated"],
             "'Para qué sirve esto' must be validated normally")
 
+    def test_replay_inside_window_rejected(self):
+        p = self._run_worker("replay_inside_window")
+        self.assertTrue(p["passed"])
+        self.assertTrue(p["replay_rejected"], "Replay within window must be rejected")
+
+    def test_replay_expired_window_accepted(self):
+        p = self._run_worker("replay_expired_window")
+        self.assertTrue(p["passed"])
+        self.assertTrue(p["accepted_after_expiry"], "Same input after expired window must be accepted")
+
+    def test_different_input_inside_window_accepted(self):
+        p = self._run_worker("different_inside_window")
+        self.assertTrue(p["passed"])
+        self.assertTrue(p["different_input_accepted"], "Different input within window must be accepted")
+
+    def test_tool_rejected_replay_no_persist(self):
+        p = self._run_worker("tool_rejected_replay")
+        self.assertTrue(p["passed"])
+        self.assertTrue(p["no_tool_persist"], f"Replay tool must not persist; got {p['tool_results_persisted']}")
+
+    def test_tool_rejected_no_input_no_persist(self):
+        p = self._run_worker("tool_rejected_no_input")
+        self.assertTrue(p["passed"])
+        self.assertTrue(p["no_tool_persist"], f"No-input tool must not persist; got {p['tool_results_persisted']}")
+
+    def test_tool_rejected_stale_no_persist(self):
+        p = self._run_worker("tool_rejected_stale")
+        self.assertTrue(p["passed"])
+        self.assertTrue(p["no_tool_persist"], f"Stale tool must not persist; got {p['tool_results_persisted']}")
+
+    def test_tool_rejected_stop_no_persist(self):
+        p = self._run_worker("tool_rejected_stop")
+        self.assertTrue(p["passed"])
+        self.assertTrue(p["no_tool_persist"], f"Stop tool must not persist; got {p['tool_results_persisted']}")
+
+    def test_tool_valid_execution_persists(self):
+        p = self._run_worker("tool_valid_persists")
+        self.assertTrue(p["passed"])
+        self.assertTrue(p["tool_persisted"], "Valid tool must persist result")
+        self.assertTrue(p["user_in_store"], "User question must be in store")
+
+    def test_3turn_topic_interrupt_continue(self):
+        p = self._run_worker("three_turn_topic_continue")
+        self.assertTrue(p["passed"])
+        self.assertTrue(p["checkpoint_present"], "Checkpoint must exist")
+        self.assertTrue(p["original_topic"], "Original topic in store")
+        self.assertTrue(p["continue_topic"], "Continue request in store")
+        self.assertTrue(p["continue_response"], "Continue response in store")
+        self.assertTrue(p["noise_absent"], "Noise must NOT be in store")
+
+    def test_3turn_stop_then_continue(self):
+        p = self._run_worker("three_turn_stop_continue")
+        self.assertTrue(p["passed"])
+        self.assertTrue(p["ha_topic_preserved"], "HA topic preserved")
+        self.assertTrue(p["checkpoint_preserved"], "Checkpoint preserved")
+        self.assertTrue(p["continue_response"], "Continue response in store")
+        self.assertTrue(p["stop_not_in_store"], "Para must NOT be in store")
+
+    def test_3turn_noise_then_continue(self):
+        p = self._run_worker("three_turn_noise_continue")
+        self.assertTrue(p["passed"])
+        self.assertTrue(p["temp_topic"], "Temperature topic in store")
+        self.assertTrue(p["humidity_topic"], "Humidity follow-up in store")
+        self.assertTrue(p["temp_response"], "Temperature response in store")
+        self.assertTrue(p["humidity_response"], "Humidity response in store")
+        self.assertTrue(p["noise_absent"], "Noise must NOT be in store")
+
 
 # ============================================================
 # Subprocess worker
@@ -395,6 +462,8 @@ if os.environ.get("_CONV_CONTINUITY_SUBPROCESS"):
             return resp
         async def send(self, **kw):
             pass
+        async def send_tool_response(self, function_responses=None):
+            pass
 
     class _Counters:
         def __init__(self):
@@ -498,6 +567,15 @@ if os.environ.get("_CONV_CONTINUITY_SUBPROCESS"):
             if entry.get("role") == "user":
                 return entry.get("text", "")
         return ""
+
+    def _tool_result_count(jl):
+        return len(getattr(jl, '_recent_conversation_tool_results', []))
+
+    def _tool_results_have(jl, tool_name):
+        for r in getattr(jl, '_recent_conversation_tool_results', []):
+            if tool_name in str(r.get('tool', '')):
+                return True
+        return False
 
     # ── Test implementations ──
 
@@ -790,6 +868,273 @@ if os.environ.get("_CONV_CONTINUITY_SUBPROCESS"):
             "input_validated": len(counters.user_memory) > 0,
         }
 
+
+    def test_replay_inside_window_rejected():
+        turn_a = [
+            _make_response(input_text="que hora es"),
+            _make_response(audio_bytes=b"\x00" * 320),
+            _make_response(output_text="Son las seis"),
+            _make_response(interrupted=True),
+            _make_response(turn_complete=True),
+        ]
+        turn_b = [
+            _make_response(input_text="que hora es"),
+            _make_response(audio_bytes=b"\x00" * 320),
+            _make_response(output_text="Son las seis y uno"),
+            _make_response(turn_complete=True),
+        ]
+        counters = _Counters()
+        session = _FakeSession([turn_a, turn_b])
+        jl = _make_instrumented_jl(session, counters, use_real_remember=False)
+        asyncio.run(_run_turns(jl))
+        tids = list(dict.fromkeys(e.get("turn_id") for e in counters.user_memory + counters.assistant_memory))
+        tb = tids[1] if len(tids) > 1 else None
+        tb_u = sum(1 for e in counters.user_memory if e.get("turn_id") == tb) if tb else 0
+        return {"passed": True, "turn_b_user_memory": tb_u, "replay_rejected": tb_u == 0}
+
+
+    def test_replay_expired_window_accepted():
+        turn_a = [
+            _make_response(input_text="que hora es"),
+            _make_response(audio_bytes=b"\x00" * 320),
+            _make_response(output_text="Son las seis"),
+            _make_response(interrupted=True),
+            _make_response(turn_complete=True),
+        ]
+        turn_b = [
+            _make_response(input_text="que hora es"),
+            _make_response(audio_bytes=b"\x00" * 320),
+            _make_response(output_text="Son las seis y uno"),
+            _make_response(turn_complete=True),
+        ]
+        counters = _Counters()
+        session = _FakeSession([turn_a])
+        jl = _make_instrumented_jl(session, counters, use_real_remember=False)
+        async def _run():
+            await _run_turns(jl, timeout=0.3)
+            if jl._last_interrupted_turn:
+                jl._last_interrupted_turn["timestamp"] = time.monotonic() - 10.0
+            jl._shutdown_requested.clear()
+            jl._conversation_requested.set()
+            turn_b_fresh = [
+                _make_response(input_text="que hora es"),
+                _make_response(audio_bytes=b"\x00" * 320),
+                _make_response(output_text="Son las seis y uno"),
+                _make_response(turn_complete=True),
+            ]
+            jl.session = _FakeSession([turn_b_fresh])
+            await _run_turns(jl, timeout=0.3)
+        asyncio.run(_run())
+        tids = list(dict.fromkeys(e.get("turn_id") for e in counters.user_memory))
+        return {"passed": True, "accepted_after_expiry": len(tids) >= 2}
+
+
+    def test_different_input_inside_window_accepted():
+        turn_a = [
+            _make_response(input_text="que hora es"),
+            _make_response(audio_bytes=b"\x00" * 320),
+            _make_response(output_text="Son las seis"),
+            _make_response(interrupted=True),
+            _make_response(turn_complete=True),
+        ]
+        turn_b = [
+            _make_response(input_text="enciende la luz del salon"),
+            _make_response(audio_bytes=b"\x00" * 320),
+            _make_response(output_text="Encendiendo"),
+            _make_response(turn_complete=True),
+        ]
+        counters = _Counters()
+        session = _FakeSession([turn_a, turn_b])
+        jl = _make_instrumented_jl(session, counters, use_real_remember=False)
+        asyncio.run(_run_turns(jl))
+        tids = list(dict.fromkeys(e.get("turn_id") for e in counters.user_memory))
+        tb = tids[1] if len(tids) > 1 else None
+        return {"passed": True, "different_input_accepted": tb is not None}
+
+
+    def test_tool_rejected_replay_no_persist():
+        turn_a = [
+            _make_response(input_text="enciende la luz"),
+            _make_response(audio_bytes=b"\x00" * 320),
+            _make_response(output_text="Encendiendo"),
+            _make_response(interrupted=True),
+            _make_response(turn_complete=True),
+        ]
+        turn_b = [
+            _make_response(input_text="enciende la luz"),
+            _make_response(tool_calls=[{"id": "fc_r", "name": "toggle_light", "args": {"e": "light.salon"}}]),
+            _make_response(turn_complete=True),
+        ]
+        counters = _Counters()
+        session = _FakeSession([turn_a, turn_b])
+        jl = _make_instrumented_jl(session, counters, use_real_remember=False)
+        asyncio.run(_run_turns(jl))
+        n = _tool_result_count(jl)
+        return {"passed": True, "tool_results_persisted": n, "no_tool_persist": n == 0}
+
+
+    def test_tool_rejected_no_input_no_persist():
+        turn = [
+            _make_response(input_text="."),
+            _make_response(tool_calls=[{"id": "fc_n", "name": "date_time", "args": {}}]),
+            _make_response(turn_complete=True),
+        ]
+        counters = _Counters()
+        session = _FakeSession([turn])
+        jl = _make_instrumented_jl(session, counters, use_real_remember=False)
+        asyncio.run(_run_turns(jl))
+        n = _tool_result_count(jl)
+        return {"passed": True, "tool_results_persisted": n, "no_tool_persist": n == 0}
+
+
+    def test_tool_rejected_stale_no_persist():
+        turn = [
+            _make_response(input_text="enciende la luz"),
+            _make_response(audio_bytes=b"\x00" * 320),
+            _make_response(interrupted=True),
+            _make_response(tool_calls=[{"id": "fc_s", "name": "toggle_light", "args": {}}]),
+            _make_response(turn_complete=True),
+        ]
+        counters = _Counters()
+        session = _FakeSession([turn])
+        jl = _make_instrumented_jl(session, counters, use_real_remember=False)
+        asyncio.run(_run_turns(jl))
+        n = _tool_result_count(jl)
+        return {"passed": True, "tool_results_persisted": n, "no_tool_persist": n == 0}
+
+
+    def test_tool_rejected_stop_no_persist():
+        turn_a = [
+            _make_response(input_text="Cuentame del NAS"),
+            _make_response(audio_bytes=b"\x00" * 320),
+            _make_response(output_text="El NAS tiene"),
+            _make_response(interrupted=True),
+            _make_response(turn_complete=True),
+        ]
+        turn_b = [
+            _make_response(input_text="Para"),
+            _make_response(tool_calls=[{"id": "fc_st", "name": "date_time", "args": {}}]),
+            _make_response(turn_complete=True),
+        ]
+        counters = _Counters()
+        session = _FakeSession([turn_a, turn_b])
+        jl = _make_instrumented_jl(session, counters, use_real_remember=False)
+        jl._last_barge_in_accepted_t = time.monotonic()
+        asyncio.run(_run_turns(jl))
+        n = _tool_result_count(jl)
+        return {"passed": True, "tool_results_persisted": n, "no_tool_persist": n == 0}
+
+
+    def test_tool_valid_execution_persists():
+        turn = [
+            _make_response(input_text="Enciende la luz del salon"),
+            _make_response(tool_calls=[{"id": "fc_v", "name": "toggle_light", "args": {"e": "light.salon"}}]),
+            _make_response(audio_bytes=b"\x00" * 320),
+            _make_response(output_text="Luz encendida"),
+            _make_response(turn_complete=True),
+        ]
+        counters = _Counters()
+        session = _FakeSession([turn])
+        jl = _make_instrumented_jl(session, counters)
+        from google.genai import types
+        async def _fake_exec(calls):
+            return [types.FunctionResponse(id=c.id, name=getattr(c, "name", "tool"), response={"result": "ok"}) for c in calls]
+        jl._execute_tool_batch = _fake_exec
+        asyncio.run(_run_turns(jl))
+        n = _tool_result_count(jl)
+        return {"passed": True, "tool_results_persisted": n, "tool_persisted": n > 0, "user_in_store": _store_has_text(jl, "luz del sal", role="user")}
+
+
+    def test_3turn_topic_interrupt_continue():
+        turn_a = [
+            _make_response(input_text="Explicame los discos del servidor"),
+            _make_response(audio_bytes=b"\x00" * 320),
+            _make_response(output_text="Tienes el SSD del sistema y un disco HDD"),
+            _make_response(interrupted=True),
+            _make_response(turn_complete=True),
+        ]
+        turn_b = [_make_response(input_text="<noise>"), _make_response(turn_complete=True)]
+        turn_c = [
+            _make_response(input_text="Continua con lo de los discos"),
+            _make_response(audio_bytes=b"\x00" * 320),
+            _make_response(output_text="Como decia el HDD es de 2TB para datos"),
+            _make_response(turn_complete=True),
+        ]
+        counters = _Counters()
+        session = _FakeSession([turn_a, turn_b, turn_c])
+        jl = _make_instrumented_jl(session, counters)
+        asyncio.run(_run_turns(jl, timeout=1.0))
+        return {
+            "passed": True,
+            "checkpoint_present": _store_has_text(jl, "[interrumpido]", role="assistant"),
+            "original_topic": _store_has_text(jl, "discos del servidor", role="user"),
+            "continue_topic": _store_has_text(jl, "Continua", role="user"),
+            "continue_response": _store_has_text(jl, "HDD es de 2TB", role="assistant"),
+            "noise_absent": not _store_has_text(jl, "<noise>", role="user"),
+        }
+
+
+    def test_3turn_stop_then_continue():
+        turn_a = [
+            _make_response(input_text="Cuentame sobre Home Assistant"),
+            _make_response(audio_bytes=b"\x00" * 320),
+            _make_response(output_text="Home Assistant es una plataforma de automatizacion"),
+            _make_response(interrupted=True),
+            _make_response(turn_complete=True),
+        ]
+        turn_b = [_make_response(input_text="Para"), _make_response(turn_complete=True)]
+        turn_c = [
+            _make_response(input_text="Volvemos a lo de Home Assistant"),
+            _make_response(audio_bytes=b"\x00" * 320),
+            _make_response(output_text="Claro Home Assistant permite integrar dispositivos"),
+            _make_response(turn_complete=True),
+        ]
+        counters = _Counters()
+        session = _FakeSession([turn_a, turn_b, turn_c])
+        jl = _make_instrumented_jl(session, counters)
+        jl._last_barge_in_accepted_t = time.monotonic()
+        asyncio.run(_run_turns(jl, timeout=1.0))
+        return {
+            "passed": True,
+            "ha_topic_preserved": _store_has_text(jl, "Home Assistant", role="user"),
+            "checkpoint_preserved": _store_has_text(jl, "[interrumpido]", role="assistant"),
+            "continue_response": _store_has_text(jl, "integrar dispositivos", role="assistant"),
+            "stop_not_in_store": not _store_has_text(jl, "Para", role="user"),
+        }
+
+
+    def test_3turn_noise_then_continue():
+        turn_a = [
+            _make_response(input_text="Que temperatura hace fuera"),
+            _make_response(audio_bytes=b"\x00" * 320),
+            _make_response(output_text="La temperatura exterior es de veintidos grados"),
+            _make_response(turn_complete=True),
+        ]
+        turn_b = [
+            _make_response(input_text="."),
+            _make_response(audio_bytes=b"\x00" * 160),
+            _make_response(output_text="algo"),
+            _make_response(turn_complete=True),
+        ]
+        turn_c = [
+            _make_response(input_text="Y la humedad"),
+            _make_response(audio_bytes=b"\x00" * 320),
+            _make_response(output_text="La humedad esta al sesenta por ciento"),
+            _make_response(turn_complete=True),
+        ]
+        counters = _Counters()
+        session = _FakeSession([turn_a, turn_b, turn_c])
+        jl = _make_instrumented_jl(session, counters)
+        asyncio.run(_run_turns(jl, timeout=1.0))
+        return {
+            "passed": True,
+            "temp_topic": _store_has_text(jl, "temperatura", role="user"),
+            "humidity_topic": _store_has_text(jl, "humedad", role="user"),
+            "temp_response": _store_has_text(jl, "veintidos grados", role="assistant"),
+            "humidity_response": _store_has_text(jl, "sesenta por ciento", role="assistant"),
+            "noise_absent": not _store_has_text(jl, ".", role="user"),
+        }
+
     # ── Dispatch ──
 
     if __name__ == "__main__":
@@ -805,6 +1150,17 @@ if os.environ.get("_CONV_CONTINUITY_SUBPROCESS"):
             "tool_keeps_context": test_tool_keeps_context,
             "conversation_precedence": test_conversation_precedence,
             "para_in_sentence": test_para_in_sentence,
+            "replay_inside_window": test_replay_inside_window_rejected,
+            "replay_expired_window": test_replay_expired_window_accepted,
+            "different_inside_window": test_different_input_inside_window_accepted,
+            "tool_rejected_replay": test_tool_rejected_replay_no_persist,
+            "tool_rejected_no_input": test_tool_rejected_no_input_no_persist,
+            "tool_rejected_stale": test_tool_rejected_stale_no_persist,
+            "tool_rejected_stop": test_tool_rejected_stop_no_persist,
+            "tool_valid_persists": test_tool_valid_execution_persists,
+            "three_turn_topic_continue": test_3turn_topic_interrupt_continue,
+            "three_turn_stop_continue": test_3turn_stop_then_continue,
+            "three_turn_noise_continue": test_3turn_noise_then_continue,
         }
         fn = dispatch.get(test_name)
         if fn is None:
