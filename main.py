@@ -2537,6 +2537,48 @@ def _is_semantic_transcript(text: str | None) -> bool:
     return True
 
 
+_VOID_TURN_CLARIFICATION_PCM = (
+    Path(__file__).resolve().parent
+    / "assets"
+    / "audio"
+    / "void_turn_clarification_kore.pcm"
+)
+_VOID_TURN_CLARIFICATION_CHUNK_BYTES = 46_080
+
+
+def _classify_void_turn(
+    *,
+    input_text: str,
+    output_text: str,
+    audio_chunks: int,
+    tool_call_seen: bool,
+    replay_rejected: bool,
+    interrupted: bool,
+) -> str | None:
+    """Classify a non-semantic input without trusting Gemini's unknown reply."""
+    clean_input = _strip_noise_tags(input_text)
+    if not input_text or _is_semantic_transcript(clean_input):
+        return None
+    if replay_rejected:
+        return "replay"
+    if interrupted:
+        return "interrupted"
+    if tool_call_seen:
+        return "unsafe_tool"
+    if " ".join(input_text.lower().split()) != "<noise>":
+        return "true_noise"
+    clean_output = _strip_noise_tags(output_text)
+    output_words = re.findall(r"\w+", clean_output, flags=re.UNICODE)
+    if (
+        audio_chunks > 0
+        and _is_semantic_transcript(clean_output)
+        and len(clean_output) >= 12
+        and len(output_words) >= 3
+    ):
+        return "uncertain_speech"
+    return "true_noise"
+
+
 class JarvisLive:
 
     def __init__(
@@ -3034,6 +3076,30 @@ class JarvisLive:
             self.ui.set_state("SPEAKING")
         elif not self.ui.muted:
             self.ui.set_state("LISTENING")
+
+    def _queue_void_turn_clarification(self) -> bool:
+        """Queue fixed local PCM without creating a Gemini or memory turn."""
+        if getattr(self.ui, "muted", False):
+            return False
+        queue = getattr(self, "audio_in_queue", None)
+        if queue is None:
+            return False
+        try:
+            pcm = _VOID_TURN_CLARIFICATION_PCM.read_bytes()
+        except OSError as exc:
+            logger.error("VOID_TURN clarification unavailable error=%s", exc)
+            return False
+        if not pcm or len(pcm) % 2:
+            logger.error(
+                "VOID_TURN clarification invalid bytes=%d",
+                len(pcm),
+            )
+            return False
+        for offset in range(0, len(pcm), _VOID_TURN_CLARIFICATION_CHUNK_BYTES):
+            queue.put_nowait(
+                pcm[offset:offset + _VOID_TURN_CLARIFICATION_CHUNK_BYTES]
+            )
+        return True
 
     def speak(self, text: str) -> bool:
         if not self._loop or not self.session:
@@ -5512,9 +5578,12 @@ class JarvisLive:
                 _audio_quarantine = []
                 _output_quarantine = []
                 _replay_rejected = False
+                _turn_had_tool_call = False
                 logger.info("TURN start id=%s", live_turn_id)
                 async for response in self.session.receive():
                     received_message = True
+                    if response.tool_call:
+                        _turn_had_tool_call = True
 
                     resumption = getattr(response, "session_resumption_update", None)
                     handle = getattr(resumption, "new_handle", None)
@@ -5708,6 +5777,15 @@ class JarvisLive:
                             full_in = " ".join(in_buf).strip()
                             _clean_in = _strip_noise_tags(full_in) if full_in else ""
                             _void_turn = bool(full_in) and not _is_semantic_transcript(_clean_in)
+                            full_out = " ".join(out_buf).strip()
+                            _void_classification = _classify_void_turn(
+                                input_text=full_in,
+                                output_text=full_out,
+                                audio_chunks=len(_audio_quarantine),
+                                tool_call_seen=_turn_had_tool_call,
+                                replay_rejected=_replay_rejected,
+                                interrupted=self._turn_interrupted,
+                            )
 
                             if _replay_rejected:
                                 logger.info(
@@ -5729,8 +5807,10 @@ class JarvisLive:
 
                             elif _void_turn:
                                 logger.info(
-                                    "VOID_TURN id=%s raw=%r quarantined_chunks=%d",
+                                    "VOID_TURN id=%s raw=%r quarantined_chunks=%d "
+                                    "output_chars=%d classified=%s",
                                     live_turn_id, full_in[:80], len(_audio_quarantine),
+                                    len(full_out), _void_classification,
                                 )
                                 _audio_quarantine.clear()
                                 _output_quarantine.clear()
@@ -5743,6 +5823,12 @@ class JarvisLive:
                                         if t.get("turn_id") != live_turn_id
                                     ]
                                     self._persist_conversation_state()
+                                if _void_classification == "uncertain_speech":
+                                    fallback_queued = self._queue_void_turn_clarification()
+                                    logger.info(
+                                        "VOID_TURN fallback=clarification queued=%s turn_id=%s",
+                                        fallback_queued, live_turn_id,
+                                    )
                             elif full_in:
                                 save_in = _clean_in if _clean_in != full_in else full_in
                                 self._current_input_transcript = save_in
@@ -5762,7 +5848,6 @@ class JarvisLive:
                                 )
                             in_buf = []
 
-                            full_out = " ".join(out_buf).strip()
                             if full_out and _input_validated and not _void_turn and not _replay_rejected and not self._turn_interrupted:
                                 self.ui.write_log(f"JARVIS: {full_out}")
                                 self._remember_conversation_text(
