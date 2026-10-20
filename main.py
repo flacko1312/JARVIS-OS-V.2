@@ -2584,6 +2584,7 @@ class JarvisLive:
         self._turn_interrupted = False
         self._turn_tool_signatures: set[str] = set()
         self._last_interrupted_turn: dict | None = None
+        self._last_barge_in_accepted_t: float = 0.0
         self._barge_in_last_reject_log = 0.0
         self._audio_input_worker_lock = threading.Lock()
         self._audio_input_device_id: int | None = None
@@ -5436,6 +5437,7 @@ class JarvisLive:
             self._local_barge_in_active = True
             self._suppress_interrupted_output = True
             self._turn_interrupted = True
+            self._last_barge_in_accepted_t = time.monotonic()
             loop.call_soon_threadsafe(self._log_barge_in, "accepted", decision)
             loop.call_soon_threadsafe(self._interrupt_live_playback, "local_barge_in")
             try:
@@ -5602,15 +5604,28 @@ class JarvisLive:
                                 )
                                 in_buf = [current_input]
                                 if not _input_validated and not _replay_rejected and _is_semantic_transcript(_strip_noise_tags(current_input)):
-                                    _norm = _strip_noise_tags(current_input).strip().lower()
-                                    if (
-                                        self._last_interrupted_turn is not None
-                                        and self._last_interrupted_turn.get("normalized_input") == _norm
-                                    ):
+                                    _canon = _canonicalize_for_replay(current_input)
+                                    _is_replay = False
+                                    if self._last_interrupted_turn is not None:
+                                        _prev_canon = self._last_interrupted_turn.get("canonical_input", "")
+                                        _is_replay = _is_fuzzy_replay(_prev_canon, _canon)
+                                    _is_stop_ctrl = (
+                                        _is_standalone_stop_control(current_input)
+                                        and (time.monotonic() - self._last_barge_in_accepted_t) < _POST_BARGE_IN_CONTROL_WINDOW_S
+                                    )
+                                    if _is_replay:
                                         _replay_rejected = True
                                         logger.info(
-                                            "TURN_REPLAY rejected source_turn=%s current_turn=%s input=%r reason=interrupted_turn_replay",
+                                            "TURN_REPLAY rejected source_turn=%s current_turn=%s input=%r reason=fuzzy_interrupted_turn_replay",
                                             self._last_interrupted_turn.get("turn_id", "?"),
+                                            live_turn_id, current_input[:80],
+                                        )
+                                        _audio_quarantine.clear()
+                                        _output_quarantine.clear()
+                                    elif _is_stop_ctrl:
+                                        _replay_rejected = True
+                                        logger.info(
+                                            "STOP_CONTROL consumed turn_id=%s input=%r reason=post_barge_in_stop",
                                             live_turn_id, current_input[:80],
                                         )
                                         _audio_quarantine.clear()
@@ -5740,14 +5755,21 @@ class JarvisLive:
                             in_buf = []
 
                             full_out = " ".join(out_buf).strip()
-                            if full_out and _input_validated and not _void_turn and not _replay_rejected:
-                                self.ui.write_log(f"AURORA: {full_out}")
+                            if full_out and _input_validated and not _void_turn and not _replay_rejected and not self._turn_interrupted:
+                                self.ui.write_log(f"JARVIS: {full_out}")
                                 self._remember_conversation_text(
                                     "assistant",
                                     full_out,
                                     expected_conversation_id=receive_conversation_id,
                                     turn_id=live_turn_id,
                                 )
+                            elif self._turn_interrupted and _input_validated:
+                                with self._conversation_lock:
+                                    self._conversation_continuity = [
+                                        t for t in self._conversation_continuity
+                                        if not (t.get("turn_id") == live_turn_id and t.get("role") == "assistant")
+                                    ]
+                                    self._persist_conversation_state()
                             if (
                                 _input_validated
                                 and getattr(self, "_pending_self_quit", False)
@@ -5781,6 +5803,8 @@ class JarvisLive:
                                     self._last_interrupted_turn = {
                                         "turn_id": live_turn_id,
                                         "normalized_input": _clean_in.strip().lower(),
+                                        "canonical_input": _canonicalize_for_replay(full_in),
+                                        "timestamp": time.monotonic(),
                                     }
                                 elif not self._turn_interrupted:
                                     self._last_interrupted_turn = None
@@ -6542,3 +6566,68 @@ def cli_main():
 
 if __name__ == "__main__":
     raise SystemExit(main() or 0)
+
+
+import unicodedata as _unicodedata
+import re as _re_mod
+
+_INTRA_WORD_SPACE_RE = _re_mod.compile(r"(?<=\w) (?=\w)")
+_MULTI_SPACE_RE = _re_mod.compile(r"\s+")
+
+def _canonicalize_for_replay(text: str) -> str:
+    """Normalize text for fuzzy replay comparison.
+
+    Strips accents, removes punctuation, collapses ALL whitespace
+    (including artificial intra-word ASR spaces) into a continuous
+    character stream. Designed for comparing two ASR transcriptions
+    of the same utterance that may differ in spacing and minor word errors.
+    """
+    if not text:
+        return ""
+    t = text.strip().lower()
+    # Strip accents: NFD decompose then drop combining marks
+    t = "".join(
+        c for c in _unicodedata.normalize("NFD", t)
+        if _unicodedata.category(c) != "Mn"
+    )
+    # Remove punctuation
+    t = _re_mod.sub(r"[^\w\s]", "", t)
+    # Remove ALL whitespace to get pure character stream
+    t = _re_mod.sub(r"\s+", "", t)
+    return t
+
+
+def _is_fuzzy_replay(canonical_a: str, canonical_b: str, threshold: float = 0.80) -> bool:
+    """Conservative similarity check for interrupted-turn replay detection.
+
+    Uses character-level SequenceMatcher ratio on space-collapsed canonical
+    forms. Only used in the narrow context of comparing the immediately
+    previous interrupted turn against the first following turn.
+
+    RESIDUAL AMBIGUITY: An intentional immediate identical repeat cannot
+    be perfectly distinguished from a provider replay without provider
+    metadata. The one-shot guard mitigates this.
+    """
+    if not canonical_a or not canonical_b:
+        return False
+    if canonical_a == canonical_b:
+        return True
+    # Length ratio guard: very different lengths are not replays
+    len_ratio = min(len(canonical_a), len(canonical_b)) / max(len(canonical_a), len(canonical_b))
+    if len_ratio < 0.5:
+        return False
+    from difflib import SequenceMatcher as _SM
+    return _SM(None, canonical_a, canonical_b).ratio() >= threshold
+
+
+_STOP_CONTROL_RE = _re_mod.compile(
+    r"^(?:para|stop|basta|calla(?:te)?|silencio|ya)\.?$",
+    _re_mod.IGNORECASE,
+)
+_POST_BARGE_IN_CONTROL_WINDOW_S = 5.0
+
+
+def _is_standalone_stop_control(text: str) -> bool:
+    """True if text is a standalone stop/control utterance."""
+    clean = _strip_noise_tags(text).strip()
+    return bool(_STOP_CONTROL_RE.match(clean))
