@@ -5508,6 +5508,7 @@ class JarvisLive:
                 _first_response_audio_t = None
                 _input_validated = False
                 _audio_quarantine = []
+                _output_quarantine = []
                 _replay_rejected = False
                 logger.info("TURN start id=%s", live_turn_id)
                 async for response in self.session.receive():
@@ -5576,29 +5577,30 @@ class JarvisLive:
                                 )
                                 out_buf = [merged_output]
                                 self._interrupted_text = merged_output
-                                self._remember_conversation_text(
-                                    "assistant",
-                                    self._interrupted_text,
-                                    expected_conversation_id=receive_conversation_id,
-                                    turn_id=live_turn_id,
-                                )
-                                if not self.ui.muted:
-                                    if _new_turn:
-                                        self.ui.clear_subtitle()
-                                        _new_turn = False
-                                    self.ui.show_subtitle(txt)
+                                if _input_validated:
+                                    self._remember_conversation_text(
+                                        "assistant",
+                                        self._interrupted_text,
+                                        expected_conversation_id=receive_conversation_id,
+                                        turn_id=live_turn_id,
+                                    )
+                                    if not self.ui.muted:
+                                        if _new_turn:
+                                            self.ui.clear_subtitle()
+                                            _new_turn = False
+                                        self.ui.show_subtitle(txt)
+                                else:
+                                    _output_quarantine.append(("assistant_text", self._interrupted_text, txt))
 
                         if sc.input_transcription and sc.input_transcription.text:
                             txt = _clean_transcript(sc.input_transcription.text)
                             if txt:
                                 _last_input_transcript_t = time.monotonic()
-                                if not in_buf:
-                                    self._begin_schedule_turn("", "voice")
+                                _is_first_input = not in_buf
                                 current_input = _merge_transcript_text(
                                     " ".join(in_buf), txt
                                 )
                                 in_buf = [current_input]
-                                self._update_schedule_turn(current_input)
                                 if not _input_validated and not _replay_rejected and _is_semantic_transcript(_strip_noise_tags(current_input)):
                                     _norm = _strip_noise_tags(current_input).strip().lower()
                                     if (
@@ -5612,22 +5614,46 @@ class JarvisLive:
                                             live_turn_id, current_input[:80],
                                         )
                                         _audio_quarantine.clear()
+                                        _output_quarantine.clear()
                                     else:
                                         _input_validated = True
+                                        if _is_first_input:
+                                            self._begin_schedule_turn("", "voice")
+                                        self._update_schedule_turn(current_input)
+                                        self._remember_conversation_text(
+                                            "user",
+                                            current_input,
+                                            expected_conversation_id=receive_conversation_id,
+                                            turn_id=live_turn_id,
+                                        )
                                         for _qchunk in _audio_quarantine:
                                             self.audio_in_queue.put_nowait(_qchunk)
                                         _audio_quarantine.clear()
-                                self._remember_conversation_text(
-                                    "user",
-                                    current_input,
-                                    expected_conversation_id=receive_conversation_id,
-                                    turn_id=live_turn_id,
-                                )
-                                if (
-                                    not getattr(self, "_pending_self_quit", False)
-                                    and self._is_explicit_self_quit_transcript(self._current_input_transcript)
-                                ):
-                                    self._queue_self_quit_after_farewell()
+                                        for _qtype, _qtext, _qtxt in _output_quarantine:
+                                            self._remember_conversation_text(
+                                                "assistant",
+                                                _qtext,
+                                                expected_conversation_id=receive_conversation_id,
+                                                turn_id=live_turn_id,
+                                            )
+                                            if not self.ui.muted:
+                                                self.ui.show_subtitle(_qtxt)
+                                        _output_quarantine.clear()
+                                        if (
+                                            not getattr(self, "_pending_self_quit", False)
+                                            and self._is_explicit_self_quit_transcript(current_input)
+                                        ):
+                                            self._queue_self_quit_after_farewell()
+                                elif _input_validated:
+                                    if _is_first_input:
+                                        self._begin_schedule_turn("", "voice")
+                                    self._update_schedule_turn(current_input)
+                                    self._remember_conversation_text(
+                                        "user",
+                                        current_input,
+                                        expected_conversation_id=receive_conversation_id,
+                                        turn_id=live_turn_id,
+                                    )
 
                         if sc.turn_complete:
                             logger.info(
@@ -5666,6 +5692,7 @@ class JarvisLive:
                                     live_turn_id, full_in[:80],
                                 )
                                 _audio_quarantine.clear()
+                                _output_quarantine.clear()
                                 if turn_had_audio:
                                     self._interrupt_live_playback("replay_discard")
                                     turn_had_audio = False
@@ -5683,6 +5710,7 @@ class JarvisLive:
                                     live_turn_id, full_in[:80], len(_audio_quarantine),
                                 )
                                 _audio_quarantine.clear()
+                                _output_quarantine.clear()
                                 if turn_had_audio:
                                     self._interrupt_live_playback("void_turn_discard")
                                     turn_had_audio = False
@@ -5736,14 +5764,22 @@ class JarvisLive:
                                         live_turn_id, len(_audio_quarantine),
                                     )
                                 _audio_quarantine.clear()
+                            if _output_quarantine:
+                                if not _void_turn and not _replay_rejected and _input_validated:
+                                    for _qtype, _qtext, _qtxt in _output_quarantine:
+                                        self._remember_conversation_text(
+                                            "assistant",
+                                            _qtext,
+                                            expected_conversation_id=receive_conversation_id,
+                                            turn_id=live_turn_id,
+                                        )
+                                _output_quarantine.clear()
 
                             if not _replay_rejected:
                                 if self._turn_interrupted and full_in and _is_semantic_transcript(_clean_in):
                                     self._last_interrupted_turn = {
                                         "turn_id": live_turn_id,
                                         "normalized_input": _clean_in.strip().lower(),
-                                        "tool_sigs": set(self._turn_tool_signatures),
-                                        "timestamp": time.monotonic(),
                                     }
                                 elif not self._turn_interrupted:
                                     self._last_interrupted_turn = None
