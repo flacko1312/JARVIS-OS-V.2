@@ -2583,6 +2583,7 @@ class JarvisLive:
         self._active_turn_id: str | None = None
         self._turn_interrupted = False
         self._turn_tool_signatures: set[str] = set()
+        self._last_interrupted_turn: dict | None = None
         self._barge_in_last_reject_log = 0.0
         self._audio_input_worker_lock = threading.Lock()
         self._audio_input_device_id: int | None = None
@@ -5507,6 +5508,7 @@ class JarvisLive:
                 _first_response_audio_t = None
                 _input_validated = False
                 _audio_quarantine = []
+                _replay_rejected = False
                 logger.info("TURN start id=%s", live_turn_id)
                 async for response in self.session.receive():
                     received_message = True
@@ -5597,11 +5599,24 @@ class JarvisLive:
                                 )
                                 in_buf = [current_input]
                                 self._update_schedule_turn(current_input)
-                                if not _input_validated and _is_semantic_transcript(_strip_noise_tags(current_input)):
-                                    _input_validated = True
-                                    for _qchunk in _audio_quarantine:
-                                        self.audio_in_queue.put_nowait(_qchunk)
-                                    _audio_quarantine.clear()
+                                if not _input_validated and not _replay_rejected and _is_semantic_transcript(_strip_noise_tags(current_input)):
+                                    _norm = _strip_noise_tags(current_input).strip().lower()
+                                    if (
+                                        self._last_interrupted_turn is not None
+                                        and self._last_interrupted_turn.get("normalized_input") == _norm
+                                    ):
+                                        _replay_rejected = True
+                                        logger.info(
+                                            "TURN_REPLAY rejected source_turn=%s current_turn=%s input=%r reason=interrupted_turn_replay",
+                                            self._last_interrupted_turn.get("turn_id", "?"),
+                                            live_turn_id, current_input[:80],
+                                        )
+                                        _audio_quarantine.clear()
+                                    else:
+                                        _input_validated = True
+                                        for _qchunk in _audio_quarantine:
+                                            self.audio_in_queue.put_nowait(_qchunk)
+                                        _audio_quarantine.clear()
                                 self._remember_conversation_text(
                                     "user",
                                     current_input,
@@ -5616,8 +5631,8 @@ class JarvisLive:
 
                         if sc.turn_complete:
                             logger.info(
-                                "TURN close id=%s reason=turn_complete interrupted=%s",
-                                live_turn_id, self._turn_interrupted,
+                                "TURN close id=%s reason=turn_complete interrupted=%s replay_rejected=%s",
+                                live_turn_id, self._turn_interrupted, _replay_rejected,
                             )
                             print("[JARVIS] Turn complete; Live session remains open.")
                             self._suppress_interrupted_output = False
@@ -5645,7 +5660,24 @@ class JarvisLive:
                             _clean_in = _strip_noise_tags(full_in) if full_in else ""
                             _void_turn = bool(full_in) and not _is_semantic_transcript(_clean_in)
 
-                            if _void_turn:
+                            if _replay_rejected:
+                                logger.info(
+                                    "TURN_REPLAY discard turn_id=%s input=%r",
+                                    live_turn_id, full_in[:80],
+                                )
+                                _audio_quarantine.clear()
+                                if turn_had_audio:
+                                    self._interrupt_live_playback("replay_discard")
+                                    turn_had_audio = False
+                                with self._conversation_lock:
+                                    self._conversation_continuity = [
+                                        t for t in self._conversation_continuity
+                                        if t.get("turn_id") != live_turn_id
+                                    ]
+                                    self._persist_conversation_state()
+                                self._last_interrupted_turn = None
+
+                            elif _void_turn:
                                 logger.info(
                                     "VOID_TURN id=%s raw=%r quarantined_chunks=%d",
                                     live_turn_id, full_in[:80], len(_audio_quarantine),
@@ -5680,7 +5712,7 @@ class JarvisLive:
                             in_buf = []
 
                             full_out = " ".join(out_buf).strip()
-                            if full_out and not _void_turn:
+                            if full_out and not _void_turn and not _replay_rejected:
                                 self.ui.write_log(f"AURORA: {full_out}")
                                 self._remember_conversation_text(
                                     "assistant",
@@ -5695,7 +5727,7 @@ class JarvisLive:
                                 self._mark_self_quit_farewell_received()
                                 
                             if _audio_quarantine:
-                                if not _void_turn and (full_in == "" or _input_validated):
+                                if not _void_turn and not _replay_rejected and (full_in == "" or _input_validated):
                                     for _qchunk in _audio_quarantine:
                                         self.audio_in_queue.put_nowait(_qchunk)
                                 else:
@@ -5704,6 +5736,17 @@ class JarvisLive:
                                         live_turn_id, len(_audio_quarantine),
                                     )
                                 _audio_quarantine.clear()
+
+                            if not _replay_rejected:
+                                if self._turn_interrupted and full_in and _is_semantic_transcript(_clean_in):
+                                    self._last_interrupted_turn = {
+                                        "turn_id": live_turn_id,
+                                        "normalized_input": _clean_in.strip().lower(),
+                                        "tool_sigs": set(self._turn_tool_signatures),
+                                        "timestamp": time.monotonic(),
+                                    }
+                                elif not self._turn_interrupted:
+                                    self._last_interrupted_turn = None
 
                             out_buf = []
                             turn_had_audio = False
@@ -5734,10 +5777,12 @@ class JarvisLive:
                                 for fc in function_calls
                             ]
                         else:
-                            if not _input_validated:
+                            if _replay_rejected or not _input_validated:
                                 current_input = " ".join(in_buf).strip()
+                                _reject_reason = "interrupted_turn_replay" if _replay_rejected else "no_valid_semantic_input"
                                 logger.info(
-                                    "TOOL_CALL rejected reason=no_valid_semantic_input turn_id=%s text=%r tools=%s",
+                                    "TOOL_CALL rejected reason=%s turn_id=%s text=%r tools=%s",
+                                    _reject_reason,
                                     live_turn_id, current_input[:80],
                                     [getattr(fc, "name", "?") for fc in function_calls],
                                 )
@@ -5745,7 +5790,7 @@ class JarvisLive:
                                     types.FunctionResponse(
                                         id=fc.id,
                                         name=getattr(fc, "name", "tool"),
-                                        response={"result": "No valid semantic input; tool call rejected."},
+                                        response={"result": f"{_reject_reason}; tool call rejected."},
                                     )
                                     for fc in function_calls
                                 ]
