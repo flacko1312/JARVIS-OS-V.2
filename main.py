@@ -5764,12 +5764,25 @@ class JarvisLive:
                                     turn_id=live_turn_id,
                                 )
                             elif self._turn_interrupted and _input_validated:
-                                with self._conversation_lock:
-                                    self._conversation_continuity = [
-                                        t for t in self._conversation_continuity
-                                        if not (t.get("turn_id") == live_turn_id and t.get("role") == "assistant")
-                                    ]
-                                    self._persist_conversation_state()
+                                if full_out:
+                                    _interrupted_checkpoint = f"[interrumpido] {full_out}"
+                                    self._remember_conversation_text(
+                                        "assistant",
+                                        _interrupted_checkpoint,
+                                        expected_conversation_id=receive_conversation_id,
+                                        turn_id=live_turn_id,
+                                    )
+                                    logger.info(
+                                        "INTERRUPTED_CHECKPOINT saved turn_id=%s chars=%d",
+                                        live_turn_id, len(full_out),
+                                    )
+                                else:
+                                    with self._conversation_lock:
+                                        self._conversation_continuity = [
+                                            t for t in self._conversation_continuity
+                                            if not (t.get("turn_id") == live_turn_id and t.get("role") == "assistant")
+                                        ]
+                                        self._persist_conversation_state()
                             if (
                                 _input_validated
                                 and getattr(self, "_pending_self_quit", False)
@@ -5804,6 +5817,7 @@ class JarvisLive:
                                         "turn_id": live_turn_id,
                                         "normalized_input": _clean_in.strip().lower(),
                                         "canonical_input": _canonicalize_for_replay(full_in),
+                                        "partial_assistant_output": full_out or "",
                                         "timestamp": time.monotonic(),
                                     }
                                 elif not self._turn_interrupted:
