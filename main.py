@@ -5734,25 +5734,28 @@ class JarvisLive:
                                 for fc in function_calls
                             ]
                         else:
-                            current_input = " ".join(in_buf).strip()
-                            if in_buf and not _is_semantic_transcript(current_input):
+                            if not _input_validated:
+                                current_input = " ".join(in_buf).strip()
                                 logger.info(
-                                    "VOICE_INPUT ignored reason=non_semantic_transcript turn_id=%s text=%r",
+                                    "TOOL_CALL rejected reason=no_valid_semantic_input turn_id=%s text=%r tools=%s",
                                     live_turn_id, current_input[:80],
+                                    [getattr(fc, "name", "?") for fc in function_calls],
                                 )
                                 fn_responses = [
                                     types.FunctionResponse(
                                         id=fc.id,
                                         name=getattr(fc, "name", "tool"),
-                                        response={"result": "Non-semantic input; tool call skipped."},
+                                        response={"result": "No valid semantic input; tool call rejected."},
                                     )
                                     for fc in function_calls
                                 ]
                             else:
                                 filtered_calls = []
                                 dup_responses = []
+                                import json as _json
                                 for fc in function_calls:
-                                    sig = f"{getattr(fc, 'name', '')}:{getattr(fc, 'id', '')}"
+                                    _fc_args = getattr(fc, "args", {}) or {}
+                                    sig = f"{getattr(fc, 'name', '')}:{_json.dumps(_fc_args, sort_keys=True, default=str)}"
                                     if sig in self._turn_tool_signatures:
                                         logger.info(
                                             "TOOL_CALL rejected reason=duplicate_turn_call turn_id=%s tool=%s",
@@ -5772,7 +5775,6 @@ class JarvisLive:
                                     exec_iter = iter(exec_responses)
                                     dup_iter = iter(dup_responses)
                                     for fc in function_calls:
-                                        sig = f"{getattr(fc, 'name', '')}:{getattr(fc, 'id', '')}"
                                         if any(getattr(d, 'id', None) == fc.id for d in dup_responses):
                                             fn_responses.append(next(d for d in dup_responses if getattr(d, 'id', None) == fc.id))
                                         else:
