@@ -731,6 +731,31 @@ class InitialHistoryRejected(ConnectionError):
     """Gemini rejected the optional initial-history protocol."""
 
 
+_RECOVERABLE_WS_CLOSE_CODES = frozenset({1006, 1001, 1011, 1012, 1013, 1014})
+
+
+def _is_websocket_abnormal_close(exc: BaseException) -> bool:
+    """Recognize WebSocket abnormal closures that should trigger reconnect."""
+    name = type(exc).__name__
+    msg = str(exc).lower()
+    if name == "ConnectionClosedError" or (
+        "connectionclosederror" in name.lower()
+    ):
+        return True
+    if "no close frame" in msg or "abnormal closure" in msg:
+        return True
+    if isinstance(exc, genai.errors.APIError):
+        code = getattr(exc, "status", None) or getattr(exc, "code", None)
+        if code is None:
+            try:
+                code = int(str(exc).split()[0])
+            except (ValueError, IndexError):
+                code = None
+        if code in _RECOVERABLE_WS_CLOSE_CODES:
+            return True
+    return False
+
+
 def _is_recoverable_live_disconnect(exc: BaseException) -> bool:
     leaves = list(_exception_leaves(exc))
     return bool(leaves) and all(
@@ -739,6 +764,7 @@ def _is_recoverable_live_disconnect(exc: BaseException) -> bool:
         or _is_transient_live_connection_error(leaf)
         or _is_session_not_found_1008(leaf)
         or _is_invalid_argument_1007(leaf)
+        or _is_websocket_abnormal_close(leaf)
         for leaf in leaves
     )
 
