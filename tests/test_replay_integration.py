@@ -60,6 +60,34 @@ class TestReplayIntegration(unittest.TestCase):
         self.assertTrue(p["turn_b_input_validated"], "Different input should be validated")
         self.assertFalse(p["turn_b_replay_rejected"], "Different input should NOT be replay-rejected")
 
+    def test_no_input_turn_zero_side_effects(self):
+        """Turn with no input_transcription at all -> zero side effects."""
+        p = self._run_worker("no_input_turn")
+        self.assertTrue(p["passed"])
+        self.assertFalse(p["input_validated"], "No input -> not validated")
+        self.assertEqual(p["audio_released"], 0, "No input: audio released must be 0")
+        self.assertEqual(p["user_memory_writes"], 0, "No input: user memory must be 0")
+        self.assertEqual(p["assistant_memory_writes"], 0, "No input: assistant memory must be 0")
+        self.assertEqual(p["tool_executions"], 0, "No input: tool executions must be 0")
+        self.assertEqual(p["schedule_begins"], 0, "No input: schedule begins must be 0")
+        self.assertEqual(p["schedule_updates"], 0, "No input: schedule updates must be 0")
+        self.assertEqual(p["subtitle_calls"], 0, "No input: subtitle calls must be 0")
+        self.assertEqual(p["aurora_log_calls"], 0, "No input: AURORA log writes must be 0")
+
+    def test_nonsemantic_input_turn_zero_side_effects(self):
+        """Turn with non-semantic input '.' -> zero side effects."""
+        p = self._run_worker("nonsemantic_input_turn")
+        self.assertTrue(p["passed"])
+        self.assertFalse(p["input_validated"], "Dot input -> not validated")
+        self.assertEqual(p["audio_released"], 0, "Dot input: audio released must be 0")
+        self.assertEqual(p["user_memory_writes"], 0, "Dot input: user memory must be 0")
+        self.assertEqual(p["assistant_memory_writes"], 0, "Dot input: assistant memory must be 0")
+        self.assertEqual(p["tool_executions"], 0, "Dot input: tool executions must be 0")
+        self.assertEqual(p["schedule_begins"], 0, "Dot input: schedule begins must be 0")
+        self.assertEqual(p["schedule_updates"], 0, "Dot input: schedule updates must be 0")
+        self.assertEqual(p["subtitle_calls"], 0, "Dot input: subtitle calls must be 0")
+        self.assertEqual(p["aurora_log_calls"], 0, "Dot input: AURORA log writes must be 0")
+
 
 # ============================================================
 # Subprocess worker
@@ -359,6 +387,7 @@ if os.environ.get("_REPLAY_INTEGRATION_SUBPROCESS"):
             self.subtitle_calls = []
             self.audio_released = []
             self.tool_executions = []
+            self.aurora_log_calls = []
 
     def _make_instrumented_jl(session, counters):
         """Create JarvisLive with instrumented methods."""
@@ -412,6 +441,14 @@ if os.environ.get("_REPLAY_INTEGRATION_SUBPROCESS"):
             counters.audio_released.append(len(chunk))
 
         jl.audio_in_queue.put_nowait = _patched_put
+
+        original_write_log = jl.ui.write_log
+
+        def _patched_write_log(text):
+            if text.startswith("AURORA:"):
+                counters.aurora_log_calls.append(text[:80])
+
+        jl.ui.write_log = _patched_write_log
 
         # Stub methods that touch external systems
         jl._interrupt_live_playback = lambda reason: None
@@ -603,12 +640,94 @@ if os.environ.get("_REPLAY_INTEGRATION_SUBPROCESS"):
             "turn_b_replay_rejected": result["turn_b_user_memory"] == 0,
         }
 
+    async def _run_single_turn_test(responses):
+        """Run _receive_audio with a single turn and return counters."""
+        all_counters = _Counters()
+        session = _FakeSession([responses])
+        jl = _make_instrumented_jl(session, all_counters)
+
+        async def _auto_shutdown():
+            await asyncio.sleep(0.5)
+            jl._shutdown_requested.set()
+
+        loop = asyncio.get_event_loop()
+        shutdown_task = loop.create_task(_auto_shutdown())
+
+        try:
+            await jl._receive_audio()
+        except Exception:
+            pass
+
+        shutdown_task.cancel()
+
+        return {
+            "user_memory_writes": len(all_counters.user_memory),
+            "assistant_memory_writes": len(all_counters.assistant_memory),
+            "audio_released": len(all_counters.audio_released),
+            "schedule_updates": len(all_counters.schedule_updates),
+            "schedule_begins": len(all_counters.schedule_begins),
+            "subtitle_calls": len(all_counters.subtitle_calls),
+            "tool_executions": len(all_counters.tool_executions),
+            "aurora_log_calls": len(all_counters.aurora_log_calls),
+        }
+
+    def test_no_input_turn():
+        """Turn with NO input_transcription, provider sends audio + output + turn_complete."""
+        responses = [
+            _make_response(audio_bytes=b"\x00" * 320),
+            _make_response(output_text="Algo que dijo el modelo sin input"),
+            _make_response(audio_bytes=b"\x00" * 160),
+            _make_response(turn_complete=True),
+        ]
+
+        result = asyncio.run(_run_single_turn_test(responses))
+
+        return {
+            "passed": True,
+            "input_validated": False,
+            "audio_released": result["audio_released"],
+            "user_memory_writes": result["user_memory_writes"],
+            "assistant_memory_writes": result["assistant_memory_writes"],
+            "tool_executions": result["tool_executions"],
+            "schedule_begins": result["schedule_begins"],
+            "schedule_updates": result["schedule_updates"],
+            "subtitle_calls": result["subtitle_calls"],
+            "aurora_log_calls": result["aurora_log_calls"],
+        }
+
+    def test_nonsemantic_input_turn():
+        """Turn with non-semantic input '.', provider sends audio + output + turn_complete."""
+        responses = [
+            _make_response(input_text="."),
+            _make_response(audio_bytes=b"\x00" * 320),
+            _make_response(output_text="Respuesta a un punto"),
+            _make_response(audio_bytes=b"\x00" * 160),
+            _make_response(turn_complete=True),
+        ]
+
+        result = asyncio.run(_run_single_turn_test(responses))
+
+        return {
+            "passed": True,
+            "input_validated": False,
+            "audio_released": result["audio_released"],
+            "user_memory_writes": result["user_memory_writes"],
+            "assistant_memory_writes": result["assistant_memory_writes"],
+            "tool_executions": result["tool_executions"],
+            "schedule_begins": result["schedule_begins"],
+            "schedule_updates": result["schedule_updates"],
+            "subtitle_calls": result["subtitle_calls"],
+            "aurora_log_calls": result["aurora_log_calls"],
+        }
+
     if __name__ == "__main__":
         test_name = os.environ["_REPLAY_INTEGRATION_SUBPROCESS"]
         dispatch = {
             "real_replay": test_real_replay,
             "normal_repeat": test_normal_repeat,
             "different_input": test_different_input,
+            "no_input_turn": test_no_input_turn,
+            "nonsemantic_input_turn": test_nonsemantic_input_turn,
         }
         try:
             fn = dispatch.get(test_name)

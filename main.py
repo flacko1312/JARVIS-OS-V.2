@@ -5740,7 +5740,7 @@ class JarvisLive:
                             in_buf = []
 
                             full_out = " ".join(out_buf).strip()
-                            if full_out and not _void_turn and not _replay_rejected:
+                            if full_out and _input_validated and not _void_turn and not _replay_rejected:
                                 self.ui.write_log(f"AURORA: {full_out}")
                                 self._remember_conversation_text(
                                     "assistant",
@@ -5749,13 +5749,14 @@ class JarvisLive:
                                     turn_id=live_turn_id,
                                 )
                             if (
-                                getattr(self, "_pending_self_quit", False)
+                                _input_validated
+                                and getattr(self, "_pending_self_quit", False)
                                 and (full_out or turn_had_audio)
                             ):
                                 self._mark_self_quit_farewell_received()
                                 
                             if _audio_quarantine:
-                                if not _void_turn and not _replay_rejected and (full_in == "" or _input_validated):
+                                if _input_validated and not _void_turn and not _replay_rejected:
                                     for _qchunk in _audio_quarantine:
                                         self.audio_in_queue.put_nowait(_qchunk)
                                 else:
