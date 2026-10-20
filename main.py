@@ -2575,6 +2575,7 @@ class JarvisLive:
         self._loop          = None
         self._is_speaking   = False
         self._speaking_lock = threading.Lock()
+        self._playback_stream_lock = threading.Lock()
         self._barge_in_gate = SpeechAwareBargeInGate(input_sample_rate=SEND_SAMPLE_RATE)
         self._barge_in_candidate_logged = False
         self._local_barge_in_active = False
@@ -5504,6 +5505,8 @@ class JarvisLive:
                 _turn_start_t = time.monotonic()
                 _last_input_transcript_t = None
                 _first_response_audio_t = None
+                _input_validated = False
+                _audio_quarantine = []
                 logger.info("TURN start id=%s", live_turn_id)
                 async for response in self.session.receive():
                     received_message = True
@@ -5549,7 +5552,10 @@ class JarvisLive:
                             turn_had_audio = True
                             if self._turn_done_event and self._turn_done_event.is_set():
                                 self._turn_done_event.clear()
-                            self.audio_in_queue.put_nowait(response_audio)
+                            if _input_validated:
+                                self.audio_in_queue.put_nowait(response_audio)
+                            else:
+                                _audio_quarantine.append(response_audio)
 
                     if response.server_content:
                         sc = response.server_content
@@ -5591,6 +5597,11 @@ class JarvisLive:
                                 )
                                 in_buf = [current_input]
                                 self._update_schedule_turn(current_input)
+                                if not _input_validated and _is_semantic_transcript(_strip_noise_tags(current_input)):
+                                    _input_validated = True
+                                    for _qchunk in _audio_quarantine:
+                                        self.audio_in_queue.put_nowait(_qchunk)
+                                    _audio_quarantine.clear()
                                 self._remember_conversation_text(
                                     "user",
                                     current_input,
@@ -5636,9 +5647,13 @@ class JarvisLive:
 
                             if _void_turn:
                                 logger.info(
-                                    "VOID_TURN id=%s raw=%r",
-                                    live_turn_id, full_in[:80],
+                                    "VOID_TURN id=%s raw=%r quarantined_chunks=%d",
+                                    live_turn_id, full_in[:80], len(_audio_quarantine),
                                 )
+                                _audio_quarantine.clear()
+                                if turn_had_audio:
+                                    self._interrupt_live_playback("void_turn_discard")
+                                    turn_had_audio = False
                                 with self._conversation_lock:
                                     self._conversation_continuity = [
                                         t for t in self._conversation_continuity
@@ -5679,6 +5694,17 @@ class JarvisLive:
                             ):
                                 self._mark_self_quit_farewell_received()
                                 
+                            if _audio_quarantine:
+                                if not _void_turn and (full_in == "" or _input_validated):
+                                    for _qchunk in _audio_quarantine:
+                                        self.audio_in_queue.put_nowait(_qchunk)
+                                else:
+                                    logger.info(
+                                        "AUDIO_QUARANTINE discarded turn_id=%s chunks=%d",
+                                        live_turn_id, len(_audio_quarantine),
+                                    )
+                                _audio_quarantine.clear()
+
                             out_buf = []
                             turn_had_audio = False
                             _new_turn = True
@@ -5828,14 +5854,14 @@ class JarvisLive:
             self._playback_first_chunk_logged = False
         return stream
 
-    @staticmethod
-    def _close_playback_stream(stream):
+    def _close_playback_stream(self, stream):
         if stream is not None:
-            try:
-                stream.stop()
-                stream.close()
-            except Exception:
-                pass
+            with self._playback_stream_lock:
+                try:
+                    stream.stop()
+                    stream.close()
+                except Exception:
+                    pass
 
     async def _play_audio(self):
         print("[JARVIS] 🔊 Play started")
@@ -5914,7 +5940,10 @@ class JarvisLive:
                                     )
                             except Exception:
                                 pass
-                        await asyncio.to_thread(stream.write, chunk)
+                        def _locked_write(s, c, lk):
+                            with lk:
+                                s.write(c)
+                        await asyncio.to_thread(_locked_write, stream, chunk, self._playback_stream_lock)
         except Exception as e:
             print(f"[JARVIS] ❌ Play: {e}")
             raise
