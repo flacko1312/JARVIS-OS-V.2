@@ -2618,6 +2618,13 @@ class JarvisLive:
         self._tentative_barge_in_requested = False
         self._tentative_audio_buffer: list[bytes] = []
         self._tentative_provider_interrupted = False
+        self._tentative_started_at = 0.0
+        self._tentative_local_speech_frames = 0
+        self._tentative_local_speech_continued = False
+        self._tentative_added_audio_bytes = 0
+        self._tentative_local_timer = None
+        self._tentative_max_timer = None
+        self._false_barge_in_turn_id: str | None = None
         self._false_interruption_recovery_task: asyncio.Task | None = None
         self._internal_continuation_active = False
         self._suppress_interrupted_output = False
@@ -5476,7 +5483,16 @@ class JarvisLive:
                 input_sample_rate=SEND_SAMPLE_RATE,
             )
         previously_accepted = gate.accepted
-        decision = gate.process(data, playback_active=speaking)
+        tentative_before = bool(
+            getattr(self, "_tentative_barge_in_active", False)
+            or getattr(self, "_tentative_barge_in_requested", False)
+        )
+        # set_speaking(False) resets the existing gate when playback pauses.
+        # While tentative, feed subsequent frames back through that same gate
+        # so its unchanged speech rules can decide whether activity continued.
+        decision = gate.process(
+            data, playback_active=(speaking or tentative_before)
+        )
         now = time.monotonic()
         # ── voice stability metrics ──
         try:
@@ -5513,6 +5529,10 @@ class JarvisLive:
                 _get_voice_monitor().record_barge_in(accepted=True)
             except Exception:
                 pass
+        elif tentative_before:
+            loop.call_soon_threadsafe(
+                self._observe_tentative_barge_in, decision
+            )
         for frame in decision.forward_frames:
             loop.call_soon_threadsafe(self._enqueue_microphone_audio, frame)
         return decision
@@ -5547,34 +5567,144 @@ class JarvisLive:
         self._tentative_barge_in_requested = False
         self._tentative_barge_in_active = True
         self._tentative_provider_interrupted = False
+        self._tentative_started_at = time.monotonic()
+        self._tentative_local_speech_frames = 0
+        self._tentative_local_speech_continued = False
+        self._tentative_added_audio_bytes = 0
         self._tentative_audio_buffer = self._take_queue(
             getattr(self, "audio_in_queue", None)
         )
         self.set_speaking(False)
+        self._schedule_tentative_timers()
         logger.info(
-            "BARGE_IN tentative turn_id=%s buffered_chunks=%d",
+            "BARGE_IN tentative turn_id=%s buffered_chunks=%d "
+            "local_window_ms=%d max_timeout_ms=%d",
             self._active_turn_id, len(self._tentative_audio_buffer),
+            round(_TENTATIVE_LOCAL_WINDOW_S * 1000),
+            round(_TENTATIVE_MAX_TIMEOUT_S * 1000),
         )
 
+    def _tentative_age_ms(self) -> int:
+        started = getattr(self, "_tentative_started_at", 0.0)
+        return max(0, round((time.monotonic() - started) * 1000)) if started else 0
+
+    def _cancel_tentative_timers(self) -> None:
+        for name in ("_tentative_local_timer", "_tentative_max_timer"):
+            handle = getattr(self, name, None)
+            if handle is not None:
+                handle.cancel()
+            setattr(self, name, None)
+
+    def _schedule_tentative_timers(self) -> None:
+        self._cancel_tentative_timers()
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        self._tentative_local_timer = loop.call_later(
+            _TENTATIVE_LOCAL_WINDOW_S,
+            self._finish_tentative_local_window,
+        )
+        self._tentative_max_timer = loop.call_later(
+            _TENTATIVE_MAX_TIMEOUT_S,
+            self._finish_tentative_max_timeout,
+        )
+
+    def _observe_tentative_barge_in(self, decision: BargeInDecision) -> None:
+        if not getattr(self, "_tentative_barge_in_active", False):
+            return
+        if decision.candidate or decision.accepted:
+            self._tentative_local_speech_frames += 1
+        if decision.accepted and not self._tentative_local_speech_continued:
+            self._tentative_local_speech_continued = True
+            logger.info(
+                "BARGE_IN local_confirmed tentative_age_ms=%d "
+                "local_speech_continued=true local_speech_frames=%d "
+                "speech_duration_ms=%d",
+                self._tentative_age_ms(),
+                self._tentative_local_speech_frames,
+                int(getattr(decision, "speech_duration_ms", 0)),
+            )
+
+    def _finish_tentative_local_window(self) -> None:
+        self._tentative_local_timer = None
+        if not getattr(self, "_tentative_barge_in_active", False):
+            return
+        if getattr(self, "_tentative_local_speech_continued", False):
+            return
+        self._rollback_tentative_now("local_speech_not_sustained")
+
+    def _finish_tentative_max_timeout(self) -> None:
+        self._tentative_max_timer = None
+        if getattr(self, "_tentative_barge_in_active", False):
+            self._rollback_tentative_now("semantic_timeout")
+
+    def _rollback_tentative_now(self, reason: str) -> tuple[int, bool]:
+        turn_id = getattr(self, "_active_turn_id", None) or "unknown"
+        restored, provider_interrupted = self._rollback_tentative_interruption(
+            turn_id, reason=reason,
+        )
+        if provider_interrupted:
+            task = getattr(self, "_false_interruption_recovery_task", None)
+            if task is None or task.done():
+                try:
+                    self._false_interruption_recovery_task = asyncio.create_task(
+                        self._request_false_interruption_continuation(turn_id)
+                    )
+                except RuntimeError:
+                    logger.warning(
+                        "BARGE_IN recovery skipped reason=no_running_loop turn_id=%s",
+                        turn_id,
+                    )
+        return restored, provider_interrupted
+
+    def _buffer_tentative_audio(self, chunk: bytes, turn_id: str) -> None:
+        self._tentative_audio_buffer.append(chunk)
+        self._tentative_added_audio_bytes += len(chunk)
+        if self._tentative_added_audio_bytes >= _TENTATIVE_BUFFER_GROWTH_MAX_BYTES:
+            logger.warning(
+                "BARGE_IN buffer_cap reached turn_id=%s buffered_chunks=%d "
+                "added_bytes=%d",
+                turn_id, len(self._tentative_audio_buffer),
+                self._tentative_added_audio_bytes,
+            )
+            self._rollback_tentative_now("buffer_growth_cap")
+
     def _commit_tentative_interruption(self, turn_id: str) -> int:
+        age_ms = self._tentative_age_ms()
+        local_frames = getattr(self, "_tentative_local_speech_frames", 0)
+        self._cancel_tentative_timers()
         discarded = len(self._tentative_audio_buffer)
         provider_already_interrupted = self._tentative_provider_interrupted
         self._tentative_audio_buffer.clear()
         self._tentative_barge_in_active = False
         self._tentative_barge_in_requested = False
         self._tentative_provider_interrupted = False
+        self._tentative_started_at = 0.0
+        self._tentative_local_speech_frames = 0
+        self._tentative_local_speech_continued = False
+        self._tentative_added_audio_bytes = 0
         self._local_barge_in_active = True
         self._suppress_interrupted_output = not provider_already_interrupted
         self._turn_interrupted = True
         self._last_barge_in_accepted_t = time.monotonic()
         logger.info(
             "BARGE_IN committed reason=semantic_input turn_id=%s "
-            "discarded_chunks=%d provider_already_interrupted=%s",
-            turn_id, discarded, provider_already_interrupted,
+            "discarded_chunks=%d provider_already_interrupted=%s "
+            "commit_latency_ms=%d local_speech_frames=%d",
+            turn_id, discarded, provider_already_interrupted, age_ms, local_frames,
         )
         return discarded
 
-    def _rollback_tentative_interruption(self, turn_id: str) -> tuple[int, bool]:
+    def _rollback_tentative_interruption(
+        self, turn_id: str, *, reason: str = "no_semantic_input"
+    ) -> tuple[int, bool]:
+        age_ms = self._tentative_age_ms()
+        local_continued = bool(
+            getattr(self, "_tentative_local_speech_continued", False)
+        )
+        local_frames = getattr(self, "_tentative_local_speech_frames", 0)
+        self._cancel_tentative_timers()
         queue = getattr(self, "audio_in_queue", None)
         buffered = list(self._tentative_audio_buffer)
         provider_interrupted = self._tentative_provider_interrupted
@@ -5582,15 +5712,22 @@ class JarvisLive:
         self._tentative_barge_in_active = False
         self._tentative_barge_in_requested = False
         self._tentative_provider_interrupted = False
+        self._tentative_started_at = 0.0
+        self._tentative_local_speech_frames = 0
+        self._tentative_local_speech_continued = False
+        self._tentative_added_audio_bytes = 0
         self._local_barge_in_active = False
         self._suppress_interrupted_output = False
         self._turn_interrupted = False
+        self._false_barge_in_turn_id = turn_id
         if queue is not None:
             for chunk in buffered:
                 queue.put_nowait(chunk)
         logger.info(
-            "BARGE_IN rollback reason=no_semantic_input turn_id=%s",
-            turn_id,
+            "BARGE_IN rollback reason=%s turn_id=%s tentative_age_ms=%d "
+            "rollback_latency_ms=%d local_speech_continued=%s "
+            "local_speech_frames=%d",
+            reason, turn_id, age_ms, age_ms, local_continued, local_frames,
         )
         logger.info(
             "BARGE_IN resume buffered_chunks=%d turn_id=%s",
@@ -5737,7 +5874,9 @@ class JarvisLive:
                             self.audio_in_queue.put_nowait(response_audio)
                         elif self._tentative_barge_in_active:
                             turn_had_audio = True
-                            self._tentative_audio_buffer.append(response_audio)
+                            self._buffer_tentative_audio(
+                                response_audio, live_turn_id
+                            )
                         elif self._suppress_interrupted_output:
                             logger.debug(
                                 "LIVE_AUDIO suppressed reason=local_barge_in bytes=%d",
@@ -5831,7 +5970,16 @@ class JarvisLive:
                                     " ".join(in_buf), txt
                                 )
                                 in_buf = [current_input]
-                                if not _input_validated and not _replay_rejected and _is_semantic_transcript(_strip_noise_tags(current_input)):
+                                if (
+                                    not _input_validated
+                                    and not _replay_rejected
+                                    and getattr(
+                                        self, "_false_barge_in_turn_id", None
+                                    ) != live_turn_id
+                                    and _is_semantic_transcript(
+                                        _strip_noise_tags(current_input)
+                                    )
+                                ):
                                     _canon = _canonicalize_for_replay(current_input)
                                     _is_replay = False
                                     if self._last_interrupted_turn is not None:
@@ -5955,7 +6103,15 @@ class JarvisLive:
 
                             full_in = " ".join(in_buf).strip()
                             _clean_in = _strip_noise_tags(full_in) if full_in else ""
-                            _void_turn = bool(full_in) and not _is_semantic_transcript(_clean_in)
+                            _false_barge_in_turn = (
+                                getattr(self, "_false_barge_in_turn_id", None)
+                                == live_turn_id
+                            )
+                            _void_turn = (
+                                bool(full_in)
+                                and not _is_semantic_transcript(_clean_in)
+                                and not _false_barge_in_turn
+                            )
                             full_out = " ".join(out_buf).strip()
                             _void_classification = _classify_void_turn(
                                 input_text=full_in,
@@ -5963,10 +6119,25 @@ class JarvisLive:
                                 audio_chunks=len(_audio_quarantine),
                                 tool_call_seen=_turn_had_tool_call,
                                 replay_rejected=_replay_rejected,
-                                interrupted=self._turn_interrupted,
+                                interrupted=(
+                                    self._turn_interrupted
+                                    or _false_barge_in_turn
+                                ),
                             )
 
-                            if _replay_rejected:
+                            if _false_barge_in_turn:
+                                logger.info(
+                                    "BARGE_IN false_turn_closed turn_id=%s "
+                                    "quarantined_chunks=%d",
+                                    live_turn_id, len(_audio_quarantine),
+                                )
+                                for _qchunk in _audio_quarantine:
+                                    self.audio_in_queue.put_nowait(_qchunk)
+                                _audio_quarantine.clear()
+                                _output_quarantine.clear()
+                                self._false_barge_in_turn_id = None
+
+                            elif _replay_rejected:
                                 logger.info(
                                     "TURN_REPLAY discard turn_id=%s input=%r",
                                     live_turn_id, full_in[:80],
@@ -6734,10 +6905,15 @@ class JarvisLive:
                 if recovery_task is not None and not recovery_task.done():
                     recovery_task.cancel()
                 self._false_interruption_recovery_task = None
+                self._cancel_tentative_timers()
                 self._tentative_audio_buffer.clear()
                 self._tentative_barge_in_active = False
                 self._tentative_barge_in_requested = False
                 self._tentative_provider_interrupted = False
+                self._tentative_started_at = 0.0
+                self._tentative_local_speech_frames = 0
+                self._tentative_local_speech_continued = False
+                self._tentative_added_audio_bytes = 0
                 self._internal_continuation_active = False
                 queued_audio = self._drain_queue(self.audio_in_queue)
                 queued_input = self._drain_queue(self.out_queue)
@@ -6964,6 +7140,13 @@ _STOP_CONTROL_RE = _re_mod.compile(
 )
 _POST_BARGE_IN_CONTROL_WINDOW_S = 5.0
 _INTERRUPTED_REPLAY_WINDOW_S = 5.0
+# Capture frames are 1024 samples at 16 kHz (64 ms). Eight frames provide a
+# 512 ms local confirmation window without changing the existing speech gate.
+_TENTATIVE_LOCAL_WINDOW_S = 0.512
+_TENTATIVE_MAX_TIMEOUT_S = 3.0
+# Cap only audio generated after the pause (8 seconds of 24 kHz mono int16).
+# Pre-existing queued audio is always preserved in full.
+_TENTATIVE_BUFFER_GROWTH_MAX_BYTES = RECEIVE_SAMPLE_RATE * CHANNELS * 2 * 8
 
 
 def _is_standalone_stop_control(text: str) -> bool:
