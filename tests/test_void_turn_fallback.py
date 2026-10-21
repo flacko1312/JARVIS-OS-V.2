@@ -20,7 +20,7 @@ def classify(**overrides):
 
 
 def test_real_noise_without_semantic_output_is_discarded():
-    assert classify(audio_chunks=42) == "true_noise"
+    assert classify(audio_chunks=0) == "true_noise"
 
 
 def test_punctuation_input_never_uses_noise_fallback():
@@ -31,8 +31,8 @@ def test_punctuation_input_never_uses_noise_fallback():
     ) == "true_noise"
 
 
-def test_weak_output_is_not_sufficient_evidence():
-    assert classify(output_text="Algo", audio_chunks=20) == "true_noise"
+def test_noise_with_audio_does_not_require_output_transcription():
+    assert classify(output_text="", audio_chunks=20) == "uncertain_speech"
 
 
 def test_false_noise_with_semantic_output_uses_safe_fallback():

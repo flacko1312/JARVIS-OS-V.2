@@ -85,12 +85,15 @@ class TestConversationContinuity(unittest.TestCase):
 
     # ── 5. noise_zero_side_effects ──
     def test_noise_zero_side_effects(self):
-        """'.', '<noise>', '<silence>' -> zero side effects, no topic change."""
+        """Noise never changes memory/topic; only <noise>+audio gets local feedback."""
         p = self._run_worker("noise_zero_side_effects")
         self.assertTrue(p["passed"])
         self.assertEqual(p["user_memory_writes"], 0, "Noise: zero user memory")
         self.assertEqual(p["assistant_memory_writes"], 0, "Noise: zero assistant memory")
-        self.assertEqual(p["audio_released"], 0, "Noise: zero audio released")
+        self.assertEqual(
+            p["audio_released"], 3,
+            "Only <noise> with model audio releases the three local clarification chunks",
+        )
         self.assertEqual(p["schedule_begins"], 0, "Noise: zero schedule begins")
 
     # ── 6. provider_replay_zero_side_effects ──

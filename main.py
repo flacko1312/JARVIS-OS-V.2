@@ -2567,14 +2567,7 @@ def _classify_void_turn(
         return "unsafe_tool"
     if " ".join(input_text.lower().split()) != "<noise>":
         return "true_noise"
-    clean_output = _strip_noise_tags(output_text)
-    output_words = re.findall(r"\w+", clean_output, flags=re.UNICODE)
-    if (
-        audio_chunks > 0
-        and _is_semantic_transcript(clean_output)
-        and len(clean_output) >= 12
-        and len(output_words) >= 3
-    ):
+    if audio_chunks > 0:
         return "uncertain_speech"
     return "true_noise"
 
@@ -2621,6 +2614,12 @@ class JarvisLive:
         self._barge_in_gate = SpeechAwareBargeInGate(input_sample_rate=SEND_SAMPLE_RATE)
         self._barge_in_candidate_logged = False
         self._local_barge_in_active = False
+        self._tentative_barge_in_active = False
+        self._tentative_barge_in_requested = False
+        self._tentative_audio_buffer: list[bytes] = []
+        self._tentative_provider_interrupted = False
+        self._false_interruption_recovery_task: asyncio.Task | None = None
+        self._internal_continuation_active = False
         self._suppress_interrupted_output = False
         self._active_turn_id: str | None = None
         self._turn_interrupted = False
@@ -5499,13 +5498,16 @@ class JarvisLive:
                 _get_voice_monitor().record_barge_in(accepted=False)
             except Exception:
                 pass
-        if decision.accepted and not previously_accepted and not self._local_barge_in_active:
-            self._local_barge_in_active = True
-            self._suppress_interrupted_output = True
-            self._turn_interrupted = True
-            self._last_barge_in_accepted_t = time.monotonic()
+        if (
+            decision.accepted
+            and not previously_accepted
+            and not self._local_barge_in_active
+            and not self._tentative_barge_in_active
+            and not self._tentative_barge_in_requested
+        ):
+            self._tentative_barge_in_requested = True
             loop.call_soon_threadsafe(self._log_barge_in, "accepted", decision)
-            loop.call_soon_threadsafe(self._interrupt_live_playback, "local_barge_in")
+            loop.call_soon_threadsafe(self._begin_tentative_interruption)
             try:
                 from core.voice_stability import get_monitor as _get_voice_monitor
                 _get_voice_monitor().record_barge_in(accepted=True)
@@ -5527,6 +5529,109 @@ class JarvisLive:
                 return drained
             else:
                 drained += 1
+
+    @staticmethod
+    def _take_queue(queue: asyncio.Queue | None) -> list[bytes]:
+        chunks = []
+        if queue is None:
+            return chunks
+        while True:
+            try:
+                chunks.append(queue.get_nowait())
+            except asyncio.QueueEmpty:
+                return chunks
+
+    def _begin_tentative_interruption(self) -> None:
+        if self._tentative_barge_in_active or self._local_barge_in_active:
+            return
+        self._tentative_barge_in_requested = False
+        self._tentative_barge_in_active = True
+        self._tentative_provider_interrupted = False
+        self._tentative_audio_buffer = self._take_queue(
+            getattr(self, "audio_in_queue", None)
+        )
+        self.set_speaking(False)
+        logger.info(
+            "BARGE_IN tentative turn_id=%s buffered_chunks=%d",
+            self._active_turn_id, len(self._tentative_audio_buffer),
+        )
+
+    def _commit_tentative_interruption(self, turn_id: str) -> int:
+        discarded = len(self._tentative_audio_buffer)
+        provider_already_interrupted = self._tentative_provider_interrupted
+        self._tentative_audio_buffer.clear()
+        self._tentative_barge_in_active = False
+        self._tentative_barge_in_requested = False
+        self._tentative_provider_interrupted = False
+        self._local_barge_in_active = True
+        self._suppress_interrupted_output = not provider_already_interrupted
+        self._turn_interrupted = True
+        self._last_barge_in_accepted_t = time.monotonic()
+        logger.info(
+            "BARGE_IN committed reason=semantic_input turn_id=%s "
+            "discarded_chunks=%d provider_already_interrupted=%s",
+            turn_id, discarded, provider_already_interrupted,
+        )
+        return discarded
+
+    def _rollback_tentative_interruption(self, turn_id: str) -> tuple[int, bool]:
+        queue = getattr(self, "audio_in_queue", None)
+        buffered = list(self._tentative_audio_buffer)
+        provider_interrupted = self._tentative_provider_interrupted
+        self._tentative_audio_buffer.clear()
+        self._tentative_barge_in_active = False
+        self._tentative_barge_in_requested = False
+        self._tentative_provider_interrupted = False
+        self._local_barge_in_active = False
+        self._suppress_interrupted_output = False
+        self._turn_interrupted = False
+        if queue is not None:
+            for chunk in buffered:
+                queue.put_nowait(chunk)
+        logger.info(
+            "BARGE_IN rollback reason=no_semantic_input turn_id=%s",
+            turn_id,
+        )
+        logger.info(
+            "BARGE_IN resume buffered_chunks=%d turn_id=%s",
+            len(buffered), turn_id,
+        )
+        return len(buffered), provider_interrupted
+
+    async def _request_false_interruption_continuation(self, turn_id: str) -> None:
+        if not await self._wait_for_playback_drain():
+            logger.warning(
+                "BARGE_IN recovery skipped reason=playback_not_drained turn_id=%s",
+                turn_id,
+            )
+            return
+        if (
+            self._shutdown_requested.is_set()
+            or not self._conversation_requested.is_set()
+            or self.session is None
+        ):
+            return
+        self._internal_continuation_active = True
+        logger.info(
+            "BARGE_IN recovery requested reason=provider_interrupted turn_id=%s",
+            turn_id,
+        )
+        try:
+            await self.session.send_client_content(
+                turns={"parts": [{"text": (
+                    "[INTERNAL FALSE INTERRUPTION RECOVERY] "
+                    "Continúa exactamente desde el punto en que tu respuesta fue "
+                    "interrumpida. No repitas lo ya dicho, no menciones la "
+                    "interrupción, no cambies de tema y no llames herramientas."
+                )}]},
+                turn_complete=True,
+            )
+        except Exception as exc:
+            self._internal_continuation_active = False
+            logger.warning(
+                "BARGE_IN recovery failed turn_id=%s error=%s",
+                turn_id, _safe_live_diagnostic(exc),
+            )
 
     def _interrupt_live_playback(self, reason: str) -> int:
         """Accept a provider interruption and discard only stale output audio."""
@@ -5579,9 +5684,12 @@ class JarvisLive:
                 _output_quarantine = []
                 _replay_rejected = False
                 _turn_had_tool_call = False
+                _internal_recovery_turn = False
                 logger.info("TURN start id=%s", live_turn_id)
                 async for response in self.session.receive():
                     received_message = True
+                    if self._internal_continuation_active:
+                        _internal_recovery_turn = True
                     if response.tool_call:
                         _turn_had_tool_call = True
 
@@ -5614,7 +5722,23 @@ class JarvisLive:
 
                     response_audio = _live_response_audio_bytes(response)
                     if response_audio:
-                        if self._suppress_interrupted_output:
+                        if (
+                            self._tentative_barge_in_requested
+                            and not self._tentative_barge_in_active
+                        ):
+                            self._begin_tentative_interruption()
+                        if _internal_recovery_turn:
+                            if not turn_had_audio:
+                                _first_response_audio_t = time.monotonic()
+                                self._first_response_audio_t = _first_response_audio_t
+                            turn_had_audio = True
+                            if self._turn_done_event and self._turn_done_event.is_set():
+                                self._turn_done_event.clear()
+                            self.audio_in_queue.put_nowait(response_audio)
+                        elif self._tentative_barge_in_active:
+                            turn_had_audio = True
+                            self._tentative_audio_buffer.append(response_audio)
+                        elif self._suppress_interrupted_output:
                             logger.debug(
                                 "LIVE_AUDIO suppressed reason=local_barge_in bytes=%d",
                                 len(response_audio),
@@ -5635,10 +5759,23 @@ class JarvisLive:
                         sc = response.server_content
 
                         if getattr(sc, "interrupted", False):
-                            self._interrupt_live_playback("provider_interruption")
-                            self._turn_interrupted = True
-                            self._suppress_interrupted_output = False
-                            self._local_barge_in_active = False
+                            if (
+                                self._tentative_barge_in_requested
+                                and not self._tentative_barge_in_active
+                            ):
+                                self._begin_tentative_interruption()
+                            if self._tentative_barge_in_active:
+                                self._tentative_provider_interrupted = True
+                                logger.info(
+                                    "BARGE_IN provider_interrupted tentative=true "
+                                    "turn_id=%s",
+                                    live_turn_id,
+                                )
+                            else:
+                                self._interrupt_live_playback("provider_interruption")
+                                self._turn_interrupted = True
+                                self._suppress_interrupted_output = False
+                                self._local_barge_in_active = False
 
                         if sc.output_transcription and sc.output_transcription.text:
                             txt = _clean_transcript(sc.output_transcription.text)
@@ -5648,7 +5785,13 @@ class JarvisLive:
                                 )
                                 out_buf = [merged_output]
                                 self._interrupted_text = merged_output
-                                if _input_validated:
+                                if _internal_recovery_turn:
+                                    if not self.ui.muted:
+                                        if _new_turn:
+                                            self.ui.clear_subtitle()
+                                            _new_turn = False
+                                        self.ui.show_subtitle(txt)
+                                elif _input_validated:
                                     self._remember_conversation_text(
                                         "assistant",
                                         self._interrupted_text,
@@ -5663,9 +5806,25 @@ class JarvisLive:
                                 else:
                                     _output_quarantine.append(("assistant_text", self._interrupted_text, txt))
 
-                        if sc.input_transcription and sc.input_transcription.text:
+                        if (
+                            sc.input_transcription
+                            and sc.input_transcription.text
+                            and not _internal_recovery_turn
+                        ):
                             txt = _clean_transcript(sc.input_transcription.text)
                             if txt:
+                                if (
+                                    self._tentative_barge_in_requested
+                                    and not self._tentative_barge_in_active
+                                ):
+                                    self._begin_tentative_interruption()
+                                if (
+                                    self._tentative_barge_in_active
+                                    and _is_semantic_transcript(_strip_noise_tags(txt))
+                                ):
+                                    self._commit_tentative_interruption(live_turn_id)
+                                    in_buf = []
+                                    _input_validated = False
                                 _last_input_transcript_t = time.monotonic()
                                 _is_first_input = not in_buf
                                 current_input = _merge_transcript_text(
@@ -5748,6 +5907,16 @@ class JarvisLive:
                                     )
 
                         if sc.turn_complete:
+                            _recovery_needed = False
+                            if (
+                                self._tentative_barge_in_requested
+                                and not self._tentative_barge_in_active
+                            ):
+                                self._begin_tentative_interruption()
+                            if self._tentative_barge_in_active:
+                                _, _recovery_needed = (
+                                    self._rollback_tentative_interruption(live_turn_id)
+                                )
                             logger.info(
                                 "TURN close id=%s reason=turn_complete interrupted=%s replay_rejected=%s",
                                 live_turn_id, self._turn_interrupted, _replay_rejected,
@@ -5757,6 +5926,16 @@ class JarvisLive:
                             self._local_barge_in_active = False
                             if self._turn_done_event:
                                 self._turn_done_event.set()
+                            if _recovery_needed:
+                                task = self._false_interruption_recovery_task
+                                if task is None or task.done():
+                                    self._false_interruption_recovery_task = (
+                                        asyncio.create_task(
+                                            self._request_false_interruption_continuation(
+                                                live_turn_id
+                                            )
+                                        )
+                                    )
                             try:
                                 from core.voice_stability import get_monitor as _get_voice_monitor
                                 _vm = _get_voice_monitor()
@@ -5904,7 +6083,10 @@ class JarvisLive:
                                         )
                                 _output_quarantine.clear()
 
-                            if not _replay_rejected:
+                            if (
+                                not _replay_rejected
+                                and not _internal_recovery_turn
+                            ):
                                 if self._turn_interrupted and full_in and _is_semantic_transcript(_clean_in):
                                     self._last_interrupted_turn = {
                                         "turn_id": live_turn_id,
@@ -5919,6 +6101,11 @@ class JarvisLive:
                             out_buf = []
                             turn_had_audio = False
                             _new_turn = True
+                            if _internal_recovery_turn:
+                                logger.info(
+                                    "BARGE_IN recovery completed turn_id=%s",
+                                    live_turn_id,
+                                )
 
                             if pending_goaway is not None:
                                 drained = await self._wait_for_playback_drain()
@@ -5930,7 +6117,27 @@ class JarvisLive:
                     if response.tool_call:
                         function_calls = list(response.tool_call.function_calls)
                         # ── turn integrity guards ──
-                        if self._turn_interrupted or self._suppress_interrupted_output:
+                        if _internal_recovery_turn:
+                            logger.info(
+                                "TOOL_CALL rejected reason=internal_continuation "
+                                "turn_id=%s tools=%s",
+                                live_turn_id,
+                                [getattr(fc, "name", "?") for fc in function_calls],
+                            )
+                            fn_responses = [
+                                types.FunctionResponse(
+                                    id=fc.id,
+                                    name=getattr(fc, "name", "tool"),
+                                    response={
+                                        "result": (
+                                            "Internal continuation cannot call tools; "
+                                            "tool call rejected."
+                                        )
+                                    },
+                                )
+                                for fc in function_calls
+                            ]
+                        elif self._turn_interrupted or self._suppress_interrupted_output:
                             logger.info(
                                 "TOOL_CALL rejected reason=stale_turn turn_id=%s tools=%s",
                                 live_turn_id,
@@ -5998,6 +6205,7 @@ class JarvisLive:
                             not (self._turn_interrupted or self._suppress_interrupted_output)
                             and not _replay_rejected
                             and _input_validated
+                            and not _internal_recovery_turn
                         )
                         if _genuinely_executed:
                             _executed_ids = {fc.id for fc in filtered_calls} if 'filtered_calls' in locals() else set()
@@ -6011,6 +6219,12 @@ class JarvisLive:
                         await self.session.send_tool_response(
                             function_responses=fn_responses
                         )
+                    if (
+                        _internal_recovery_turn
+                        and response.server_content
+                        and response.server_content.turn_complete
+                    ):
+                        self._internal_continuation_active = False
                     if self._shutdown_requested.is_set() or not self._conversation_requested.is_set():
                         return
                     if pending_goaway is not None and not response_audio and response.server_content is None:
@@ -6516,6 +6730,15 @@ class JarvisLive:
                     self.ui.write_log(f"ERR: Falló la conexión con Gemini Live: {actual}")
                     return
             finally:
+                recovery_task = self._false_interruption_recovery_task
+                if recovery_task is not None and not recovery_task.done():
+                    recovery_task.cancel()
+                self._false_interruption_recovery_task = None
+                self._tentative_audio_buffer.clear()
+                self._tentative_barge_in_active = False
+                self._tentative_barge_in_requested = False
+                self._tentative_provider_interrupted = False
+                self._internal_continuation_active = False
                 queued_audio = self._drain_queue(self.audio_in_queue)
                 queued_input = self._drain_queue(self.out_queue)
                 if queued_audio or queued_input:
