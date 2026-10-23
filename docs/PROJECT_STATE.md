@@ -50,9 +50,11 @@ Machine-verifiable recovery and stabilization are complete on the real Windows c
 
 ## Current quality baseline
 
-- Pytest for this block: 589 collected; 509 passed; 77 classified historical-spec skips; 3 known unrelated UI contract failures; 0 errors; 1 third-party Python 3.14 deprecation warning; 19 subtests passed. A clean `HEAD` baseline independently reproduces all three failures: tests expect `MUTED`, `Quit AURORA`, and `ANALYSIS COMPLETE`, while the previously committed Spanish UI shows `SILENCIADO`, `Cerrar AURORA`, and `ANÁLISIS COMPLETADO`.
-- QA runner: 5/5 checks passed, P0=0, P1=0; three P2 debt findings.
-- Python dependency consistency: clean.
-- Web: ESLint pass, TypeScript pass, Next production build pass, production `npm audit` 0 vulnerabilities. Five high development-only transitive audit findings remain.
+- Full Python pytest at the protected 2026-10-23 checkpoint: **1235 passed, 93 skipped, 1 third-party Python 3.14 deprecation warning, 49 subtests passed, 0 failures**.
+- Additional silent closure suite covering Gemini Live/session continuity, audio-device recovery simulation, mutation guards, clipboard and Windows/browser behavior: **260 passed, 1 warning, 0 failures**.
+- Python `compileall`: PASS. `pip check`: PASS with no broken requirements.
+- Web: ESLint PASS, TypeScript `tsc --noEmit` PASS, Next.js production build PASS.
+- From the first reviewed `shadow_v4` activation: 0 errors/tracebacks and 0 warnings in the inspected runtime log window.
+- Protected Git baseline: commit `bd145ee`, tag `checkpoint-windows-stable-2026-10-23`, pushed to `origin/main`.
 
-See `docs/audits/JARVIS_PROJECT_RECOVERY_2026-10-08.md` for evidence and `docs/TASKS.md` for the only active backlog.
+See `docs/audits/AURORA_SILENT_AUDIT_2026-10-23.md` for the current closure audit, `docs/audits/JARVIS_PROJECT_RECOVERY_2026-10-08.md` for historical recovery evidence, and `docs/TASKS.md` for the active backlog.

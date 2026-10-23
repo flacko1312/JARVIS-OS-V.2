@@ -13,6 +13,18 @@ Status: **PARTIALLY CLOSED / ONE PHYSICAL CHECK REMAINS**.
 - Rollback remains `JARVIS_SPOTIFY_FILTER_MODE=off`; do not alter the now-good 2500 ms conversation timing while diagnosing Spotify.
 
 Next voice test: run a real Spotify spoken advertisement or voice-heavy track for 30–60 seconds while the owner stays silent. Expected result is zero user turns/replies/tools. Then speak one normal question over Spotify and confirm a single complete turn without pausing playback.
+## Silent audit — 2026-10-23
+
+Status: **PASS / NO NEW SILENT BLOCKER FOUND**.
+
+- Full suite baseline: 1235 passed, 93 skipped, 0 failures.
+- Additional reconnect/continuity/device-recovery/Windows-browser guard suite: 260 passed, 0 failures.
+- Python compile/dependency checks and web lint/typecheck/production build: PASS.
+- Reviewed shadow_v4 runtime window: 0 errors and 0 warnings.
+- The old 29-item physical plan is retained as historical certification coverage, but it is no longer the actionable backlog. Use this file plus AURORA_SILENT_AUDIT_2026-10-23.md for current closure order.
+
+Current critical closure order: **Spotify v4 physical acceptance -> final barge-in/audio-device recovery -> real Gemini transport recovery -> soak**. Keep the 2500 ms turn timing frozen.
+
 ## Current validation state
 
 ### Gemini Live transport recovery — next required physical validation

@@ -1,6 +1,6 @@
 # Voice / Spotify checkpoint — 2026-10-23
 
-Status: **RECOVERABLE WORKING CHECKPOINT — NOT COMMITTED**
+Status: **PROTECTED CHECKPOINT — COMMITTED AND PUSHED**
 
 This checkpoint records the current good voice state after physical testing. It deliberately separates owner-validated behavior from automatic/offline evidence.
 
@@ -72,7 +72,7 @@ The end-of-turn delay is separately controlled by `JARVIS_LIVE_VAD_SILENCE_MS` a
 
 ## Recovery material
 
-No commit was created because the repository already contains unrelated dirty work.
+The protected baseline was committed and pushed after cleanup/review as commit `bd145ee` and tagged `checkpoint-windows-stable-2026-10-23`. The working tree was clean after the push.
 
 Checkpoint material:
 
