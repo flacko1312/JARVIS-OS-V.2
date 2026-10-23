@@ -104,6 +104,25 @@ def test_recent_speaker_playback_leakage_does_not_self_interrupt():
     assert all(decision.rejected_reason == "playback_leakage" for decision in decisions)
 
 
+
+def test_real_world_0844_playback_similarity_is_rejected_as_echo():
+    gate = SpeechAwareBargeInGate()
+    gate._echo_similarity = lambda _fingerprint: (0.844, 0.08)
+    decision = gate.process(voice_frame(amplitude=0.035), playback_active=True)
+    assert not decision.accepted
+    assert decision.rejected_reason == "playback_leakage"
+
+
+def test_distinct_human_speech_still_interrupts_quickly_during_playback():
+    gate = SpeechAwareBargeInGate()
+    gate._echo_similarity = lambda _fingerprint: (0.40, 0.08)
+    first, second, third = [
+        gate.process(voice_frame(amplitude=0.06), playback_active=True)
+        for _ in range(3)
+    ]
+    assert first.candidate and second.candidate
+    assert third.accepted
+    assert third.speech_duration_ms < 250
 def test_sustained_human_speech_interrupts_after_consecutive_frames():
     gate = SpeechAwareBargeInGate()
     first, second, third = accept_speech(gate)
@@ -147,7 +166,7 @@ def test_context_remains_intact_after_accepted_interruption():
         muted=False, on_text_command=None, on_conversation_toggle=None,
         set_state=lambda _state: None,
     ), cloud_safe=True, api_key="test", external_audio=True)
-    jarvis._remember_conversation_text("user", "mi contexto sigue aquí")
+    jarvis._remember_conversation_text("user", "mi contexto sigue aquÃ­")
     before = list(jarvis._conversation_continuity)
     jarvis.audio_in_queue = asyncio.Queue()
     jarvis.audio_in_queue.put_nowait(b"stale-output")
@@ -193,3 +212,13 @@ def test_gate_reset_on_standby_drops_candidate_but_not_future_listening_audio():
     decision = gate.process(frame, playback_active=False)
     assert decision.forward_frames == (frame,)
     assert not gate.accepted
+
+
+def test_high_echo_similarity_needs_longer_confirmation_before_barge_in():
+    gate = SpeechAwareBargeInGate()
+    with patch.object(gate, "_echo_similarity", return_value=(0.81, 0.05)):
+        decisions = [gate.process(voice_frame(), playback_active=True) for _ in range(5)]
+    assert decisions[2].candidate and not decisions[2].accepted
+    assert decisions[3].candidate and not decisions[3].accepted
+    assert decisions[4].accepted
+    assert decisions[4].speech_duration_ms >= 300

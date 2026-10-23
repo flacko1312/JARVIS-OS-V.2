@@ -361,6 +361,7 @@ class _BrowserSession:
         self._pw:      Playwright     | None = None
         self._context: BrowserContext | None = None
         self._page:    Page           | None = None
+        self._startup_error: BaseException | None = None
 
     def start(self):
         if self._thread and self._thread.is_alive():
@@ -371,14 +372,29 @@ class _BrowserSession:
             name=f"BrowserThread-{self.browser_name}",
         )
         self._thread.start()
-        self._ready.wait(timeout=20)
+        if not self._ready.wait(timeout=20):
+            raise TimeoutError(f"Browser session '{self.browser_name}' did not start within 20s.")
+        if self._startup_error is not None:
+            self._thread.join(timeout=10)
+            raise RuntimeError(
+                f"Browser session '{self.browser_name}' failed to start: {self._startup_error}"
+            ) from self._startup_error
 
     def _run_loop(self):
         self._loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self._loop)
-        self._loop.run_until_complete(self._async_init())
+        try:
+            self._loop.run_until_complete(self._async_init())
+        except BaseException as exc:
+            self._startup_error = exc
+            self._ready.set()
+            self._loop.close()
+            return
         self._ready.set()
-        self._loop.run_forever()
+        try:
+            self._loop.run_forever()
+        finally:
+            self._loop.close()
 
     async def _async_init(self):
         self._pw = await async_playwright().start()
@@ -390,8 +406,17 @@ class _BrowserSession:
         return future.result(timeout=timeout)
 
     def close(self):
-        if self._loop:
-            asyncio.run_coroutine_threadsafe(self._async_close(), self._loop).result(10)
+        loop = self._loop
+        thread = self._thread
+        if loop and loop.is_running():
+            try:
+                asyncio.run_coroutine_threadsafe(self._async_close(), loop).result(10)
+            finally:
+                loop.call_soon_threadsafe(loop.stop)
+        if thread and thread is not threading.current_thread():
+            thread.join(timeout=10)
+        self._loop = None
+        self._thread = None
 
     async def _async_close(self):
         if self._context:
@@ -444,7 +469,7 @@ class _BrowserSession:
                 Path(jarvis).mkdir(parents=True, exist_ok=True)
                 self._context = await engine_obj.launch_persistent_context(jarvis, **kwargs)
 
-            await asyncio.sleep(0.5)  
+            await asyncio.sleep(0.5)
             self._page = await self._context.new_page()
             print(f"[Browser] ✅ Firefox launched")
             return
@@ -493,7 +518,7 @@ class _BrowserSession:
 
         try:
             self._context = await engine_obj.launch_persistent_context(profile, **kwargs)
-            await asyncio.sleep(0.5) 
+            await asyncio.sleep(0.5)
             self._page = await self._context.new_page()
             print(f"[Browser] ✅ Launched [{label}] profile={profile}")
             return

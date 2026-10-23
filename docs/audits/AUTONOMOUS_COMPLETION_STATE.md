@@ -3,7 +3,7 @@
 **Updated:** 2026-10-15  
 **Current block:** COMPLETE — A through O  
 **Completed blocks:** A — Intent router; B — Local AI; C — Reminders; D — Gemini config; E — Dev-agent safety; F — Gmail; G — Multimedia; H — Known bugs; I — HUD engineering; J — Observability; K — Static quality; L — Soak monitoring; M — Full regression; N — Git checkpoints; O — Final documentation  
-**Current Git HEAD:** `5f1d7cb` (`main`) before final documentation commit
+**Current Git HEAD:** `b4924b7` (`main`, final documentation commit)
 
 ## Working-tree state at start
 
@@ -131,7 +131,7 @@ No reset, checkout, stash, revert, deletion, push or credential access was perfo
 
 ## Git checkpoints
 
-- `581b626`, `855f97d`, `193b21e`, `5f1d7cb`; final documentation commit follows this checkpoint update.
+- `581b626`, `855f97d`, `193b21e`, `5f1d7cb`, `b4924b7`.
 - Overlapping pre-existing paths were preserved and not committed wholesale.
 
 ## Exact next action

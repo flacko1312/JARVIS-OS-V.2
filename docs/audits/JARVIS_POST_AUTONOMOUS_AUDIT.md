@@ -61,6 +61,7 @@ Uncommitted because they overlapped preserved pre-existing work: `actions/file_p
 - `855f97d` — reminders/Gmail/media
 - `193b21e` — Gemini/developer safety
 - `5f1d7cb` — HUD/observability/quality/soak
+- `b4924b7` — final completion documentation
 
 No commit was pushed.
 
@@ -76,4 +77,12 @@ No commit was pushed.
 
 ## Final boundary
 
-The software baseline is automatically green and locally checkpointed. It is not physically certified. Execute `docs/audits/PHYSICAL_TEST_PLAN_V2.md` for the remaining 26 supervised checks.
+The software baseline is automatically green and locally checkpointed. It is not physically certified. The original completion boundary contained 26 supervised checks; the date/time addendum below raises the current total to 27.
+
+## Final date/time authority addendum — 2026-10-15
+
+The additional audit established that the complete feature was missing: reminders understood `Europe/Madrid`, but conversational current-time/date questions could still depend on Gemini and a session-start timestamp. A central read-only Windows date/time authority was therefore implemented in `core/date_time_authority.py` and wired through the router/runtime, Gemini Live text and voice tool paths, reminders, routine scheduling and scheduled Home Assistant timezone normalization.
+
+The deterministic authority suite adds 13 tests for required phrasings, Windows/Madrid/CET/CEST, DST gaps/folds, midnight/date/year rollovers, relative dates, 22:00 Spanish parsing, bare-hour ambiguity, reminder/routine integration and non-guessing routing. Final regression: **1072 passed, 93 skipped, 1 warning, 46 subtests passed**. No physical test was performed. The remaining supervised plan now contains **27** checks, including `PHY2-027` comparing spoken JARVIS time with the Windows clock. See `docs/audits/AUT_TIME_DATE_AUTHORITY.md`.
+
+The isolated local implementation checkpoint is `c2e838fff9fab960684dbc3fe38f260a93f05e85`; it was not pushed. This audit file remains outside that commit because it already contained preserved working-tree edits before this verification.

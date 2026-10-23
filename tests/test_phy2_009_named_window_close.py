@@ -73,6 +73,19 @@ class NamedWindowResolverTests(unittest.TestCase):
         )
         self.assertEqual(result, "No he podido cerrar Bloc de notas.")
 
+    def test_named_close_accepts_fresh_enumeration_when_old_hwnd_lingers(self):
+        spotify = window(30, "Spotify Premium", "Spotify.exe")
+        enumerations = iter(([spotify], []))
+        result = window_control.close_named_window(
+            "Spotify",
+            enumerate_fn=lambda: next(enumerations),
+            post_close_fn=lambda _hwnd: True,
+            exists_fn=lambda _hwnd: True,
+            timeout_seconds=0,
+            poll_interval=0,
+        )
+        self.assertEqual(result, "Cerrado: Spotify.")
+
     def test_close_message_rejected_returns_failure(self):
         notepad = window(10, "Sin título", "Notepad.exe")
         result = window_control.close_named_window(
@@ -108,6 +121,17 @@ class NamedWindowResolverTests(unittest.TestCase):
         self.assertEqual(result, "Cerrado: Bloc de notas.")
         self.assertEqual(closed, [notepad.hwnd])
         foreground.assert_not_called()
+
+    def test_named_sticky_notes_targets_real_app_process_not_application_frame_host(self):
+        host = window(31, "Notas rápidas", "ApplicationFrameHost.exe", "ApplicationFrameWindow")
+        notes = window(32, "Notas rápidas", "Microsoft.Notes.exe", "Windows.UI.Core.CoreWindow")
+        display, matches = window_control.matching_windows("Notas rápidas", [host, notes])
+        self.assertEqual(display, "Notas rápidas")
+        self.assertEqual(matches, [notes])
+
+        result, closed = successful_close("Notas rápidas", [host, notes])
+        self.assertEqual(result, "Cerrado: Notas rápidas.")
+        self.assertEqual(closed, [notes.hwnd])
 
     def test_named_spotify_target(self):
         spotify = window(30, "Spotify Premium", "Spotify.exe")

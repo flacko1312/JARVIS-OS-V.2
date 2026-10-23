@@ -426,9 +426,9 @@ def _process_text_doc(path: Path, file_type: str, action: str,
     }
 
     if action not in prompt_map:
-
-        action  = "custom"
-        instruction = action
+        original_action = action
+        action = "custom"
+        prompt_map["custom"] = f"{instruction or original_action}\n\n{content[:40000]}"
 
     try:
         result = _generate_content([prompt_map[action]])
@@ -452,7 +452,7 @@ def _process_data(path: Path, file_type: str, action: str,
 
     try:
         if file_type == "csv":
-            df = pd.read_csv(path, encoding="utf-8", errors="replace")
+            df = pd.read_csv(path, encoding="utf-8", encoding_errors="replace")
         else:
             df = pd.read_excel(path)
     except Exception as e:

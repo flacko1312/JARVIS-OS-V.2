@@ -16,6 +16,7 @@ from core.schedule_safety import normalized_turn_text as _normalized_turn_text
 from core.schedule_safety import schedule_semantics as _schedule_semantics
 from core.date_time_authority import DateTimeAuthority
 from core.audio_barge_in import BargeInDecision, SpeechAwareBargeInGate
+from core.spotify_aec import SpotifyProcessAEC
 
 import sounddevice as sd
 from google import genai
@@ -155,10 +156,11 @@ DEFAULT_VOICE_NAME = DEFAULT_GEMINI_VOICE
 
 RECEIVE_SAMPLE_RATE = 24000
 CHUNK_SIZE          = 1024
-LIVE_VAD_SILENCE_MS = 200
+LIVE_VAD_SILENCE_MS = max(250, min(3000, int(os.environ.get("JARVIS_LIVE_VAD_SILENCE_MS", "1000"))))
 LIVE_PLAYBACK_DRAIN_TIMEOUT_SECONDS = 30.0
 LIVE_INPUT_CALLBACK_STALE_SECONDS = 2.5
 AUDIO_DEVICE_RECOVERY_MAX_DELAY_SECONDS = 10.0
+AUDIO_OUTPUT_RECHECK_SECONDS = 0.5
 STARTUP_CLAPS_REQUIRED = 2
 STARTUP_CLAP_MAX_GAP_SECONDS = 4.0
 STARTUP_CLAP_COOLDOWN_SECONDS = 0.22
@@ -254,6 +256,28 @@ _ROUTINE_READ_OPERATIONS = frozenset({"list", "get", "history"})
 _ROUTINE_WRITE_OPERATIONS = frozenset({"create", "update", "enable", "disable", "delete"})
 _MEMORY_MUTATING_TOOL_NAMES = frozenset({"save_memory", "lilith_memory_store", "lilith_memory_delete"})
 _MEMORY_LOOKUP_TOOL_NAMES = frozenset({"local_memory_search", "lilith_memory_search"})
+
+# Tools that must execute serially because they can change external/user-visible state.
+# This is also the scope for the per-turn exact-effect deduplicator below.
+_MUTATING_TOOL_NAMES = frozenset({
+    "open_app", "send_message", "prepare_message_reply", "email_control", "reminder",
+    "youtube_video", "media_control", "browser_control", "agent_task",
+    "computer_settings", "computer_control", "desktop_control", "file_controller",
+    "file_processor", "code_helper", "dev_agent", "game_updater", "flight_finder",
+    "create_presentation", "deep_research", "task_status", "save_memory",
+    "jarvis_ui_control", "graphics_quality",
+    "lilith_memory_store", "lilith_memory_delete", "lilith_home_action",
+    "lilith_request_approval", "lilith_resolve_approval", "lilith_command_submit",
+    "lilith_routine",
+})
+
+# Memory/schedule mutations already have stronger purpose-built guards. The generic
+# guard protects ordinary desktop/app actions without adding I/O, waits or network calls.
+_GENERIC_MUTATION_GUARD_NAMES = _MUTATING_TOOL_NAMES - _MEMORY_MUTATING_TOOL_NAMES - _SCHEDULED_TOOL_NAMES
+_VOICE_OPEN_INTENT_WORDS = frozenset({
+    "abre", "abrir", "abras", "abreme", "lanza", "lanzar", "inicia", "iniciar",
+    "ejecuta", "ejecutar", "open", "launch", "start",
+})
 
 
 def _canonical_memory_key(key: str, category: str | None = None) -> str:
@@ -692,6 +716,10 @@ class AudioInputDeviceLost(ConnectionError):
     """The local capture stream stopped producing usable callbacks."""
 
 
+class AudioOutputDeviceLost(ConnectionError):
+    """The local playback device is unavailable or stopped accepting audio."""
+
+
 def _current_default_input_device() -> tuple[int | None, str]:
     """Resolve the current OS default input on every open/recovery attempt."""
     default = getattr(sd.default, "device", None)
@@ -705,6 +733,61 @@ def _current_default_input_device() -> tuple[int | None, str]:
     if int(info.get("max_input_channels", 0)) < CHANNELS:
         raise AudioInputDeviceLost("default input exposes no capture channel")
     return index, _safe_live_diagnostic(info.get("name", "default input"), 80)
+
+
+def _current_default_output_device() -> tuple[int, str]:
+    """Resolve and validate the current OS default playback device."""
+    default = getattr(sd.default, "device", None)
+    try:
+        index = int(default[1])
+    except (TypeError, IndexError, ValueError):
+        index = -1
+    if index < 0:
+        raise AudioOutputDeviceLost("no default output device")
+    info = sd.query_devices(index, "output")
+    if int(info.get("max_output_channels", 0)) < CHANNELS:
+        raise AudioOutputDeviceLost("default output exposes no playback channel")
+    sd.check_output_settings(
+        device=index,
+        samplerate=RECEIVE_SAMPLE_RATE,
+        channels=CHANNELS,
+        dtype="int16",
+    )
+    return index, _safe_live_diagnostic(info.get("name", "default output"), 80)
+
+
+def _find_output_device_by_name(preferred_name: str | None) -> tuple[int, str] | None:
+    """Find a compatible output by stable name so Windows device IDs may change."""
+    target = str(preferred_name or "").strip().casefold()
+    if not target:
+        return None
+    exact: list[tuple[int, str]] = []
+    partial: list[tuple[int, str]] = []
+    try:
+        devices = sd.query_devices()
+    except Exception:
+        return None
+    for index, info in enumerate(devices):
+        if int(info.get("max_output_channels", 0)) < CHANNELS:
+            continue
+        raw_name = str(info.get("name", "") or "")
+        folded = raw_name.casefold()
+        if folded == target:
+            exact.append((index, raw_name))
+        elif target in folded:
+            partial.append((index, raw_name))
+    for index, raw_name in exact + partial:
+        try:
+            sd.check_output_settings(
+                device=index,
+                samplerate=RECEIVE_SAMPLE_RATE,
+                channels=CHANNELS,
+                dtype="int16",
+            )
+        except Exception:
+            continue
+        return index, _safe_live_diagnostic(raw_name, 80)
+    return None
 
 
 def _is_invalid_argument_1007(exc: BaseException) -> bool:
@@ -971,17 +1054,120 @@ def _clean_transcript(text: str) -> str:
     return text.strip()
 
 
+def _clean_transcript_chunk(text: str) -> str:
+    """Remove control bytes while preserving provider word-boundary whitespace."""
+    text = _CTRL_RE.sub("", str(text or ""))
+    return re.sub(r"[\x00-\x08\x0b-\x1f]", "", text)
+
+
+def _merge_input_transcript_text(current: str, raw_chunk: str) -> str:
+    """Merge Live input transcription without turning token boundaries into spaces."""
+    current = " ".join(str(current or "").split()).strip()
+    chunk = _clean_transcript_chunk(raw_chunk)
+    stripped = " ".join(chunk.split()).strip()
+    if not stripped:
+        return current
+    if not current:
+        return stripped
+
+    # Provider may send a cumulative correction/replacement instead of a delta.
+    if stripped == current:
+        return current
+    if stripped.startswith(current) and len(stripped) > len(current):
+        return stripped
+
+    # For true deltas, leading whitespace is meaningful: it marks a word boundary.
+    # No leading whitespace means the provider is continuing the current word/token.
+    if chunk[:1].isspace():
+        return f"{current} {stripped}".strip()
+    if current[-1:] in ".!?;:" and stripped[:1].isalnum():
+        return f"{current} {stripped}".strip()
+    return f"{current}{stripped}".strip()
+
+
+def _output_text_key(text: str) -> str:
+    return re.sub(r"[^\wáéíóúüñ]+", " ", str(text or "").casefold()).strip()
+
+
+def _dedupe_repeated_output(text: str) -> str:
+    """Collapse adjacent repeated sentences produced inside one Live output chunk."""
+    normalized = " ".join(str(text or "").split()).strip()
+    if not normalized:
+        return ""
+    parts = re.split(r"(?<=[.!?])\s+", normalized)
+    kept: list[str] = []
+    kept_keys: list[str] = []
+    for part in parts:
+        key = _output_text_key(part)
+        if kept and len(key) >= 12 and key == kept_keys[-1]:
+            continue
+        kept.append(part)
+        kept_keys.append(key)
+    return " ".join(kept).strip()
+
+
 def _merge_transcript_text(current: str, chunk: str) -> str:
     """Merge incremental or cumulative Live transcription updates safely."""
-    current = " ".join(str(current or "").split()).strip()
-    chunk = " ".join(str(chunk or "").split()).strip()
+    current = _dedupe_repeated_output(current)
+    chunk = _dedupe_repeated_output(chunk)
     if not current:
         return chunk
     if not chunk or chunk == current or current.endswith(chunk):
         return current
     if chunk.startswith(current):
-        return chunk
-    return f"{current} {chunk}".strip()
+        return _dedupe_repeated_output(chunk)
+    current_key = _output_text_key(current)
+    chunk_key = _output_text_key(chunk)
+    if min(len(current_key), len(chunk_key)) >= 20 and (
+        current_key == chunk_key or current_key in chunk_key or chunk_key in current_key
+    ):
+        return chunk if len(chunk_key) > len(current_key) else current
+    return _dedupe_repeated_output(f"{current} {chunk}")
+
+
+def _subtitle_delta(previous: str, merged: str, raw_chunk: str) -> str:
+    """Return only subtitle text not already displayed in this model turn."""
+    previous = " ".join(str(previous or "").split()).strip()
+    merged = " ".join(str(merged or "").split()).strip()
+    raw_chunk = " ".join(str(raw_chunk or "").split()).strip()
+    if not merged or merged == previous:
+        return ""
+    if not previous:
+        return merged
+    if merged.startswith(previous):
+        return merged[len(previous):].lstrip()
+    # Fallback for provider transcript corrections that replace punctuation/casing:
+    # if the semantic text did not grow, do not append a second visual copy.
+    previous_key = _output_text_key(previous)
+    merged_key = _output_text_key(merged)
+    if previous_key and merged_key and (merged_key == previous_key or merged_key in previous_key):
+        return ""
+    return raw_chunk
+
+
+def _pending_repeat_key(text: str) -> str:
+    """Compact a spoken turn so STT spacing/accent differences compare cheaply."""
+    return re.sub(r"[^a-z0-9]+", "", _normalized_turn_text(text))
+
+
+def _tool_result_for_model(name: str, args: dict, result: object) -> object:
+    """Keep deterministic action confirmations short so Live does not add latency/paraphrase."""
+    text = str(result or "")
+    lowered = text.casefold()
+    failure_markers = (
+        "failed", "error", "unknown action", "no puedo", "no se ",
+        "foco cambi?", "no se proporcion", "vac?o", "refused", "no he podido",
+        "not found", "does not exist", "denied", "permission",
+    )
+    if any(marker in lowered for marker in failure_markers):
+        return result
+    if name == "computer_control":
+        return "Hecho."
+    if name == "file_controller":
+        action = str((args or {}).get("action") or "").strip().lower()
+        if action in {"create_file", "create_folder", "delete", "move", "copy", "rename"}:
+            return "Hecho."
+    return result
 
 TOOL_DECLARATIONS = [
     {
@@ -1239,8 +1425,9 @@ TOOL_DECLARATIONS = [
             "Controls the computer at the OS level: volume, brightness, window management, "
             "keyboard shortcuts, typing text on screen, closing app windows, fullscreen, "
             "dark mode, WiFi, restart, shutdown, scrolling, zoom, screenshots, lock screen, "
-            "refresh/reload page. Use action='close_window' to close any OS window or named "
-            "application. Use for ANY single OS-level command. NEVER route to agent_task."
+            "refresh/reload page. Bare requests such as 'Configuración', 'Ajustes' or 'abre configuración' "
+            "mean Windows Settings and MUST use action='open_settings'. Use action='close_window' to close "
+            "any OS window or named application. Use for ANY single OS-level command. NEVER route to agent_task."
         ),
         "parameters": {
             "type": "OBJECT",
@@ -1374,12 +1561,12 @@ TOOL_DECLARATIONS = [
     },
     {
         "name": "computer_control",
-        "description": "Direct computer control: type, click, hotkeys, scroll, move mouse, screenshots, find elements on screen.",
+        "description": "Direct computer control: type, copy/paste the current selection/clipboard, click, hotkeys, scroll, move mouse, screenshots, find elements on screen.",
         "parameters": {
             "type": "OBJECT",
             "properties": {
-                "action":      {"type": "STRING", "description": "type | smart_type | click | double_click | right_click | hotkey | press | scroll | move | copy | paste | screenshot | wait | clear_field | focus_window | screen_find | screen_click | random_data | user_data"},
-                "text":        {"type": "STRING", "description": "Text to type or paste"},
+                "action":      {"type": "STRING", "description": "type | smart_type | select_all | click | double_click | right_click | hotkey | press | scroll | move | copy | paste | screenshot | wait | clear_field | focus_window | screen_find | screen_click | random_data | user_data"},
+                "text":        {"type": "STRING", "description": "Text to type. For action=paste omit this to paste the current OS text clipboard."},
                 "x":           {"type": "INTEGER", "description": "X coordinate"},
                 "y":           {"type": "INTEGER", "description": "Y coordinate"},
                 "keys":        {"type": "STRING", "description": "Key combination e.g. 'ctrl+c'"},
@@ -1456,7 +1643,10 @@ TOOL_DECLARATIONS = [
         "name": "jarvis_ui_control",
         "description": (
             "Changes JARVIS's own interface. Use when the user asks to open or close the Command Center, "
-            "change the theme or graphics quality, open settings, enter compact mode, toggle fullscreen, or show shortcuts."
+            "change the theme or graphics quality, enter compact mode, toggle fullscreen, or show shortcuts. "
+            "Use action='open_settings' ONLY when the user explicitly says JARVIS, AURORA, the interface, "
+            "or clearly refers to this assistant's own settings. Bare 'Configuración' or 'Ajustes' means "
+            "Windows Settings and MUST use computer_settings instead."
         ),
         "parameters": {
             "type": "OBJECT",
@@ -2251,10 +2441,15 @@ class JarvisLive:
         self._is_speaking   = False
         self._speaking_lock = threading.Lock()
         self._barge_in_gate = SpeechAwareBargeInGate(input_sample_rate=SEND_SAMPLE_RATE)
+        self._spotify_aec = SpotifyProcessAEC(sample_rate=SEND_SAMPLE_RATE)
         self._barge_in_candidate_logged = False
         self._barge_in_last_reject_log = 0.0
         self._audio_input_worker_lock = threading.Lock()
         self._audio_input_device_id: int | None = None
+        self._audio_output_device_id: int | None = None
+        self._preferred_output_device_name = (
+            os.environ.get("JARVIS_PREFERRED_OUTPUT_DEVICE", "").strip() or None
+        )
         self.voice_name     = voice_name
         self._date_time_authority = DateTimeAuthority()
         # optional runtime limit in seconds (set by main)
@@ -2272,6 +2467,9 @@ class JarvisLive:
         self._current_input_transcript = ""
         self._last_input_transcript = ""
         self._last_input_transcript_at = 0.0
+        self._pending_unanswered_input_key = ""
+        self._pending_unanswered_input_text = ""
+        self._pending_unanswered_live_turn_id = ""
         self._schedule_guard_routed = False
         self._schedule_session_id = uuid.uuid4().hex[:12]
         self._schedule_turn_sequence = 0
@@ -2282,6 +2480,9 @@ class JarvisLive:
         self._memory_call_turns: dict[str, str] = {}
         self._memory_consumed_call_ids: set[str] = set()
         self._memory_turn_effects: set[tuple[str, str, str]] = set()
+        self._mutating_turn_effects: set[tuple[str, str]] = set()
+        self._tool_turn_active = False
+        self._active_tool_turn_id = ""
         self._memory_key_aliases: dict[str, str] = {}
         # Explicitly local/session memory is process-local RAM only. It must not
         # survive a JarvisLive restart and must never use the persistent memory manager.
@@ -2838,18 +3039,32 @@ class JarvisLive:
             await asyncio.sleep(min(0.1, remaining))
 
     def _intercept_ui_tool_call(self, name: str, args: dict) -> str | None:
-        """Safety net for stale models that attempt the removed quit tool action."""
+        """Deterministic guards for ambiguous or stale JARVIS UI tool calls."""
         action = str(args.get("action") or "").strip().lower()
-        if name != "shutdown_jarvis" and not (
-            name == "jarvis_ui_control" and action == "quit_jarvis"
-        ):
-            return None
 
         transcript = str(getattr(self, "_current_input_transcript", "") or "")
         if not transcript:
             age = time.monotonic() - float(getattr(self, "_last_input_transcript_at", 0.0) or 0.0)
             if age <= 5.0:
                 transcript = str(getattr(self, "_last_input_transcript", "") or "")
+
+        if name == "jarvis_ui_control" and action == "open_settings":
+            lowered = transcript.casefold()
+            explicit_ui_markers = (
+                "jarvis", "aurora", "interfaz", "command center", "centro de mando",
+                "tu configuración", "tu configuracion", "tus ajustes",
+            )
+            if not any(marker in lowered for marker in explicit_ui_markers):
+                return (
+                    "Do not open JARVIS settings. The user requested Windows Settings; "
+                    "use computer_settings with action='open_settings'."
+                )
+            return None
+
+        if name != "shutdown_jarvis" and not (
+            name == "jarvis_ui_control" and action == "quit_jarvis"
+        ):
+            return None
 
         if not self._is_explicit_self_quit_transcript(transcript):
             return "Ignored an unverified shutdown request. JARVIS remains online."
@@ -3969,9 +4184,10 @@ class JarvisLive:
 
         print(f"[JARVIS] 📤 {name} → {str(result)[:80]}")
         logger.info("TOOL_RESULT  %s  result=%s", name, str(result)[:120])
+        model_result = _tool_result_for_model(name, args, result)
         return types.FunctionResponse(
             id=fc.id, name=name,
-            response={"result": result}
+            response={"result": model_result}
         )
 
     def _begin_schedule_turn(self, text: str, source: str) -> None:
@@ -3979,6 +4195,8 @@ class JarvisLive:
         self._schedule_turn_id = f"{self._schedule_session_id}:{self._schedule_turn_sequence}"
         self._schedule_turn_source = source
         self._current_input_transcript = str(text or "").strip()
+        self._tool_turn_active = True
+        self._active_tool_turn_id = self._schedule_turn_id
         self._schedule_guard_routed = False
         try:
             from core.green.runtime import emit_turn_started
@@ -3990,11 +4208,39 @@ class JarvisLive:
         except Exception:
             pass
         self._memory_turn_effects.clear()
+        self._mutating_turn_effects.clear()
         self._capture_pending_recurring(self._current_input_transcript)
 
     def _update_schedule_turn(self, text: str) -> None:
         self._current_input_transcript = str(text or "").strip()
         self._capture_pending_recurring(self._current_input_transcript)
+
+    def _is_unanswered_repeat(self, text: str, live_turn_id: str) -> bool:
+        """True only when the same user request is still awaiting any assistant response."""
+        current_key = _pending_repeat_key(text)
+        pending_key = str(getattr(self, "_pending_unanswered_input_key", "") or "")
+        pending_turn = str(getattr(self, "_pending_unanswered_live_turn_id", "") or "")
+        if len(current_key) < 6 or not pending_key or current_key != pending_key:
+            return False
+        return bool(pending_turn and pending_turn != str(live_turn_id or ""))
+
+    def _track_pending_user_input(self, text: str, live_turn_id: str) -> None:
+        key = _pending_repeat_key(text)
+        if len(key) < 6:
+            return
+        self._pending_unanswered_input_key = key
+        self._pending_unanswered_input_text = str(text or "").strip()
+        self._pending_unanswered_live_turn_id = str(live_turn_id or "")
+
+    def _mark_assistant_response_started(self) -> None:
+        self._pending_unanswered_input_key = ""
+        self._pending_unanswered_input_text = ""
+        self._pending_unanswered_live_turn_id = ""
+
+    def _end_active_tool_turn(self) -> None:
+        """Close the model-tool authority window after the assistant turn finishes."""
+        self._tool_turn_active = False
+        self._active_tool_turn_id = ""
 
     def _capture_pending_recurring(self, text: str) -> None:
         semantics = _schedule_semantics(text)
@@ -4342,13 +4588,116 @@ class JarvisLive:
             )},
         )
 
+    def _tool_turn_binding_guard_reason(self, fc) -> str | None:
+        """Require Live tool calls to belong to the currently active user turn."""
+        source = str(getattr(self, "_schedule_turn_source", "") or "")
+        if source not in {"voice", "text"}:
+            return None
+        name = str(getattr(fc, "name", "") or "")
+        turn_id = str(getattr(self, "_schedule_turn_id", "") or "")
+        active_id = str(getattr(self, "_active_tool_turn_id", "") or "")
+        transcript = str(getattr(self, "_current_input_transcript", "") or "").strip()
+        normalized = _normalized_turn_text(transcript)
+        compact = re.sub(r"[^a-z0-9]+", "", normalized)
+        active = bool(getattr(self, "_tool_turn_active", False))
+        if not active or not turn_id or active_id != turn_id or len(compact) < 2:
+            logger.warning(
+                "TOOL_TURN_GUARD decision=blocked_no_active_user_turn turn=%s active_turn=%s "
+                "tool=%s call_id=%s transcript=%r",
+                turn_id or "none", active_id or "none", name,
+                str(getattr(fc, "id", "") or "missing"), transcript,
+            )
+            return "Acción ignorada: no hay una orden activa y válida del usuario asociada a esta herramienta."
+        return None
+
+    def _mutating_tool_guard_reason(self, fc) -> str | None:
+        """Reject phantom/duplicate direct side effects using only in-memory O(1) checks."""
+        name = str(getattr(fc, "name", "") or "")
+        if name not in _GENERIC_MUTATION_GUARD_NAMES:
+            return None
+
+        args = dict(getattr(fc, "args", None) or {})
+        turn_id = str(getattr(self, "_schedule_turn_id", "") or "")
+        source = str(getattr(self, "_schedule_turn_source", "") or "")
+        transcript = str(getattr(self, "_current_input_transcript", "") or "")
+        normalized = _normalized_turn_text(transcript)
+        compact = re.sub(r"[^a-z0-9]+", "", normalized)
+        fc_id = str(getattr(fc, "id", "") or "")
+
+        # A punctuation/noise-only voice fragment must never gain a physical side effect.
+        if source == "voice" and len(compact) < 2:
+            logger.warning(
+                "MUTATION_GUARD decision=blocked_voice_noise turn=%s tool=%s call_id=%s transcript=%r",
+                turn_id or "none", name, fc_id or "missing", transcript,
+            )
+            return "Acción ignorada: la entrada de voz no contiene una orden válida."
+
+        # open_app is the path that turned fragments such as 'Notas rápidas'/'nota rabia'
+        # into phantom launches. Voice launches now require explicit opening intent.
+        if source == "voice" and name == "open_app":
+            tokens = set(re.findall(r"[a-z0-9]+", normalized))
+            head = compact[:48]
+            explicit_open = any(
+                word in tokens or head.startswith(word) or word in head
+                for word in _VOICE_OPEN_INTENT_WORDS
+            )
+            if not explicit_open:
+                logger.warning(
+                    "MUTATION_GUARD decision=blocked_ambiguous_open turn=%s tool=%s call_id=%s transcript=%r",
+                    turn_id or "none", name, fc_id or "missing", transcript,
+                )
+                return "Apertura ignorada: la frase de voz no contiene una orden explícita de abrir una aplicación."
+
+        if not turn_id:
+            # Keep non-Live/internal callers compatible; no duplicate association is possible.
+            return None
+
+        # Canonicalize the actual physical effect, ignoring prose-only descriptions.
+        if name == "open_app":
+            effect_args = {"app_name": _normalized_turn_text(str(args.get("app_name", "")))}
+        elif name == "computer_settings":
+            effect_args = {
+                "action": str(args.get("action", "")).strip().casefold(),
+                "app_name": _normalized_turn_text(str(args.get("app_name", ""))),
+                "value": str(args.get("value", "")).strip().casefold(),
+            }
+        else:
+            effect_args = args
+        fingerprint = f"{name}:" + json.dumps(
+            effect_args, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str
+        )
+        effects = getattr(self, "_mutating_turn_effects", None)
+        if effects is None:
+            effects = self._mutating_turn_effects = set()
+        key = (turn_id, fingerprint)
+        if key in effects:
+            logger.warning(
+                "MUTATION_GUARD decision=blocked_duplicate turn=%s tool=%s call_id=%s fingerprint=%s",
+                turn_id, name, fc_id or "missing", fingerprint[:180],
+            )
+            return "Acción duplicada ignorada: esa misma acción ya se ejecutó en este turno."
+        effects.add(key)
+        return None
+
     async def _execute_tool_guarded(self, fc) -> types.FunctionResponse:
         name = getattr(fc, "name", "")
+        turn_block = self._tool_turn_binding_guard_reason(fc)
+        if turn_block is not None:
+            return types.FunctionResponse(
+                id=getattr(fc, "id", None), name=name,
+                response={"result": turn_block},
+            )
         if name in _MEMORY_MUTATING_TOOL_NAMES:
             return await self._execute_memory_tool_guarded(fc)
         if name in _MEMORY_LOOKUP_TOOL_NAMES:
             return await self._execute_memory_lookup_guarded(fc)
         if name not in _SCHEDULED_TOOL_NAMES:
+            blocked = self._mutating_tool_guard_reason(fc)
+            if blocked is not None:
+                return types.FunctionResponse(
+                    id=getattr(fc, "id", None), name=name,
+                    response={"result": blocked},
+                )
             return await self._execute_tool(fc)
         fc_id = str(getattr(fc, "id", "") or "").strip()
         args = dict(getattr(fc, "args", None) or {})
@@ -4573,17 +4922,6 @@ class JarvisLive:
 
     async def _execute_tool_batch(self, calls):
         """Run read-only calls concurrently while preserving mutation order."""
-        mutating = {
-            "open_app", "send_message", "prepare_message_reply", "email_control", "reminder",
-            "youtube_video", "media_control", "browser_control", "agent_task",
-            "computer_settings", "computer_control", "desktop_control", "file_controller",
-            "file_processor", "code_helper", "dev_agent", "game_updater", "flight_finder",
-            "create_presentation", "deep_research", "task_status", "save_memory",
-            "jarvis_ui_control", "graphics_quality",
-            "lilith_memory_store", "lilith_memory_delete", "lilith_home_action",
-            "lilith_request_approval", "lilith_resolve_approval", "lilith_command_submit",
-            "lilith_routine",
-        }
         call_list = list(calls or [])
         # Real tool activity -> UI (drives the EXECUTING state of the core visual).
         ui = getattr(self, "ui", None)
@@ -4592,7 +4930,7 @@ class JarvisLive:
         if callable(show_progress) and call_list:
             show_progress(getattr(call_list[0], "name", "tool"))
         try:
-            if any(getattr(call, "name", "") in mutating for call in call_list):
+            if any(getattr(call, "name", "") in _MUTATING_TOOL_NAMES for call in call_list):
                 return [await self._execute_tool_guarded(call) for call in call_list]
             return list(await asyncio.gather(*(self._execute_tool_guarded(call) for call in call_list)))
         finally:
@@ -4616,9 +4954,20 @@ class JarvisLive:
         if not worker_lock.acquire(blocking=False):
             logger.warning("AUDIO_INPUT duplicate_worker_ignored")
             return
+        aec = getattr(self, "_spotify_aec", None)
+        if aec is not None:
+            try:
+                aec.start()
+            except Exception as exc:
+                logger.warning("SPOTIFY_AEC start_failed=%s detail=%s", type(exc).__name__, exc)
         try:
             await self._listen_audio_with_recovery()
         finally:
+            if aec is not None:
+                try:
+                    aec.stop()
+                except Exception:
+                    pass
             worker_lock.release()
 
     async def _wait_for_audio_recovery(self, delay: float) -> None:
@@ -4661,7 +5010,10 @@ class JarvisLive:
                 if not self.ui.muted:
                     data = indata.tobytes()
                     _report_audio_level(self.ui, "input", data)
-                    self._process_microphone_audio(data, loop)
+                    aec = getattr(self, "_spotify_aec", None)
+                    frames = aec.filter_input(data) if aec is not None else (data,)
+                    for frame in frames:
+                        self._process_microphone_audio(frame, loop)
 
             try:
                 device_id, device_name = device_resolver()
@@ -4841,6 +5193,8 @@ class JarvisLive:
                 live_turn_id = uuid.uuid4().hex
                 _new_turn = True
                 turn_had_audio = False
+                duplicate_pending_input = False
+                assistant_response_started = False
                 received_message = False
                 async for response in self.session.receive():
                     received_message = True
@@ -4872,25 +5226,61 @@ class JarvisLive:
                             self.audio_in_queue.qsize() if self.audio_in_queue else 0,
                         )
 
+                    sc = response.server_content if response.server_content else None
+                    if sc and sc.input_transcription and sc.input_transcription.text:
+                        preview_raw = _clean_transcript_chunk(sc.input_transcription.text)
+                        if preview_raw.strip():
+                            preview_input = _merge_input_transcript_text(" ".join(in_buf), preview_raw)
+                            was_duplicate = duplicate_pending_input
+                            if assistant_response_started:
+                                duplicate_pending_input = False
+                            else:
+                                duplicate_pending_input = self._is_unanswered_repeat(
+                                    preview_input, live_turn_id
+                                )
+                                if not duplicate_pending_input:
+                                    self._track_pending_user_input(preview_input, live_turn_id)
+                            if duplicate_pending_input and not was_duplicate:
+                                self._interrupt_live_playback("duplicate_pending_user_turn")
+                                logger.info(
+                                    "PENDING_REPEAT decision=suppress turn=%s transcript=%r pending=%r",
+                                    live_turn_id,
+                                    preview_input,
+                                    self._pending_unanswered_input_text,
+                                )
+
                     response_audio = _live_response_audio_bytes(response)
                     if response_audio:
-                        turn_had_audio = True
-                        if self._turn_done_event and self._turn_done_event.is_set():
-                            self._turn_done_event.clear()
-                        self.audio_in_queue.put_nowait(response_audio)
+                        if duplicate_pending_input:
+                            logger.info(
+                                "PENDING_REPEAT suppress_audio turn=%s bytes=%d",
+                                live_turn_id, len(response_audio),
+                            )
+                        else:
+                            if not assistant_response_started:
+                                self._mark_assistant_response_started()
+                                assistant_response_started = True
+                            turn_had_audio = True
+                            if self._turn_done_event and self._turn_done_event.is_set():
+                                self._turn_done_event.clear()
+                            self.audio_in_queue.put_nowait(response_audio)
 
-                    if response.server_content:
-                        sc = response.server_content
+                    if sc:
 
                         if getattr(sc, "interrupted", False):
                             self._interrupt_live_playback("provider_interruption")
 
                         if sc.output_transcription and sc.output_transcription.text:
-                            txt = _clean_transcript(sc.output_transcription.text)
-                            if txt:
+                            txt = _dedupe_repeated_output(_clean_transcript(sc.output_transcription.text))
+                            if txt and not duplicate_pending_input:
+                                if not assistant_response_started:
+                                    self._mark_assistant_response_started()
+                                    assistant_response_started = True
+                                previous_output = " ".join(out_buf)
                                 merged_output = _merge_transcript_text(
-                                    " ".join(out_buf), txt
+                                    previous_output, txt
                                 )
+                                subtitle_delta = _subtitle_delta(previous_output, merged_output, txt)
                                 out_buf = [merged_output]
                                 self._interrupted_text = merged_output
                                 self._remember_conversation_text(
@@ -4903,24 +5293,33 @@ class JarvisLive:
                                     if _new_turn:
                                         self.ui.clear_subtitle()
                                         _new_turn = False
-                                    self.ui.show_subtitle(txt)
+                                    if subtitle_delta:
+                                        self.ui.show_subtitle(subtitle_delta)
+                            elif txt and duplicate_pending_input:
+                                logger.info(
+                                    "PENDING_REPEAT suppress_text turn=%s text=%r",
+                                    live_turn_id, txt[:120],
+                                )
 
                         if sc.input_transcription and sc.input_transcription.text:
-                            txt = _clean_transcript(sc.input_transcription.text)
-                            if txt:
+                            raw_input_chunk = _clean_transcript_chunk(sc.input_transcription.text)
+                            if raw_input_chunk.strip():
                                 if not in_buf:
                                     self._begin_schedule_turn("", "voice")
-                                current_input = _merge_transcript_text(
-                                    " ".join(in_buf), txt
+                                current_input = _merge_input_transcript_text(
+                                    " ".join(in_buf), raw_input_chunk
                                 )
                                 in_buf = [current_input]
                                 self._update_schedule_turn(current_input)
-                                self._remember_conversation_text(
-                                    "user",
-                                    current_input,
-                                    expected_conversation_id=receive_conversation_id,
-                                    turn_id=live_turn_id,
-                                )
+                                if not duplicate_pending_input and not assistant_response_started:
+                                    self._track_pending_user_input(current_input, live_turn_id)
+                                if not duplicate_pending_input:
+                                    self._remember_conversation_text(
+                                        "user",
+                                        current_input,
+                                        expected_conversation_id=receive_conversation_id,
+                                        turn_id=live_turn_id,
+                                    )
                                 if (
                                     not getattr(self, "_pending_self_quit", False)
                                     and self._is_explicit_self_quit_transcript(self._current_input_transcript)
@@ -4935,23 +5334,30 @@ class JarvisLive:
                             full_in = " ".join(in_buf).strip()
                             if full_in:
                                 self._current_input_transcript = full_in
-                                self._last_input_transcript = full_in
-                                self._last_input_transcript_at = time.monotonic()
+                                if not duplicate_pending_input:
+                                    self._last_input_transcript = full_in
+                                    self._last_input_transcript_at = time.monotonic()
                                 if (
                                     not getattr(self, "_pending_self_quit", False)
                                     and self._is_explicit_self_quit_transcript(full_in)
                                 ):
                                     self._queue_self_quit_after_farewell()
-                                self.ui.write_log(f"Tú: {full_in}")
-                                self._remember_conversation_text(
-                                    "user",
-                                    full_in,
-                                    expected_conversation_id=receive_conversation_id,
-                                    turn_id=live_turn_id,
-                                )
+                                if duplicate_pending_input:
+                                    logger.info(
+                                        "PENDING_REPEAT absorbed turn=%s transcript=%r",
+                                        live_turn_id, full_in,
+                                    )
+                                else:
+                                    self.ui.write_log(f"Tú: {full_in}")
+                                    self._remember_conversation_text(
+                                        "user",
+                                        full_in,
+                                        expected_conversation_id=receive_conversation_id,
+                                        turn_id=live_turn_id,
+                                    )
                             in_buf = []
 
-                            full_out = " ".join(out_buf).strip()
+                            full_out = _dedupe_repeated_output(" ".join(out_buf).strip())
                             if full_out:
                                 self.ui.write_log(f"AURORA: {full_out}")
                                 self._remember_conversation_text(
@@ -4969,6 +5375,8 @@ class JarvisLive:
                             out_buf = []
                             turn_had_audio = False
                             _new_turn = True
+                            if not response.tool_call:
+                                self._end_active_tool_turn()
 
                             if pending_goaway is not None:
                                 drained = await self._wait_for_playback_drain()
@@ -4979,13 +5387,30 @@ class JarvisLive:
 
                     if response.tool_call:
                         function_calls = list(response.tool_call.function_calls)
-                        fn_responses = await self._execute_tool_batch(function_calls)
-                        for function_call, function_response in zip(function_calls, fn_responses):
-                            self._remember_conversation_tool_result(
-                                str(getattr(function_call, "name", "tool")),
-                                getattr(function_response, "response", function_response),
-                                expected_conversation_id=receive_conversation_id,
+                        if duplicate_pending_input:
+                            logger.info(
+                                "PENDING_REPEAT suppress_tools turn=%s tools=%s",
+                                live_turn_id,
+                                [str(getattr(call, "name", "tool")) for call in function_calls],
                             )
+                            fn_responses = [
+                                types.FunctionResponse(
+                                    id=getattr(call, "id", None),
+                                    name=getattr(call, "name", "tool"),
+                                    response={
+                                        "result": "Repeated pending user request absorbed; no second action was executed."
+                                    },
+                                )
+                                for call in function_calls
+                            ]
+                        else:
+                            fn_responses = await self._execute_tool_batch(function_calls)
+                            for function_call, function_response in zip(function_calls, fn_responses):
+                                self._remember_conversation_tool_result(
+                                    str(getattr(function_call, "name", "tool")),
+                                    getattr(function_response, "response", function_response),
+                                    expected_conversation_id=receive_conversation_id,
+                                )
                         await self.session.send_tool_response(
                             function_responses=fn_responses
                         )
@@ -5026,19 +5451,144 @@ class JarvisLive:
         print("[JARVIS] 🔊 Play started")
 
         stream = None
-        if not self.external_audio:
-            stream = sd.RawOutputStream(
+        stream_device_id: int | None = None
+        stream_device_name = ""
+        using_preferred = False
+        recovery_attempt = 0
+        recovering = False
+        last_device_check = 0.0
+        stream_factory = getattr(self, "_audio_output_stream_factory", sd.RawOutputStream)
+        injected_resolver = getattr(self, "_audio_output_device_resolver", None)
+
+        def resolve_output() -> tuple[int, str, bool]:
+            if callable(injected_resolver):
+                resolved = injected_resolver()
+                if len(resolved) == 2:
+                    return int(resolved[0]), str(resolved[1]), False
+                return int(resolved[0]), str(resolved[1]), bool(resolved[2])
+            preferred = _find_output_device_by_name(self._preferred_output_device_name)
+            if preferred is not None:
+                return preferred[0], preferred[1], True
+            device_id, device_name = _current_default_output_device()
+            return device_id, device_name, False
+
+        def close_stream() -> None:
+            nonlocal stream
+            if stream is None:
+                return
+            try:
+                stream.stop()
+            except Exception:
+                pass
+            try:
+                stream.close()
+            except Exception:
+                pass
+            stream = None
+
+        async def open_resolved_output(*, force: bool = False) -> None:
+            nonlocal stream, stream_device_id, stream_device_name
+            nonlocal using_preferred, recovery_attempt, recovering, last_device_check
+            device_id, device_name, preferred = resolve_output()
+            if (
+                stream is not None
+                and not force
+                and stream_device_id == device_id
+                and using_preferred == preferred
+            ):
+                last_device_check = time.monotonic()
+                return
+            previous_id = stream_device_id
+            previous_name = stream_device_name
+            close_stream()
+            candidate = stream_factory(
                 samplerate=RECEIVE_SAMPLE_RATE,
                 channels=CHANNELS,
                 dtype="int16",
                 blocksize=CHUNK_SIZE,
+                device=device_id,
             )
-            stream.start()
+            candidate.start()
+            stream = candidate
+            stream_device_id = device_id
+            stream_device_name = device_name
+            using_preferred = preferred
+            self._audio_output_device_id = device_id
+            last_device_check = time.monotonic()
+            if recovering:
+                logger.info(
+                    "AUDIO_OUTPUT recovered device_id=%s device_name=%s preferred=%s attempts=%d",
+                    device_id, device_name, preferred, recovery_attempt,
+                )
+                try:
+                    self.ui.write_log("SYS: Salida de audio recuperada automáticamente.")
+                except Exception:
+                    pass
+            elif previous_id is not None and previous_id != device_id:
+                logger.info(
+                    "AUDIO_OUTPUT switched previous_device_id=%s previous_device_name=%s "
+                    "device_id=%s device_name=%s preferred=%s",
+                    previous_id, previous_name, device_id, device_name, preferred,
+                )
+            else:
+                logger.info(
+                    "AUDIO_OUTPUT opened device_id=%s device_name=%s preferred=%s",
+                    device_id, device_name, preferred,
+                )
+            recovery_attempt = 0
+            recovering = False
+
+        async def recover_output(exc: Exception) -> None:
+            nonlocal recovery_attempt, recovering
+            recovery_attempt += 1
+            if not recovering:
+                logger.warning(
+                    "AUDIO_OUTPUT device_lost error=%s detail=%s device_id=%s device_name=%s",
+                    type(exc).__name__, _safe_live_diagnostic(exc),
+                    stream_device_id if stream_device_id is not None else "default",
+                    stream_device_name or "unknown",
+                )
+                try:
+                    self.ui.write_log(
+                        "SYS: Salida de audio no disponible; JARVIS usará una alternativa y volverá a la preferida cuando reaparezca."
+                    )
+                except Exception:
+                    pass
+            recovering = True
+            close_stream()
+            delay = _audio_device_recovery_delay(recovery_attempt)
+            logger.info(
+                "AUDIO_OUTPUT recovery_wait attempt=%d delay=%.1fs",
+                recovery_attempt, delay,
+            )
+            await self._wait_for_audio_recovery(delay)
+
+        if not self.external_audio:
+            while (
+                not self._shutdown_requested.is_set()
+                and self._conversation_requested.is_set()
+                and stream is None
+            ):
+                try:
+                    await open_resolved_output(force=True)
+                except Exception as exc:
+                    await recover_output(exc)
 
         try:
             while True:
                 if self._shutdown_requested.is_set() or not self._conversation_requested.is_set():
                     return
+
+                if (
+                    not self.external_audio
+                    and time.monotonic() - last_device_check >= AUDIO_OUTPUT_RECHECK_SECONDS
+                ):
+                    try:
+                        await open_resolved_output()
+                    except Exception as exc:
+                        await recover_output(exc)
+                        continue
+
                 try:
                     chunk = await asyncio.wait_for(
                         self.audio_in_queue.get(),
@@ -5068,16 +5618,24 @@ class JarvisLive:
                         send_audio = getattr(self.client, "send_audio", None)
                         if callable(send_audio):
                             send_audio(chunk, f"audio/pcm;rate={RECEIVE_SAMPLE_RATE}")
-                    elif stream is not None:
-                        await asyncio.to_thread(stream.write, chunk)
+                    else:
+                        while (
+                            not self._shutdown_requested.is_set()
+                            and self._conversation_requested.is_set()
+                        ):
+                            try:
+                                if stream is None:
+                                    await open_resolved_output(force=True)
+                                await asyncio.to_thread(stream.write, chunk)
+                                break
+                            except Exception as exc:
+                                await recover_output(exc)
         except Exception as e:
             print(f"[JARVIS] ❌ Play: {e}")
             raise
         finally:
             self.set_speaking(False)
-            if stream is not None:
-                stream.stop()
-                stream.close()
+            close_stream()
 
     async def run(self):
         # JL-W003: one LILITH runtime inside this asyncio loop (same loop as send_text).

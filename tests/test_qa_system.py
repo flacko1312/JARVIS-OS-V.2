@@ -139,6 +139,24 @@ class QAModeSafetyTests(unittest.TestCase):
         self.assertTrue(jarvis._pending_self_quit)
         self.assertFalse(jarvis._pending_self_quit_farewell_received)
 
+    def test_jarvis_settings_requires_explicit_ui_target(self):
+        import main
+
+        jarvis = main.JarvisLive.__new__(main.JarvisLive)
+        jarvis._current_input_transcript = "Abre Configuración."
+        jarvis._last_input_transcript = ""
+        jarvis._last_input_transcript_at = 0.0
+        blocked = jarvis._intercept_ui_tool_call(
+            "jarvis_ui_control", {"action": "open_settings"}
+        )
+        self.assertIn("Windows Settings", blocked)
+
+        jarvis._current_input_transcript = "Abre la configuración de JARVIS."
+        allowed = jarvis._intercept_ui_tool_call(
+            "jarvis_ui_control", {"action": "open_settings"}
+        )
+        self.assertIsNone(allowed)
+
     def test_self_quit_waits_for_farewell_audio_to_finish(self):
         import main
 
@@ -302,7 +320,10 @@ class QAModeSafetyTests(unittest.TestCase):
 
         detection = config.realtime_input_config.automatic_activity_detection
         self.assertEqual(detection.silence_duration_ms, main.LIVE_VAD_SILENCE_MS)
-        self.assertEqual(main.LIVE_VAD_SILENCE_MS, 200)
+        expected = max(250, min(3000, int(os.environ.get("JARVIS_LIVE_VAD_SILENCE_MS", "1000"))))
+        self.assertEqual(main.LIVE_VAD_SILENCE_MS, expected)
+        self.assertGreaterEqual(main.LIVE_VAD_SILENCE_MS, 250)
+        self.assertLessEqual(main.LIVE_VAD_SILENCE_MS, 3000)
         self.assertEqual(config.thinking_config.thinking_budget, 0)
         self.assertEqual(
             detection.start_of_speech_sensitivity,

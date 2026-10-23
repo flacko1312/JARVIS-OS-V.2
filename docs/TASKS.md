@@ -2,6 +2,17 @@
 
 Status: **CANONICAL ACTIONABLE BACKLOG**. Do not use historical prompts or audit findings as a second task system.
 
+## Current voice stabilization state — 2026-10-23
+
+Status: **PARTIALLY CLOSED / ONE PHYSICAL CHECK REMAINS**.
+
+- Natural conversational pause handling: **PHYSICAL PASS** at `JARVIS_LIVE_VAD_SILENCE_MS=2500`. Keep this value unless owner testing again shows premature cuts.
+- Live input transcript assembly regression (artificial intra-word spaces): **PHYSICAL PASS** for the observed failure mode.
+- Pending repeated-user-request suppression: **PHYSICAL PASS**.
+- Spotify/background speech filtering: current mode `shadow_v4`; automatic/offline replay gives **0 false gate-open sequences**, but final real spoken-ad/music acceptance is still **PENDING**.
+- Rollback remains `JARVIS_SPOTIFY_FILTER_MODE=off`; do not alter the now-good 2500 ms conversation timing while diagnosing Spotify.
+
+Next voice test: run a real Spotify spoken advertisement or voice-heavy track for 30–60 seconds while the owner stays silent. Expected result is zero user turns/replies/tools. Then speak one normal question over Spotify and confirm a single complete turn without pausing playback.
 ## Current validation state
 
 ### Gemini Live transport recovery — next required physical validation

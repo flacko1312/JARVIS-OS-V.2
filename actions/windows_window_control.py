@@ -67,6 +67,12 @@ _APP_IDENTITIES = (
         ("notepad",),
     ),
     _identity("spotify", "Spotify", ("spotify",), ("spotify.exe",)),
+    _identity(
+        "sticky_notes",
+        "Notas rápidas",
+        ("notas rápidas", "notas rapidas", "sticky notes", "microsoft sticky notes"),
+        ("microsoft.notes.exe",),
+    ),
     _identity("chrome", "Chrome", ("chrome", "google chrome"), ("chrome.exe",)),
     _identity("edge", "Microsoft Edge", ("edge", "microsoft edge"), ("msedge.exe",)),
     _identity("firefox", "Firefox", ("firefox",), ("firefox.exe",)),
@@ -235,10 +241,17 @@ def close_named_window(
     while exists_fn(target.hwnd) and time.monotonic() < deadline:
         time.sleep(max(0.0, poll_interval))
 
+    # For named applications, a stale HWND can remain valid briefly after the
+    # visible app window/process has already gone away (observed with Spotify).
+    # Re-enumeration is therefore authoritative before reporting a timeout.
+    if requested:
+        remaining_name, remaining = matching_windows(requested, enumerate_fn())
+        if not remaining:
+            return f"Cerrado: {display_name}."
+        if exists_fn(target.hwnd):
+            return f"No he podido cerrar {display_name}."
+        return f"No he podido cerrar {remaining_name}: sigue abierta otra ventana coincidente."
+
     if exists_fn(target.hwnd):
         return f"No he podido cerrar {display_name}."
-
-    remaining_name, remaining = matching_windows(requested, enumerate_fn()) if requested else (display_name, [])
-    if remaining:
-        return f"No he podido cerrar {remaining_name}: sigue abierta otra ventana coincidente."
     return f"Cerrado: {display_name}."

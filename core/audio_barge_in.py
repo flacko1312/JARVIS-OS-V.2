@@ -160,7 +160,7 @@ class SpeechAwareBargeInGate:
             self._buffer(pcm, frame_ms)
             threshold = max(0.012, self._noise_floor * 3.2)
             echo_similarity, playback_rms = self._echo_similarity(fingerprint)
-            echo_like = echo_similarity >= 0.93 and features["rms"] <= max(0.06, playback_rms * 0.55)
+            echo_like = echo_similarity >= 0.82 and features["rms"] <= max(0.055, playback_rms * 0.65)
 
             reason = None
             if features["rms"] < threshold:
@@ -187,7 +187,12 @@ class SpeechAwareBargeInGate:
                 )
 
             self._candidate_ms += frame_ms
-            if self._candidate_ms < self.minimum_speech_ms:
+            # Speech that still resembles recent speaker output needs more evidence.
+            # This prevents short echo bursts from interrupting Live and making it restart/repeat.
+            required_speech_ms = self.minimum_speech_ms
+            if echo_similarity >= 0.75:
+                required_speech_ms = max(required_speech_ms, 300)
+            if self._candidate_ms < required_speech_ms:
                 return BargeInDecision(
                     candidate=True, speech_duration_ms=round(self._candidate_ms),
                     rms=features["rms"], noise_floor=self._noise_floor,

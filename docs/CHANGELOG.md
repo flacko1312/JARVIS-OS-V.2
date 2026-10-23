@@ -1,5 +1,16 @@
 # JARVIS Changelog
 
+## 2026-10-23 - voice turn timing, transcript assembly, and Spotify isolation
+
+- Made Gemini Live end-of-turn silence configurable with `JARVIS_LIVE_VAD_SILENCE_MS`, bounded to 250-3000 ms. Owner physical testing selected **2500 ms** as the current natural-conversation value after 320/650/1000/2000 ms proved too aggressive.
+- Fixed Live input-transcription assembly so provider token deltas preserve real word boundaries instead of producing artificial splits such as `Ex plí ca me` and `di ferencia`.
+- Added explicit pending-user-turn state so repeated speech while the first request is still unanswered is absorbed without executing duplicate actions; the same request remains valid after response start.
+- Added isolated Spotify process-loopback analysis with `pywebrtc-audio` AEC3 and rollback modes `off`, `shadow_v1`, `shadow_v2`, `shadow_v3`, and current `shadow_v4`.
+- `shadow_v4` dynamically aligns Spotify loopback to microphone audio over a 0-160 ms search window, then combines correlation, AEC residual/retention and VAD while preserving original accepted microphone PCM.
+- Offline replay of the saved physical Spotify-only capture produced **0 false gate-open sequences** under `shadow_v4`; final owner physical acceptance against a real spoken Spotify advertisement remains pending.
+- Updated VAD QA expectations from a hard-coded legacy 320 ms value to the bounded configurable runtime contract.
+- Full repository suite after the current checkpoint: **1235 passed, 93 skipped, 1 third-party warning, 49 subtests passed, 0 failures**.
+- Stored a recoverable checkpoint at `docs/audits/VOICE_SPOTIFY_CHECKPOINT_2026-10-23.md` plus recovery material under `tmp/checkpoints/`. No commit was created because unrelated dirty work is present.
 ## 2026-10-14 — Gemini Live standby and conversation continuity
 
 - Added true Gemini-disconnected `STANDBY` startup with a visible conversation control and F8 shortcut.

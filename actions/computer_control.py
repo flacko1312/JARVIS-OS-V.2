@@ -181,11 +181,42 @@ def _press(key: str) -> str:
 
 
 def _scroll(direction: str = "down", amount: int = 3) -> str:
+    """Scroll the active Windows window, not whichever window happens to be under the mouse."""
     _require_pyautogui()
-    vertical   = direction in ("up", "down")
-    clicks     = amount if direction in ("up", "right") else -amount
-    pyautogui.scroll(clicks) if vertical else pyautogui.hscroll(clicks)
-    return f"Scrolled {direction} ×{amount}"
+    vertical = direction in ("up", "down")
+    clicks = amount if direction in ("up", "right") else -amount
+    original_pos = pyautogui.position()
+    moved_to_active = False
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            class RECT(ctypes.Structure):
+                _fields_ = [("left", wintypes.LONG), ("top", wintypes.LONG),
+                            ("right", wintypes.LONG), ("bottom", wintypes.LONG)]
+
+            hwnd = ctypes.windll.user32.GetForegroundWindow()
+            rect = RECT()
+            if hwnd and ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(rect)):
+                width = int(rect.right - rect.left)
+                height = int(rect.bottom - rect.top)
+                if width > 80 and height > 80:
+                    x = int(rect.left + width // 2)
+                    y = int(rect.top + height // 2)
+                    pyautogui.moveTo(x, y, duration=0)
+                    moved_to_active = True
+        except Exception:
+            moved_to_active = False
+    try:
+        pyautogui.scroll(clicks) if vertical else pyautogui.hscroll(clicks)
+    finally:
+        if moved_to_active:
+            try:
+                pyautogui.moveTo(original_pos.x, original_pos.y, duration=0)
+            except Exception:
+                pass
+    return f"Scrolled {direction} ?{amount}"
 
 
 def _move(x: int, y: int, duration: float = 0.3) -> str:
@@ -201,19 +232,50 @@ def _drag(x1: int, y1: int, x2: int, y2: int, duration: float = 0.5) -> str:
     return f"Dragged ({x1},{y1}) → ({x2},{y2})"
 
 
-def _clipboard_get() -> str:
-    if _PYPERCLIP:
-        return pyperclip.paste()
+def _select_all_text() -> str:
+    """Select all text in the validated editor, reacquiring it after JARVIS self-focus."""
+    from actions.safe_text_entry import _resolve_windows_target
+    validation, _target_info = _resolve_windows_target("generic")
+    if not validation.ok:
+        return validation.message
+    # Ctrl+A is non-destructive. Once the target has been validated/reacquired,
+    # do not reject the operation merely because UIA regenerates editor identity
+    # after the selection changes.
+    _hotkey("ctrl", "a")
+    return "Todo el texto del campo enfocado ha sido seleccionado."
+
+
+def _clipboard_copy() -> str:
+    """Copy the current selection to the OS clipboard."""
+    _require_pyautogui()
     _hotkey("ctrl", "c")
     time.sleep(0.2)
-    return "(copied — pyperclip unavailable for read)"
+    return "Copied current selection to clipboard."
 
 
-def _clipboard_paste(text: str) -> str:
-    result = safe_type_text(text, purpose="generic")
-    if not result.ok:
-        return result.message
-    return f"Pasted safely: {text[:60]}{'…' if len(text) > 60 else ''}"
+def _clipboard_paste(text: str | None = None) -> str:
+    """Paste the OS clipboard quickly, but only into a verified editable target."""
+    if text:
+        result = safe_type_text(text, purpose="generic")
+        return "Pasted safely: Texto pegado de forma segura." if result.ok else result.message
+    if not _PYPERCLIP:
+        return "No puedo leer el portapapeles de texto en este sistema."
+    try:
+        value = pyperclip.paste()
+    except Exception as exc:
+        return f"No puedo leer el portapapeles de texto: {exc}"
+    if not isinstance(value, str) or not value:
+        return "El portapapeles de texto está vacío."
+    from actions.safe_text_entry import validate_safe_text_target
+    before = validate_safe_text_target("generic")
+    if not before.ok:
+        return before.message
+    _hotkey("ctrl", "v")
+    time.sleep(0.08)
+    after = validate_safe_text_target("generic")
+    if not after.ok or (before.target_id and after.target_id != before.target_id):
+        return "El foco cambió durante el pegado; no puedo confirmar el destino."
+    return "Texto del portapapeles pegado en el campo verificado."
 
 
 def _screenshot(save_path: str | None = None) -> str:
@@ -420,6 +482,9 @@ def computer_control(
                 int(params.get("x2", 0)), int(params.get("y2", 0)),
             )
 
+        if action == "select_all":
+            return _select_all_text()
+
         if action == "hotkey":
             raw  = params.get("keys", "")
             keys = [k.strip() for k in raw.split("+")] if isinstance(raw, str) else raw
@@ -435,10 +500,10 @@ def computer_control(
             )
 
         if action == "copy":
-            return _clipboard_get()
+            return _clipboard_copy()
 
         if action == "paste":
-            return _clipboard_paste(params.get("text", ""))
+            return _clipboard_paste(params.get("text"))
 
         if action == "screenshot":
             return _screenshot(params.get("path"))

@@ -86,7 +86,7 @@ class VisionModelSelectionTests(unittest.TestCase):
 
         self.assertTrue(selected.enabled)
         self.assertEqual(selected.url, "http://127.0.0.1:11434")
-        self.assertEqual(selected.model, "qwen3-vl:4b")
+        self.assertEqual(selected.model, "qwen3-vl:4b-instruct")
 
     def test_local_vision_environment_override_wins(self):
         with tempfile.TemporaryDirectory() as directory, patch.dict(
@@ -293,6 +293,7 @@ class VisionModelSelectionTests(unittest.TestCase):
             model="qwen3-vl:4b",
         )
         response = MagicMock()
+        response.ok = True
         response.json.return_value = {
             "message": {"content": "A real local visual answer."}
         }
@@ -305,7 +306,6 @@ class VisionModelSelectionTests(unittest.TestCase):
             )
 
         self.assertEqual(result, "A real local visual answer.")
-        response.raise_for_status.assert_called_once_with()
         payload = post.call_args.kwargs["json"]
         self.assertEqual(payload["model"], "qwen3-vl:4b")
         self.assertEqual(base64.b64decode(payload["messages"][0]["images"][0]), image)

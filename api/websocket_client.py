@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import WebSocket
+from core.error_reporting import sanitize_diagnostic
 
 
 class WebSocketClient:
@@ -47,7 +48,7 @@ class WebSocketClient:
             from .repositories import add_chat_message
 
             add_chat_message(self.user_id, role, content)
-        self._emit({"type": "message", "role": role, "content": content})
+        self._emit({"type": "message", "role": role, "content": sanitize_diagnostic(content, 4000)})
 
     def set_state(self, state: str) -> None:
         self.state = str(state).upper()
@@ -110,4 +111,9 @@ class WebSocketClient:
             await self.websocket.send_json(event)
 
     async def close(self) -> None:
-        await self._events.put(None)
+        if self._events.full():
+            try:
+                self._events.get_nowait()
+            except asyncio.QueueEmpty:
+                pass
+        self._events.put_nowait(None)

@@ -1,6 +1,6 @@
 # JARVIS Project State
 
-Status: **CANONICAL CURRENT STATE** as of 2026-10-16.
+Status: **CANONICAL CURRENT STATE** as of 2026-10-23.
 
 ## Verdict
 
@@ -30,9 +30,13 @@ Machine-verifiable recovery and stabilization are complete on the real Windows c
 - Active/restored conversation context has highest precedence and needs no memory tool. `save_memory`/`local_memory_search` are reserved for explicit local-note intent, while LILITH memory tools are reserved for explicit long-term persistence/search. Owner restart validation confirmed ordinary immediate recall uses the restored conversation directly and an explicit local-memory request still invokes `local_memory_search`.
 - Native Gemini session resumption remains the first transport-continuity path when a valid process-local handle exists. A clean transport reconstructs context from durable JARVIS state and produces no greeting. With installed `google-genai 2.25.0`, the tested Native Audio preview model/API rejects even minimal initial-history use with API 1007, so the current production compatibility path is compact durable continuity in `system_instruction`; this is not claimed as a permanent Gemini limitation.
 
+- Voice-turn timing is now configurable through `JARVIS_LIVE_VAD_SILENCE_MS` (bounded 250–3000 ms). Owner physical testing accepts **2500 ms** as the current natural-conversation value: the user can pause to think without the sentence being split prematurely.
+- Gemini Live input-transcription assembly now preserves provider token/word-boundary whitespace instead of inserting spaces between every incremental chunk. The observed `Ex plí ca me` / `di ferencia` visual-transcript regression is physically corrected while leaving microphone PCM untouched.
+- Repeated identical user speech before the assistant starts answering is suppressed using explicit pending-live-turn state; the same request remains valid after a response has started. Owner physical validation passed.
+- Spotify-background filtering is isolated behind `JARVIS_SPOTIFY_FILTER_MODE`. Current experimental mode is `shadow_v4`, which aligns Spotify process-loopback reference dynamically (0–160 ms search), then combines correlation, AEC3 residuals and VAD while forwarding original near-end PCM. Offline replay of the saved physical Spotify-only capture produced 0 false gate-open sequences.
 ## Non-blocking operational validation
 
-- Real microphone selection, echo cancellation quality, barge-in, device loss/reconnect, Windows display scaling, and 30-minute soak are not machine-certifiable without hardware use.
+- Real microphone selection and natural end-of-turn timing have owner physical evidence. Spotify `shadow_v4` still requires final real spoken-ad/music acceptance; device loss/reconnect, Windows display scaling, and 30-minute soak remain hardware-gated.
 - Camera capture/analysis has not received the same owner-operated physical validation as screen capture.
 - Ollama `qwen3-vl:4b` passed an isolated local image smoke, but its position as final fallback in the complete real JARVIS provider chain has not been physically exercised because Gemini primary succeeded.
 - Real forced Gemini transport interruption / `go_away` recovery remains pending. Session resumption is covered automatically, but has not yet been physically forced and must not be reported as a physical pass.

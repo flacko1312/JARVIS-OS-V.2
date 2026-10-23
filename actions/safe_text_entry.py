@@ -130,7 +130,7 @@ def _windows_focused_element_info() -> dict:
         comtypes_module = comtypes
         comtypes.CoInitialize()
         com_initialized = True
-        automation = CreateObject("UIAutomationClient.CUIAutomation")
+        automation = CreateObject(UIA.CUIAutomation)
         element = automation.GetFocusedElement()
         if element is None:
             return {}
@@ -399,8 +399,29 @@ def _windows_send_input(units: list[tuple[int, int]]) -> bool:
             ("dwExtraInfo", ulong_ptr),
         ]
 
+    class MOUSEINPUT(ctypes.Structure):
+        _fields_ = [
+            ("dx", wintypes.LONG),
+            ("dy", wintypes.LONG),
+            ("mouseData", wintypes.DWORD),
+            ("dwFlags", wintypes.DWORD),
+            ("time", wintypes.DWORD),
+            ("dwExtraInfo", ulong_ptr),
+        ]
+
+    class HARDWAREINPUT(ctypes.Structure):
+        _fields_ = [
+            ("uMsg", wintypes.DWORD),
+            ("wParamL", wintypes.WORD),
+            ("wParamH", wintypes.WORD),
+        ]
+
     class INPUT_UNION(ctypes.Union):
-        _fields_ = [("ki", KEYBDINPUT)]
+        _fields_ = [
+            ("mi", MOUSEINPUT),
+            ("ki", KEYBDINPUT),
+            ("hi", HARDWAREINPUT),
+        ]
 
     class INPUT(ctypes.Structure):
         _anonymous_ = ("union",)
@@ -949,7 +970,7 @@ def safe_type_text(
     interval: float = VISIBLE_TYPING_INTERVAL_SECONDS,
 ) -> SafeTextEntryResult:
     _require_pyautogui()
-    if not str(text or ""):
+    if not str(text or "") and not clear_first:
         return SafeTextEntryResult(False, "No se proporcionó texto para escribir.")
     os_name = _actual_os()
     if os_name == "windows":
@@ -999,6 +1020,17 @@ def safe_type_text(
             _invalidate_windows_target("target_missing_after_write")
             return SafeTextEntryResult(False, "El campo validado desapareció antes de comprobar el resultado.")
         _cache_windows_target(after_info, purpose)
+        if clear_first and not str(text or ""):
+            if validation.readback_supported and str(after_info.get("text_value") or ""):
+                return SafeTextEntryResult(False, "Windows recibió la orden de borrar, pero el campo no quedó vacío.")
+            return SafeTextEntryResult(
+                True,
+                "Campo de texto vaciado de forma segura.",
+                validation.target,
+                safety_path="windows_uia_verified" if validation.readback_supported else "windows_uia_no_readback",
+                target_id=validation.target_id,
+                readback_supported=validation.readback_supported,
+            )
         if validation.readback_supported:
             after_text = after_info.get("text_value")
             expected = str(text).replace("\r\n", "\n")

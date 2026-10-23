@@ -1,7 +1,7 @@
 # JARVIS — Capability Catalogue
 
-Generated: 2026-10-16 15:28:35
-JARVIS commit: `500b14d`
+Generated: 2026-10-16 21:22:59
+JARVIS commit: `94e5efe`
 
 ## Summary
 

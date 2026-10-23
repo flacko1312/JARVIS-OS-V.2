@@ -226,3 +226,24 @@ class WindowsSafeTypingTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_clear_first_accepts_empty_text_and_verifies_empty_field():
+    before = focused_edit(text_value="contenido")
+    after = focused_edit(text_value="")
+    validation = safe_text_entry._validate_windows_text_target(before, "generic")
+    gui = MagicMock()
+    with (
+        patch.object(safe_text_entry, "_PYAUTOGUI", True),
+        patch.object(safe_text_entry, "_actual_os", return_value="windows"),
+        patch.object(safe_text_entry, "_resolve_windows_target", return_value=(validation, before)),
+        patch.object(safe_text_entry, "_windows_focused_element_info", side_effect=[before, after]),
+        patch.object(safe_text_entry, "_windows_focus_matches", return_value=True),
+        patch.object(safe_text_entry, "_write_windows_unicode", return_value=(True, "")),
+        patch.object(safe_text_entry, "pyautogui", gui),
+        patch.object(safe_text_entry.time, "sleep"),
+    ):
+        result = safe_text_entry.safe_type_text("", clear_first=True)
+    assert result.ok
+    gui.hotkey.assert_called_once_with("ctrl", "a")
+    gui.press.assert_called_once_with("delete")

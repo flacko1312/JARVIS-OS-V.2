@@ -268,12 +268,52 @@ async def test_output_stream_survives_backend_loss_and_restoration_without_reope
         def close(self): return None
 
     output = Output()
+    owner._audio_output_device_resolver = lambda: (4, "M197WD", True)
+    owner._audio_output_stream_factory = MagicMock(return_value=output)
     owner.audio_in_queue.put_nowait(b"before-device-toggle")
     owner.audio_in_queue.put_nowait(b"after-device-restore")
-    with patch.object(main.sd, "RawOutputStream", return_value=output) as constructor:
-        await owner._play_audio()
+    await owner._play_audio()
     assert writes == [b"before-device-toggle", b"after-device-restore"]
-    constructor.assert_called_once()
+    owner._audio_output_stream_factory.assert_called_once()
+    assert owner._audio_output_device_id == 4
+
+
+@async_test
+async def test_output_returns_to_preferred_device_when_it_reappears():
+    owner = jarvis()
+    writes = []
+    opened = []
+    resolutions = deque((
+        (5, "Fallback TV", False),
+        (5, "Fallback TV", False),
+        (4, "M197WD", True),
+    ))
+
+    class Output:
+        def __init__(self, device):
+            self.device = device
+        def start(self): return None
+        def write(self, chunk):
+            writes.append((self.device, chunk))
+            if len(writes) == 2:
+                owner._conversation_requested.clear()
+        def stop(self): return None
+        def close(self): return None
+
+    def factory(**kwargs):
+        opened.append(kwargs["device"])
+        return Output(kwargs["device"])
+
+    owner._audio_output_device_resolver = lambda: resolutions.popleft()
+    owner._audio_output_stream_factory = factory
+    owner.audio_in_queue.put_nowait(b"fallback")
+    owner.audio_in_queue.put_nowait(b"preferred0")
+    with patch.object(main, "AUDIO_OUTPUT_RECHECK_SECONDS", 0.0):
+        await owner._play_audio()
+
+    assert opened == [5, 4]
+    assert writes == [(5, b"fallback"), (4, b"preferred0")]
+    assert owner._audio_output_device_id == 4
 
 
 def test_output_worker_ownership_remains_single_live_taskgroup_contract():
