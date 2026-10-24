@@ -6231,6 +6231,23 @@ class JarvisLive:
                                 else:
                                     _output_quarantine.append(("assistant_text", self._interrupted_text, txt))
 
+                        # Text channels must not wait for real-time audio playback to finish.
+                        # Gemini Live sends the final output transcription before
+                        # generation_complete; turn_complete can arrive much later while
+                        # the generated audio is still being played.
+                        if (
+                            getattr(sc, "generation_complete", False)
+                            and self._pending_text_future is not None
+                        ):
+                            generated_text = " ".join(out_buf).strip()
+                            if generated_text:
+                                logger.info(
+                                    "TEXT_RESPONSE_READY channel=%s chars=%d phase=generation_complete",
+                                    getattr(self, "_request_channel", ""),
+                                    len(generated_text),
+                                )
+                                self._complete_text_request(generated_text)
+
                         if (
                             sc.input_transcription
                             and sc.input_transcription.text
