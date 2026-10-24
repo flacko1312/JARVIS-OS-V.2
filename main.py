@@ -516,6 +516,13 @@ def _is_transient_live_connection_error(exc: BaseException) -> bool:
     )
 
 
+class _GoAwaySignal(Exception):
+    """Raised when the Gemini Live server sends a go_away frame."""
+    def __init__(self, time_left=None):
+        self.time_left = time_left
+        super().__init__(f"go_away time_left={time_left}")
+
+
 def _live_reconnect_delay(attempt: int) -> float:
     return min(30.0, float(2 ** max(0, int(attempt) - 1)))
 
@@ -1983,6 +1990,15 @@ class JarvisLive:
         self._tour_active = False
         # JL-W003: optional LILITH bridge for typed input (None when not configured).
         self._lilith: LilithBridge | None = None
+        # Session resumption: latest handle from the server (never printed/logged).
+        self._resumption_handle: str | None = None
+        # Voice-active gate: Gemini Live connects only when True (F8 toggle).
+        # Hosted/external-audio mode auto-activates (no F8 in the browser).
+        self._voice_active = threading.Event()
+        if self.external_audio:
+            self._voice_active.set()
+        # Track live.connect() calls for diagnostics and testing.
+        self._connect_count = 0
 
     def _on_text_command(self, text: str):
         if not self._loop or not self.session:
@@ -2169,6 +2185,20 @@ class JarvisLive:
         """Track whether the desktop introduction temporarily owns the UI."""
         self._tour_active = bool(active)
 
+    def start_voice(self) -> None:
+        """Activate Gemini Live (F8 on)."""
+        self._voice_active.set()
+
+    def stop_voice(self) -> None:
+        """Deactivate Gemini Live (F8 off) and clear the resumption handle."""
+        self._voice_active.clear()
+        self._resumption_handle = None
+        if self.session and self._loop:
+            try:
+                asyncio.run_coroutine_threadsafe(self.session.close(), self._loop)
+            except Exception:
+                pass
+
     async def _wait_before_reconnect(self, delay: float) -> None:
         deadline = time.monotonic() + max(0.0, float(delay))
         while not self._shutdown_requested.is_set():
@@ -2325,6 +2355,10 @@ class JarvisLive:
         parts.append(sys_prompt)
         parts.append(LANGUAGE_RULE)  # repeated last: recency keeps the rule in force
 
+        resumption_cfg = types.SessionResumptionConfig(
+            handle=self._resumption_handle,
+        )
+
         return types.LiveConnectConfig(
             response_modalities=["AUDIO"],
             output_audio_transcription={},
@@ -2345,7 +2379,10 @@ class JarvisLive:
                 )
             ),
             thinking_config=types.ThinkingConfig(thinking_budget=0),
-            session_resumption=types.SessionResumptionConfig(),
+            session_resumption=resumption_cfg,
+            context_window_compression=types.ContextWindowCompressionConfig(
+                sliding_window=types.SlidingWindow(),
+            ),
             speech_config=types.SpeechConfig(
                 voice_config=types.VoiceConfig(
                     prebuilt_voice_config=types.PrebuiltVoiceConfig(
@@ -3832,6 +3869,20 @@ class JarvisLive:
                     return
                 async for response in self.session.receive():
 
+                    # Capture session resumption handles (never log their value).
+                    sru = getattr(response, "session_resumption_update", None)
+                    if sru is not None:
+                        new_handle = getattr(sru, "new_handle", None)
+                        if new_handle:
+                            self._resumption_handle = new_handle
+
+                    # Handle go_away separately: the server asks us to reconnect.
+                    ga = getattr(response, "go_away", None)
+                    if ga is not None:
+                        time_left = getattr(ga, "time_left", None)
+                        logger.info("GO_AWAY received time_left=%s", time_left)
+                        raise _GoAwaySignal(time_left)
+
                     response_audio = _live_response_audio_bytes(response)
                     if response_audio:
                         turn_had_audio = True
@@ -3891,10 +3942,13 @@ class JarvisLive:
                                 and (full_out or turn_had_audio)
                             ):
                                 self._mark_self_quit_farewell_received()
-                                
+
                             out_buf = []
                             turn_had_audio = False
                             _new_turn = True
+                            # turn_complete: stay on the SAME session — do NOT
+                            # return, reconnect, or raise.  The while-True
+                            # re-enters session.receive() for the next turn.
 
                     if response.tool_call:
                         function_calls = list(response.tool_call.function_calls)
@@ -3904,10 +3958,16 @@ class JarvisLive:
                         )
                     if self._shutdown_requested.is_set():
                         return
+        except _GoAwaySignal:
+            logger.info("RECV_EXIT reason=go_away")
+            raise
         except Exception as e:
-            if isinstance(e, genai.errors.APIError) and "1000" in str(e):
-                print("[JARVIS] 🔌 Session closed normally.")
+            if _is_normal_live_close_error(e):
+                logger.info("RECV_EXIT reason=normal_close_1000")
                 return
+            if _is_transient_live_connection_error(e):
+                logger.info("RECV_EXIT reason=transport_failure error=%s", type(e).__name__)
+                raise
             print(f"[JARVIS] ❌ Recv: {e}")
             traceback.print_exc()
             raise
@@ -4002,9 +4062,19 @@ class JarvisLive:
         self.ui.write_log(f"SYS: Gemini Live model selected: {live_model_id}")
 
         start_time = time.time()
+        reconnect_attempt = 0
         while True:
             if self._shutdown_requested.is_set():
                 return
+
+            # Wait for voice activation (F8) before opening a Gemini connection.
+            if not self._voice_active.is_set():
+                self.ui.set_state("IDLE")
+                while not self._voice_active.is_set():
+                    if self._shutdown_requested.is_set():
+                        return
+                    await asyncio.sleep(0.1)
+
             # enforce runtime limit if configured
             if self.runtime_limit_seconds is not None:
                 elapsed = time.time() - start_time
@@ -4052,6 +4122,7 @@ class JarvisLive:
                         print(f"[JARVIS] LILITH context fetch skipped: {exc}")
                 config = self._build_config(lilith_context=lilith_ctx)
 
+                self._connect_count += 1
                 async with (
                     client.aio.live.connect(model=live_model_id, config=config) as session,
                     asyncio.TaskGroup() as tg,
@@ -4061,6 +4132,7 @@ class JarvisLive:
                     self.audio_in_queue = asyncio.Queue()
                     self.out_queue      = asyncio.Queue(maxsize=10)
                     self._turn_done_event = asyncio.Event()
+                    reconnect_attempt = 0
 
                     print("[JARVIS] ✅ Connected.")
                     self.ui.set_state("LISTENING")
@@ -4082,12 +4154,22 @@ class JarvisLive:
                     tg.create_task(self._play_audio())
                     tg.create_task(self._announce_startup())
 
-            except Exception as e:
+            except BaseException as e:
                 if self._shutdown_requested.is_set():
                     return
+                # Unwrap single-exception groups for cleaner matching.
                 actual = e
-                if isinstance(e, ExceptionGroup) and len(e.exceptions) == 1:
-                    actual = e.exceptions[0]
+                if isinstance(e, (ExceptionGroup, BaseExceptionGroup)):
+                    leaves = list(_exception_leaves(e))
+                    if len(leaves) == 1:
+                        actual = leaves[0]
+
+                if isinstance(actual, _GoAwaySignal):
+                    logger.info("LIVE_RECONNECT reason=go_away")
+                    reconnect_attempt += 1
+                    delay = _live_reconnect_delay(reconnect_attempt)
+                    await self._wait_before_reconnect(delay)
+                    continue
 
                 if _is_unsupported_voice_error(actual) and self.voice_name != DEFAULT_VOICE_NAME:
                     old_voice = self.voice_name
@@ -4102,16 +4184,29 @@ class JarvisLive:
                             jarvis_status.write_status({"state": "voice_fallback", "voice": DEFAULT_VOICE_NAME})
                         except Exception:
                             pass
-                elif isinstance(actual, genai.errors.APIError) and "1000" in str(actual):
-                    print("[JARVIS] 🔌 Session ended normally.")
-                    if not self.cloud_safe:
-                        try:
-                            jarvis_status.write_status({"state": "offline"})
-                        except Exception:
-                            pass
-                else:
-                    print(f"[JARVIS] ⚠️ {e}")
-                    traceback.print_exc()
+                    continue
+
+                if _is_normal_live_close_error(actual):
+                    logger.info("LIVE_SESSION_CLOSED reason=normal_1000")
+                    if not self._voice_active.is_set():
+                        continue
+                    reconnect_attempt += 1
+                    delay = _live_reconnect_delay(reconnect_attempt)
+                    await self._wait_before_reconnect(delay)
+                    continue
+
+                if _is_transient_live_connection_error(actual):
+                    logger.info("LIVE_RECONNECT reason=transport_failure error=%s", type(actual).__name__)
+                    reconnect_attempt += 1
+                    delay = _live_reconnect_delay(reconnect_attempt)
+                    await self._wait_before_reconnect(delay)
+                    continue
+
+                print(f"[JARVIS] ⚠️ {e}")
+                traceback.print_exc()
+                reconnect_attempt += 1
+                delay = _live_reconnect_delay(reconnect_attempt)
+                await self._wait_before_reconnect(delay)
 
 def main():
     import sys
@@ -4162,6 +4257,18 @@ def main():
             mount_path = f"/Volumes/{locked_vol}/unlock.key"
             jarvis.required_unlock_path = mount_path
             jarvis.ui.write_log(f"SYS: Locked volume required: {mount_path}")
+        # Wire F8/mute toggle → voice activation gate.
+        _original_toggle_mute = ui._toggle_mute
+
+        def _toggle_mute_with_voice():
+            _original_toggle_mute()
+            if ui.muted:
+                jarvis.stop_voice()
+            else:
+                jarvis.start_voice()
+
+        ui._toggle_mute = _toggle_mute_with_voice
+
         ui.on_voice_change = jarvis.update_voice
         def _on_tts_change(provider, api_key, voice_id):
             if provider == "gemini":
