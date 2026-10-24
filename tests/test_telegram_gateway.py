@@ -11,11 +11,12 @@ from unittest.mock import patch
 
 from telegram_gateway.auth import ChatAuthorizer
 from telegram_gateway.config import ConfigurationError, Settings
-from telegram_gateway.formatter import TELEGRAM_TEXT_LIMIT, split_message
+from telegram_gateway.formatter import TELEGRAM_TEXT_LIMIT, split_message, telegram_html_chunks
 from telegram_gateway.jarvis_client import JarvisTextClient
 from telegram_gateway.jarvis_client import JarvisUnavailable
-from telegram_gateway.main import Gateway
+from telegram_gateway.main import Gateway, GatewayStopped
 from telegram_gateway.sessions import OffsetStore, SessionStore
+from telegram_gateway.telegram_client import TelegramClient
 
 
 class FakeTelegram:
@@ -23,8 +24,8 @@ class FakeTelegram:
         self.messages = []
         self.actions = []
 
-    def send_text(self, chat_id, text):
-        self.messages.append((chat_id, text))
+    def send_text(self, chat_id, text, parse_mode=None):
+        self.messages.append((chat_id, text, parse_mode))
 
     def send_chat_action(self, chat_id, action="typing"):
         self.actions.append((chat_id, action))
@@ -58,6 +59,13 @@ class TelegramGatewayTests(unittest.TestCase):
         self.assertFalse(auth.is_allowed(None))
         self.assertFalse(auth.is_allowed(True))
 
+    def test_signal_stop_interrupts_blocking_poll_cleanly(self):
+        with tempfile.TemporaryDirectory() as directory:
+            gateway = Gateway(self.settings(Path(directory)), telegram=FakeTelegram())
+            with self.assertRaises(GatewayStopped):
+                gateway.stop(15, None)
+            self.assertFalse(gateway._running)
+
     def test_unauthorized_update_never_reaches_jarvis(self):
         with tempfile.TemporaryDirectory() as directory:
             telegram = FakeTelegram()
@@ -79,6 +87,7 @@ class TelegramGatewayTests(unittest.TestCase):
             self.assertEqual(len(jarvis.calls), 2)
             self.assertEqual(jarvis.calls[0][1], jarvis.calls[1][1])
             self.assertEqual(len(telegram.messages), 2)
+            self.assertEqual(telegram.messages[0][2], "HTML")
 
     def test_non_text_is_rejected_without_jarvis(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -98,7 +107,7 @@ class TelegramGatewayTests(unittest.TestCase):
                 ask=lambda *_args: (_ for _ in ()).throw(JarvisUnavailable("temporalmente caído"))
             )
             gateway.handle_update({"message": {"chat": {"id": 42}, "text": "Hola"}})
-            self.assertIn("No he podido consultar JARVIS", telegram.messages[0][1])
+            self.assertIn("temporalmente no disponible", telegram.messages[0][1])
 
     def test_message_split_respects_telegram_limit(self):
         original = ("párrafo con https://example.com/fuente\n" * 400).strip()
@@ -106,6 +115,38 @@ class TelegramGatewayTests(unittest.TestCase):
         self.assertGreater(len(chunks), 1)
         self.assertTrue(all(0 < len(chunk) <= TELEGRAM_TEXT_LIMIT for chunk in chunks))
         self.assertEqual(" ".join(chunks).split(), original.split())
+
+    def test_html_rendering_is_safe_and_bounded(self):
+        original = "# Estado\n- **Docker**: `activo`\n<script>alert(1)</script>\n" + "<&>" * 2500
+        chunks = telegram_html_chunks(original)
+        self.assertTrue(all(0 < len(chunk) <= TELEGRAM_TEXT_LIMIT for chunk in chunks))
+        rendered = "\n".join(chunks)
+        self.assertIn("<b>Estado</b>", rendered)
+        self.assertIn("<b>Docker</b>", rendered)
+        self.assertIn("<code>activo</code>", rendered)
+        self.assertNotIn("<script>", rendered)
+        self.assertIn("&lt;script&gt;", rendered)
+
+    def test_status_command_routes_to_natural_language_diagnostic(self):
+        with tempfile.TemporaryDirectory() as directory:
+            telegram = FakeTelegram()
+            gateway = Gateway(self.settings(Path(directory)), telegram=telegram)
+            jarvis = FakeJarvis()
+            gateway.jarvis = jarvis
+            gateway.handle_update({"message": {"chat": {"id": 42}, "text": "/estado"}})
+            self.assertIn("diagnóstico general", jarvis.calls[0][0])
+
+    def test_start_and_help_are_local_and_do_not_call_jarvis(self):
+        with tempfile.TemporaryDirectory() as directory:
+            telegram = FakeTelegram()
+            gateway = Gateway(self.settings(Path(directory)), telegram=telegram)
+            jarvis = FakeJarvis()
+            gateway.jarvis = jarvis
+            gateway.handle_update({"message": {"chat": {"id": 42}, "text": "/start"}})
+            gateway.handle_update({"message": {"chat": {"id": 42}, "text": "/help"}})
+            self.assertFalse(jarvis.calls)
+            self.assertIn("Lilith / JARVIS", telegram.messages[0][1])
+            self.assertIn("Comandos mínimos", telegram.messages[1][1])
 
     def test_session_and_offset_persist(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -128,6 +169,28 @@ class TelegramGatewayTests(unittest.TestCase):
         }, clear=True):
             settings = Settings.from_env()
             self.assertEqual(settings.allowed_chat_ids, frozenset({42, 43}))
+
+
+class TelegramProfileTests(unittest.TestCase):
+    def test_profile_configuration_is_minimal_and_canonical(self):
+        client = TelegramClient("123:fake")
+        calls = []
+
+        def fake_call(method, values, timeout):
+            calls.append((method, values, timeout))
+            return {"ok": True, "result": True}
+
+        client._call = fake_call
+        client.configure_profile()
+        self.assertEqual(
+            [call[0] for call in calls],
+            ["setMyName", "setMyDescription", "setMyShortDescription", "setMyCommands"],
+        )
+        commands = calls[-1][1]["commands"]
+        self.assertIn('"start"', commands)
+        self.assertIn('"help"', commands)
+        self.assertIn('"estado"', commands)
+        self.assertNotIn("token", commands.lower())
 
 
 class TextGatewayServerTests(unittest.TestCase):

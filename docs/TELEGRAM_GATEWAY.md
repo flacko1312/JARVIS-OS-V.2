@@ -35,6 +35,21 @@ editor ~/.config/jarvis/telegram.env
 Set `TELEGRAM_BOT_TOKEN` and `TELEGRAM_ALLOWED_CHAT_IDS`. Multiple owner IDs may be separated
 by commas, although the intended deployment is one owner.
 
+Apply the canonical Lilith / JARVIS name, descriptions and minimal command menu, then verify
+them by reading the profile back from Telegram:
+
+```bash
+set -a
+. ~/.config/jarvis/telegram.env
+set +a
+.venv/bin/python3 -m telegram_gateway.main --configure-profile
+```
+
+Telegram's Bot API does not allow a bot to change its own profile photo. In BotFather, use
+`/setuserpic`, select the bot and upload
+`assets/telegram/lilith-jarvis-avatar.png`. This is the only visual-profile step that cannot
+be automated with the bot token.
+
 ## Install and verify
 
 ```bash
@@ -68,13 +83,21 @@ Long polling uses exponential retry after Telegram/network failures. The last pr
 update offset and chat-to-session IDs live under `~/.local/state/jarvis-telegram/` with owner
 permissions. Conversation content remains in JARVIS's existing memory implementation.
 
+The visible command menu is intentionally limited to `/start`, `/help` and `/estado`.
+Normal use is natural-language chat. During a potentially long JARVIS turn the gateway
+refreshes Telegram's native typing indicator without leaving temporary status messages.
+Responses preserve headings, bold text, inline code, fenced code, lists and clickable source
+URLs using a strictly escaped subset of Telegram HTML. Long output is split into independently
+valid messages below the platform limit.
+
 ## Security properties
 
 - Unauthorized `chat_id` values are rejected before any JARVIS call.
 - Usernames are never used for authorization.
 - Incoming text is data, never a shell command.
 - Telegram can call only explicit read-only tools enforced inside the JARVIS executor.
-- Responses use Telegram plain text, avoiding formatting injection.
+- Model output is HTML-escaped before the small formatting allowlist is applied, preventing
+  arbitrary Telegram markup injection.
 - Logs record IDs, timing and errors but not message bodies or tokens.
 - Service startup is skipped safely until `~/.config/jarvis/telegram.env` exists.
 
@@ -97,6 +120,10 @@ From the authorized chat, send in order:
 The final request must be refused as an action; it may be discussed as unsafe text but can
 never reach a shell. Also send a message from a different `chat_id`: it must receive no model
 response, and the journal must show that it was blocked.
+
+Also confirm once that `/start`, `/help` and `/estado` appear in Telegram's command menu, the
+typing indicator remains visible during a long request, headings/lists/code render cleanly,
+and a long answer arrives as ordered messages without broken markup.
 
 ## Troubleshooting
 
