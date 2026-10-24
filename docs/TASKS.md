@@ -1,60 +1,91 @@
-# JARVIS Tasks
+# JARVIS Ubuntu Headless — Tasks
 
-Status: **CANONICAL ACTIONABLE BACKLOG**. Do not use historical prompts or audit findings as a second task system.
+Status: **CANONICAL ACTIONABLE BACKLOG** as of 2026-10-24 for `server-lilith`.
 
-## Current validation state
+## Current priority
 
-### Gemini Live transport recovery — next required physical validation
+The Ubuntu runtime is operational and already contains Blocks 6–9. The current job is **stabilization and closure**, not adding unrelated features.
 
-Status: **PENDING / NOT PHYSICALLY FORCED**.
+## P0 — protect and consolidate the current runtime
 
-F8 pause/resume and immediate conversational continuity are physically validated. The owner established `88`, paused and resumed with F8, and JARVIS correctly answered `176` when asked for the previous number multiplied by two. Normal multi-turn operation stays on one Live connection and resume produces no new greeting.
+Status: **IN PROGRESS / SAFETY CHECKPOINT CREATED**.
 
-The next task is to establish context in an active conversation, force a real recoverable network/Live interruption, observe `RECONNECTING` and return to `LISTENING`, then verify the prior immediate context without a greeting, traceback, or LILITH-memory workaround. Do not mark session resumption as physically passed until this succeeds. Do not start JL-A10 work or the 24-hour soak before this validation is complete.
+- Canonical runtime: `/home/flako1312/jarvis-headless`.
+- Current branch: `fix/rebuild-integrity-fast`.
+- Current runtime base HEAD: `2ad1f89`.
+- Safety snapshot of the active working tree: `backup/ubuntu-headless-runtime-2026-10-24` at `19a3bc9`, pushed to GitHub.
+- Blocks 6–9 development branch: `feat/headless-capabilities-6-9` at `7f89500`, pushed to GitHub and already merged into the runtime lineage via `fc4b13c`.
 
-### AUT-9 — subsequent autonomous work block
+Do not delete or reset the active working tree until its changes have been reviewed and promoted intentionally.
 
-Status: **NOT STARTED / NOT AUTHORIZED**.
+## P1 — validate the active headless changes
 
-Do not start AUT-9 until explicitly requested and the transport-recovery gate above is complete.
+Status: **PENDING**.
 
-## Closed
+Validate the current working-tree changes with targeted automated tests and then physical checks. Focus on:
 
-### Persistent logical conversation continuity
+- barge-in and interrupted-turn behavior;
+- replay/duplicate/void-turn suppression;
+- conversation continuity;
+- Gemini transient disconnect/reconnect recovery;
+- headless system tools and permissions;
+- LILITH memory/Home/routine routing;
+- service health after restart/reconnect.
 
-Status: **CLOSED / PHYSICAL RESTART ACCEPTANCE PASS**.
+Do not turn this into a refactor or UI project.
 
-Durable text continuity now survives F8/standby, transport reconnects, `go_away`, rejected or expired native resumption handles, process restart, and crash recovery. State is written atomically with bounded recent turns, tool-result summaries, and a rolling summary; raw audio and opaque Gemini handles are never persisted. Only explicit `new_conversation()` clears/replaces this logical conversation.
+## P1 — finish Block 10 physical acceptance
 
-Physical acceptance across real restarts confirmed STANDBY startup, normal Live/audio operation, compact continuity restoration without greeting or API 1007/1008 failure, direct recall from the active conversation without memory-search tools, and preserved explicit `local_memory_search` behavior. The current `google-genai 2.25.0` plus tested Native Audio preview model/API rejects initial-history replay with API 1007, so this configuration uses compact durable context in `system_instruction` after native resumption is unavailable or rejected.
+Status: **IMPLEMENTATION PRESENT / PHYSICAL ACCEPTANCE NOT CLOSED**.
 
-The full-suite baseline retains three unrelated UI localization-contract failures already reproducible on clean `HEAD`; they are not part of this block.
+The runtime lineage contains voice-stability and recovery work, but final acceptance must distinguish automated coverage from physical evidence. Required physical checks include real microphone behavior, interruption/barge-in, real recoverable Gemini/network interruption, reconnection without losing immediate context, and device/reconnect behavior where applicable.
 
-### JL-A10 — owner-operated spoken Gemini Live certification
+## P1 — clean Ubuntu release candidate
 
-Status: **CLOSED / PHYSICAL E2E PASS**.
+Status: **PENDING AFTER VALIDATION**.
 
-Owner physical evidence confirmed microphone/runtime activity, LILITH connectivity, exclusive `lilith_routine` create/list/delete routing, and correct persistence of `22:00 Europe/Madrid` from "10 de la noche". No incorrect `reminder` or `lilith_home_action` route was observed.
+After the active changes pass:
 
-### Screen vision — owner-operated validation
+1. classify every uncommitted file as production code, test/docs, experiment, runtime state or disposable development helper;
+2. commit only validated production/test/docs work to the Ubuntu release line;
+3. keep runtime state and private configuration out of Git;
+4. mark experimental Telegram gateway work separately unless explicitly promoted;
+5. push the clean Ubuntu candidate to GitHub and record the exact commit.
 
-Status: **SCREEN PHYSICAL E2E PASS; CAMERA AND OLLAMA FAILOVER STILL HUMAN-GATED**.
+## P2 — documentation and deployment consistency
 
-The owner invoked `screen_process` through the real runtime. JARVIS captured a 142,430-byte screen image, selected `gemini-3.8-flash`, produced a description matching the visible ChatGPT and AURORA windows, and spoke the result. The obsolete `gemini-2.5-flash` and AFC warning regressions are fixed. Automated tests cover bounded Gemini 503 handling and the final local Ollama fallback; an isolated `qwen3-vl:4b` image smoke passed. The complete real provider chain has not physically exercised Ollama because Gemini primary succeeded.
+Status: **PARTIALLY CLOSED 2026-10-24**.
 
-There is no open P1 feature task. Perform the transport-recovery validation above before any soak; otherwise continue only with the stabilization backlog or a separately authorized supervised validation.
+- `docs/PROJECT_STATE.md` now identifies `/home/flako1312/jarvis-headless` as the canonical Ubuntu runtime.
+- `/home/flako1312/jarvis-headless-dev` is development only.
+- `/home/flako1312/JARVIS-OS-V2` is legacy/reference only.
+- AURORA Windows remains a separate adapter/runtime in `C:\JARVIS`.
 
-## Stabilization backlog
+Before Ubuntu freeze, recheck `README.md`, `docs/ARCHITECTURE.md`, deployment docs and the document index for the same boundary.
 
-1. **TD-002 / P2** — migrate secondary action/agent modules from deprecated `google.generativeai` to `google.genai`, one tested module family at a time.
-2. **TD-003 / P2** — reduce broad exception swallowing in runtime-critical paths and add structured error codes without altering user-facing behavior.
-3. **TD-004 / P2** — separate legacy local JSON memory compatibility from active prompt construction after a migration/deprecation plan is approved.
-4. **TD-005 / P2** — pin or constrain remaining `latest` frontend dependencies and resolve development-only audit advisories without a breaking downgrade.
-5. **TD-006 / P2** — split `main.py` and `ui.py` only as a dedicated refactor with behavioral parity tests; no UI redesign.
-6. **TD-007 / P3** — improve current GUI accessibility names, scaling coverage, and theme-token consistency.
+## Experimental / not closure blockers
 
-## Explicitly out of scope
+- Telegram text gateway: experimental until explicitly validated/promoted.
+- Patch/generator scripts: development artifacts.
+- New UI/redesign work: out of scope for Ubuntu closure.
+- LILITH-native wake/STT/TTS: not the canonical voice pipeline.
+- Smart Display, Avatar, new domotic families and other V2 expansions: do not block this closure.
 
-- AUT-8 / AUT-9.
-- LILITH-native production voice.
-- New agents, schedulers, memory stores, Home Assistant clients, or GUI redesign.
+## Final soak
+
+Status: **DEFERRED UNTIL GLOBAL FREEZE**.
+
+Do not start or certify the final 24-hour soak while LILITH/AURORA/JARVIS Ubuntu/Monitor are still being changed. A final soak is meaningful only after the complete V1 configuration is frozen.
+
+## Closure criterion
+
+JARVIS Ubuntu Headless is ready to freeze when:
+
+- active runtime changes are classified and committed cleanly;
+- automated required tests pass;
+- physical voice/reconnect gates pass or are explicitly separated as HUMAN-GATED;
+- LILITH integration is healthy;
+- service restart/recovery is verified;
+- GitHub contains the exact release candidate;
+- documentation matches the deployed runtime;
+- no critical state depends on an untracked file.

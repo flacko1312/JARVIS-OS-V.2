@@ -1,6 +1,14 @@
 # JARVIS
 
-Canonical project navigation: [docs/PROJECT_DOCUMENT_INDEX.md](docs/PROJECT_DOCUMENT_INDEX.md). Current architecture and verified state are in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/PROJECT_STATE.md](docs/PROJECT_STATE.md). The 2026-10-08 recovery evidence is in [docs/audits/JARVIS_PROJECT_RECOVERY_2026-10-08.md](docs/audits/JARVIS_PROJECT_RECOVERY_2026-10-08.md).
+Canonical project navigation: [docs/PROJECT_DOCUMENT_INDEX.md](docs/PROJECT_DOCUMENT_INDEX.md). Current architecture and verified state are in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/PROJECT_STATE.md](docs/PROJECT_STATE.md).
+
+## Deployment authority — 2026-10-24
+
+On `server-lilith`, the canonical Ubuntu runtime is `/home/flako1312/jarvis-headless`, launched by `jarvis-headless.service` through `headless_main.py`. `/home/flako1312/jarvis-headless-dev` is development-only and `/home/flako1312/JARVIS-OS-V2` is a legacy/reference clone; neither is the running Ubuntu service. The GitHub `main` branch currently represents the AURORA/Windows line, while Ubuntu is maintained on its own runtime/release branches.
+
+**LILITH CORE is the central persistent/cognitive core.** JARVIS Ubuntu is an Ubuntu/voice/system adapter; AURORA/JARVIS Windows is the separate Windows adapter in `C:\\JARVIS`.
+
+The remainder of this README describes the shared JARVIS codebase and its desktop/web capabilities. Ubuntu-headless operational truth is governed by `docs/PROJECT_STATE.md`, `docs/TASKS.md` and `deploy/INSTALL.md`.
 
 Local Gemini Live desktop assistant with a PyQt6 interface, voice interaction, detachable panels, and optional browser, file, screen, and messaging tools.
 

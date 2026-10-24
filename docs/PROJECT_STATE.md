@@ -1,54 +1,82 @@
-# JARVIS Project State
+# JARVIS Ubuntu Headless — Project State
 
-Status: **CANONICAL CURRENT STATE** as of 2026-10-16.
+Status: **CANONICAL CURRENT STATE** as of 2026-10-24 for the Ubuntu deployment on `server-lilith`.
 
-## Verdict
+## Canonical runtime authority
 
-Machine-verifiable recovery and stabilization are complete on the real Windows checkout. JL-A10 is closed after owner-operated spoken validation proved correct `lilith_routine` create/list/delete routing and persistence of `22:00 Europe/Madrid`. Real screen capture, Gemini primary image analysis, and the spoken visual response also passed owner validation. AUT-8/AUT-9 were not started.
+- Runtime checkout: `/home/flako1312/jarvis-headless`
+- Entry point: `headless_main.py`
+- User service: `jarvis-headless.service`
+- Active branch: `fix/rebuild-integrity-fast`
+- Runtime base HEAD at this reconciliation: `2ad1f892f03e5027943d3a6e8e3d7707e1438d3c`
+- GitHub repository: `flacko1312/JARVIS-OS-V.2`
+- The GitHub `main` branch is currently the AURORA/Windows line. It is **not** the Ubuntu runtime branch.
 
-## Verified done
+The running service was verified from `/home/flako1312/jarvis-headless`. On 2026-10-24 `/health` returned `LISTENING`; `/status` reported Gemini connected, LILITH online, headless mode enabled and audio enabled.
 
-- Real Windows runtime and repository identity established at `C:\JARVIS`.
-- Local code commit and remote documentation history reconciled without overwriting either side.
-- Gemini Live session, Spanish prompt, tool registration/response path, voice/model precedence, and audio formats verified from code and tests.
-- 48 unique declared tools have dispatch paths and schemas.
-- Memory authority guards enforce LILITH persistence versus explicit in-process session storage.
-- Routine guard enforces recurring/one-shot/immediate routing, turn provenance, and duplicate FunctionCall IDs.
-- Routine guard now validates deterministic Spanish time expressions in current-turn routine descriptions before submitting `lilith_routine`, including the JL-A10 `10 de la noche` -> `22:00` regression.
-- JL-A10 owner validation passed physically: recurring create/list/delete stayed on `lilith_routine`, persisted `22:00 Europe/Madrid`, and did not route to reminders or immediate Home actions.
-- `screen_process` owner validation passed physically for screen capture, `gemini-3.8-flash` analysis, accurate visible-content description, and spoken response.
-- The obsolete `gemini-2.5-flash` model and AFC warning regressions are fixed. Bounded cloud 503 handling and the final Ollama fallback are covered automatically; isolated local `qwen3-vl:4b` vision passed.
-- LILITH HTTP contract is covered for health/runtime/docs/source/Git/commands/memory/Home/approvals; routine persistence uses the command gateway.
-- Root pytest discovery is deterministic and ignores runtime snapshots under `tmp/`.
-- Automated PyQt offscreen evidence, API/WebSocket tests, secret scan, dependency check, frontend lint/typecheck/build, and production dependency audit run successfully.
-- Hosted WebSocket authentication no longer places bearer tokens in the URL.
-- Active docs no longer claim the nonexistent cinematic first-run/tour UI or Linux-only canonical development.
-- Gemini voice now starts in `STANDBY` with no Live connection or microphone forwarding. F8 and the conversation button pause/resume the same logical conversation instead of creating a new one.
-- Normal completion of a Gemini `session.receive()` turn stays on the same Live connection. Real transport/session failures and `go_away` use bounded silent reconnect with session resumption; rejected/expired handles fall back to the retained local transcript and rolling continuity state.
-- F8 pause/resume continuity passed owner-operated physical validation: the user established `88`, paused, resumed, then asked for the previous number multiplied by two and JARVIS answered `176` without a new greeting.
-- Persistent logical-conversation continuity is complete and physically validated across full process restarts. The local `memory/conversation_state.json` store uses atomic replacement, bounded recent turns/tool summaries, and a rolling summary; it stores text only, never raw audio or Gemini resumption handles. F8, standby, reconnect, `go_away`, rejected/expired native handles, shutdown, and crashes do not clear it. Only an explicit `new_conversation()` replaces the durable logical conversation.
-- Active/restored conversation context has highest precedence and needs no memory tool. `save_memory`/`local_memory_search` are reserved for explicit local-note intent, while LILITH memory tools are reserved for explicit long-term persistence/search. Owner restart validation confirmed ordinary immediate recall uses the restored conversation directly and an explicit local-memory request still invokes `local_memory_search`.
-- Native Gemini session resumption remains the first transport-continuity path when a valid process-local handle exists. A clean transport reconstructs context from durable JARVIS state and produces no greeting. With installed `google-genai 2.25.0`, the tested Native Audio preview model/API rejects even minimal initial-history use with API 1007, so the current production compatibility path is compact durable continuity in `system_instruction`; this is not claimed as a permanent Gemini limitation.
+## Repository/clones classification
 
-## Non-blocking operational validation
+- `/home/flako1312/jarvis-headless`: **CANONICAL UBUNTU RUNTIME**. All Ubuntu operational documentation must describe this checkout first.
+- `/home/flako1312/jarvis-headless-dev`: **DEVELOPMENT CLONE / NOT RUNTIME**. Blocks 6–9 from `feat/headless-capabilities-6-9` were merged into the canonical runtime through merge commit `fc4b13c`. The branch is also published on GitHub at `7f89500` for traceability.
+- `/home/flako1312/JARVIS-OS-V2`: **LEGACY/REFERENCE CLONE / NOT RUNTIME**. Its local uncommitted experiment was preserved on GitHub branch `backup/jarvis-os-v2-local-2026-10-24` at checkpoint `98f6d0b` without changing its working tree.
 
-- Real microphone selection, echo cancellation quality, barge-in, device loss/reconnect, Windows display scaling, and 30-minute soak are not machine-certifiable without hardware use.
-- Camera capture/analysis has not received the same owner-operated physical validation as screen capture.
-- Ollama `qwen3-vl:4b` passed an isolated local image smoke, but its position as final fallback in the complete real JARVIS provider chain has not been physically exercised because Gemini primary succeeded.
-- Real forced Gemini transport interruption / `go_away` recovery remains pending. Session resumption is covered automatically, but has not yet been physically forced and must not be reported as a physical pass.
-- The 24-hour soak has not started and must remain blocked until real transport recovery is physically validated.
+## Protected current Ubuntu work
 
-## Not started / deferred
+The canonical runtime has active uncommitted development files. They were preserved without changing the running working tree on GitHub branch:
 
-- AUT-8 / AUT-9: not started by this recovery.
-- LILITH-native wake word/STT/TTS: deferred and not part of the JARVIS production voice pipeline.
-- New UI features or redesign: not started.
+`backup/ubuntu-headless-runtime-2026-10-24` → checkpoint `19a3bc9`
 
-## Current quality baseline
+Runtime-only state such as `.headless.pid`, local conversation state, scratchpad data and local memory backups was intentionally excluded from that Git checkpoint.
 
-- Pytest for this block: 589 collected; 509 passed; 77 classified historical-spec skips; 3 known unrelated UI contract failures; 0 errors; 1 third-party Python 3.14 deprecation warning; 19 subtests passed. A clean `HEAD` baseline independently reproduces all three failures: tests expect `MUTED`, `Quit AURORA`, and `ANALYSIS COMPLETE`, while the previously committed Spanish UI shows `SILENCIADO`, `Cerrar AURORA`, and `ANÁLISIS COMPLETADO`.
-- QA runner: 5/5 checks passed, P0=0, P1=0; three P2 debt findings.
-- Python dependency consistency: clean.
-- Web: ESLint pass, TypeScript pass, Next production build pass, production `npm audit` 0 vulnerabilities. Five high development-only transitive audit findings remain.
+## Implemented Ubuntu headless capability blocks
 
-See `docs/audits/JARVIS_PROJECT_RECOVERY_2026-10-08.md` for evidence and `docs/TASKS.md` for the only active backlog.
+### Core/headless runtime
+
+- Persistent systemd user service and health/status HTTP surface.
+- Gemini Live voice runtime without PyQt dependency.
+- Separate headless conversation-state path.
+- LILITH connectivity and headless-only tool allowlist.
+
+### Block 6 — Ubuntu system capabilities
+
+Implemented in the runtime lineage: date/time, system status, disk status, Docker/infrastructure status, bounded service logs, process inspection, systemd status/actions, failed-unit inspection, journal reads and capability catalog.
+
+### Blocks 7–9 — LILITH expansion, remote API and voice stability
+
+Merged into the runtime through `fc4b13c`. The development commits include Home/LILITH status and permissions expansion, secure remote/Tailscale-oriented API work, and voice stability/reconnect metrics.
+
+### Current headless tool profile
+
+The current runtime allowlist contains 21 headless tools: web search; date/time; system/disk/Docker/infrastructure status; service logs; process list/info; systemd status/action/failed units; journal read; LILITH memory search/store/delete; LILITH Home action/status; LILITH health; routines; and the capability catalog.
+
+Targeted headless validation on 2026-10-24: `tests/test_headless_block1.py` → **109 passed, 0 failed, 1 third-party deprecation warning** when run with the service user's PulseAudio/DBus runtime environment. Two stale playback-stream tests were corrected to call the now-instance-bound helper correctly; production behavior was not changed. Health remained `LISTENING` after validation.
+
+## Voice/stability work after Blocks 6–9
+
+The Ubuntu branch contains additional work for local barge-in, interrupted-turn handling, replay/duplicate protection, void-turn filtering, transient Gemini recovery and conversation continuity. These commits are in the ancestry of the current runtime branch and its remote freeze/safety branches.
+
+Do **not** interpret implementation as final physical certification. Hardware-dependent voice behavior, real disconnect/reconnect acceptance and the final global soak remain validation gates.
+
+## Experimental/not yet canonical
+
+- Telegram text gateway files exist in the active working tree and are included in the 2026-10-24 safety checkpoint. They are **experimental / not part of the closed Ubuntu V1 baseline** until explicitly validated and promoted.
+- Patch/generator scripts in the working tree are development artifacts, not production authority.
+- `/home/flako1312/JARVIS-OS-V2` is not a second production runtime.
+
+## Architecture boundary
+
+**LILITH CORE is the central cognitive/persistent core.** JARVIS Ubuntu Headless is an Ubuntu/voice/system adapter. It must not become a second independent cognitive core.
+
+AURORA/JARVIS Windows is a separate Windows adapter/runtime in `C:\JARVIS`. Its documentation and physical validations are maintained on the Windows checkout.
+
+## Soak policy
+
+No final 24-hour certification soak should be claimed while AURORA Windows, JARVIS Ubuntu, Monitor or the final integration configuration are still changing. Partial soak windows may be retained as stability evidence only. The final soak begins after the complete V1 baseline is frozen.
+
+## Immediate next work
+
+1. Keep the active Ubuntu runtime protected; do not discard the current working tree.
+2. Reconcile the active runtime changes into a clean Ubuntu release branch after tests/physical acceptance.
+3. Finish the remaining hardware-gated voice/reconnect checks.
+4. Freeze the Ubuntu candidate only when those checks pass.
+5. Defer the final 24-hour soak until the whole ecosystem baseline is frozen.

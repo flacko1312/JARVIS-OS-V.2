@@ -2,6 +2,8 @@
 
 Navigation only. This file is not a second architecture, state, or backlog authority.
 
+Deployment note (2026-10-24): on `server-lilith`, `docs/PROJECT_STATE.md` and `docs/TASKS.md` describe the canonical Ubuntu Headless deployment at `/home/flako1312/jarvis-headless`. AURORA/Windows has its own live checkout at `C:\\JARVIS`; GitHub `main` currently follows that Windows line. The Ubuntu development and legacy clones are not runtime authorities.
+
 | Path | Purpose | Classification | Canonical authority | Maintained | Relationship / superseded by |
 |---|---|---|---|---|---|
 | `README.md` | Entry point and setup overview | CANONICAL ENTRY | Navigation/setup | Yes | Links to all canonical docs |

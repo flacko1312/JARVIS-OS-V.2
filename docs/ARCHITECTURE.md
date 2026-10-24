@@ -1,6 +1,19 @@
 # JARVIS Architecture
 
-Status: **CANONICAL**. Last reconciled against executable code: 2026-10-16. When it conflicts with historical prose, code plus tests plus the recovery audit win.
+Status: **CANONICAL**. Last reconciled against the deployed Ubuntu headless runtime and shared repository topology: 2026-10-24. When this document conflicts with historical prose, the deployed runtime, executable code, tests and current project-state document win.
+
+## Deployment profiles and authority
+
+This repository now has two intentionally separate production profiles:
+
+- **JARVIS Ubuntu Headless** — canonical runtime on `server-lilith` at `/home/flako1312/jarvis-headless`, started by `jarvis-headless.service` through `headless_main.py`. It exposes the headless-only tool profile and integrates with LILITH CORE.
+- **AURORA / JARVIS Windows** — separate Windows runtime at `C:\\JARVIS`, maintained on the Windows checkout and GitHub `main` line.
+
+`/home/flako1312/jarvis-headless-dev` is development-only. `/home/flako1312/JARVIS-OS-V2` is a legacy/reference clone and is not the Ubuntu service.
+
+**LILITH CORE is the central cognitive and persistent authority.** JARVIS Ubuntu and AURORA Windows are adapters/interfaces and must not become competing independent cores.
+
+The desktop-specific sections below remain valid for the Windows profile unless a section explicitly says otherwise. Ubuntu-headless operational truth is summarized in `docs/PROJECT_STATE.md` and the code under `headless_main.py`, `headless_client.py` and `core/headless_*`.
 
 ## System boundary
 

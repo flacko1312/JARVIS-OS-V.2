@@ -1,5 +1,15 @@
 # JARVIS Changelog
 
+## 2026-10-24 — Ubuntu runtime authority and documentation reconciliation
+
+- Declared `/home/flako1312/jarvis-headless` as the canonical Ubuntu Headless runtime after verifying the live `jarvis-headless.service` working directory and health/status endpoints.
+- Classified `/home/flako1312/jarvis-headless-dev` as development-only and confirmed its Blocks 6–9 branch is already merged into the runtime lineage.
+- Classified `/home/flako1312/JARVIS-OS-V2` as legacy/reference-only for Ubuntu.
+- Preserved active Ubuntu uncommitted work on GitHub branch `backup/ubuntu-headless-runtime-2026-10-24` and preserved the legacy-clone local experiment on `backup/jarvis-os-v2-local-2026-10-24` without modifying either working tree.
+- Published `feat/headless-capabilities-6-9` explicitly on GitHub for traceability.
+- Reconciled architecture terminology so LILITH CORE is the central cognitive/persistent core and JARVIS Ubuntu/AURORA Windows are separate adapters.
+- Deferred final 24-hour soak certification until the complete V1 ecosystem is frozen.
+
 ## 2026-10-14 — Gemini Live standby and conversation continuity
 
 - Added true Gemini-disconnected `STANDBY` startup with a visible conversation control and F8 shortcut.
