@@ -1,0 +1,31 @@
+[Unit]
+Description=JARVIS Telegram text gateway
+Documentation=file:///home/flako1312/jarvis-headless/docs/TELEGRAM_GATEWAY.md
+After=network-online.target jarvis-headless.service
+Wants=network-online.target jarvis-headless.service
+ConditionPathExists=/home/flako1312/.config/jarvis/telegram.env
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+[Service]
+Type=simple
+WorkingDirectory=/home/flako1312/jarvis-headless
+EnvironmentFile=/home/flako1312/.config/jarvis/telegram.env
+Environment=PYTHONUNBUFFERED=1
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+ExecStart=/home/flako1312/jarvis-headless/.venv/bin/python3 -m telegram_gateway.main
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=20
+KillSignal=SIGTERM
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/flako1312/.local/state/jarvis-telegram /run/user/1000
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=jarvis-telegram
+
+[Install]
+WantedBy=default.target

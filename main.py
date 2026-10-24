@@ -256,15 +256,19 @@ distinguish morning from afternoon/evening, ask for clarification and call no ac
 HEADLESS_SYSTEM_RULES = """
 [HEADLESS TOOL PROFILE — mandatory]
 You are JARVIS Headless on Ubuntu server-lilith. The tools available in this profile are exactly:
-date_time, system_status, process_list, process_info, systemd_status, systemd_action,
+web_search, date_time, system_status, disk_status, docker_status, infrastructure_status,
+service_logs, process_list, process_info, systemd_status, systemd_action,
 systemd_list_failed, journal_read, lilith_memory_search, lilith_memory_store,
 lilith_memory_delete, lilith_home_action, lilith_home_status, lilith_health,
 lilith_routine, and open_capabilities_catalog.
 Never request, call, imply, or invent any tool outside that list.
 
 Tool routing:
+- web_search: current or externally verifiable information; include the returned real URLs.
 - date_time: MANDATORY for any current time or date question. Never guess or estimate.
-- system_status, process_list, process_info: system monitoring, always safe.
+- system_status, disk_status, docker_status, infrastructure_status, process_list,
+  process_info: read-only system monitoring, always safe.
+- service_logs: bounded read-only logs for known JARVIS/LILITH infrastructure.
 - systemd_status, systemd_list_failed: read-only service status, always safe.
 - systemd_action: REQUIRES user confirmation before restart/start/stop.
 - journal_read: read-only log access, always safe.
@@ -2279,6 +2283,57 @@ TOOL_DECLARATIONS = [
         },
     },
     {
+        "name": "disk_status",
+        "description": (
+            "Read capacity and free space for every real local filesystem. Use for questions "
+            "about disks, mounts, storage, free space, or the LILITH data volume. Read-only."
+        ),
+        "parameters": {"type": "OBJECT", "properties": {}, "required": []},
+    },
+    {
+        "name": "docker_status",
+        "description": (
+            "Inspect the Docker daemon and all containers, including stopped or unhealthy "
+            "containers. This never starts, stops, or changes a container."
+        ),
+        "parameters": {"type": "OBJECT", "properties": {}, "required": []},
+    },
+    {
+        "name": "infrastructure_status",
+        "description": (
+            "Read the real status of known server infrastructure: Docker, PostgreSQL, "
+            "Mosquitto, Ollama, LILITH, or JARVIS. Use component='all' for a summary. Read-only."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "component": {
+                    "type": "STRING",
+                    "enum": ["all", "docker", "postgresql", "mosquitto", "ollama", "lilith", "jarvis"],
+                },
+            },
+            "required": ["component"],
+        },
+    },
+    {
+        "name": "service_logs",
+        "description": (
+            "Read a bounded tail of logs for an allowlisted component: docker, postgresql, "
+            "mosquitto, lilith, or jarvis. Use at most 100 lines and summarize the result. Read-only."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "component": {
+                    "type": "STRING",
+                    "enum": ["docker", "postgresql", "mosquitto", "lilith", "jarvis"],
+                },
+                "lines": {"type": "INTEGER", "description": "Number of tail lines, 1-100"},
+            },
+            "required": ["component"],
+        },
+    },
+    {
         "name": "process_list",
         "description": (
             "List running processes sorted by memory usage. Optional filter by name. "
@@ -2448,8 +2503,13 @@ LOCAL_MACHINE_ONLY_ACTIONS = frozenset({
 })
 
 HEADLESS_ACTIONS = frozenset({
+    "web_search",
     "date_time",
     "system_status",
+    "disk_status",
+    "docker_status",
+    "infrastructure_status",
+    "service_logs",
     "process_list",
     "process_info",
     "systemd_status",
@@ -2465,6 +2525,25 @@ HEADLESS_ACTIONS = frozenset({
 
     "lilith_routine",
     "open_capabilities_catalog",
+})
+
+# Telegram is deliberately a read-only view of the existing JARVIS runtime.
+# This allowlist is enforced in the executor, after routing but before any tool code.
+TELEGRAM_READ_ONLY_ACTIONS = frozenset({
+    "web_search",
+    "date_time",
+    "system_status",
+    "disk_status",
+    "docker_status",
+    "infrastructure_status",
+    "service_logs",
+    "process_list",
+    "process_info",
+    "systemd_status",
+    "systemd_list_failed",
+    "journal_read",
+    "lilith_memory_search",
+    "lilith_health",
 })
 
 
@@ -2653,6 +2732,12 @@ class JarvisLive:
         self._current_input_transcript = ""
         self._last_input_transcript = ""
         self._last_input_transcript_at = 0.0
+        self._text_request_lock: asyncio.Lock | None = None
+        self._pending_text_future: asyncio.Future | None = None
+        self._pending_text_input = ""
+        self._pending_web_search_result = ""
+        self._pending_local_read_context = ""
+        self._request_channel = ""
         self._schedule_guard_routed = False
         self._schedule_session_id = uuid.uuid4().hex[:12]
         self._schedule_turn_sequence = 0
@@ -3035,13 +3120,167 @@ class JarvisLive:
             )
         # JL-W003: offer ordinary typed text to LILITH first. Only when LILITH actually
         # executed it is Gemini skipped; every other case continues unchanged below.
-        if outgoing_text == self._current_input_transcript and await self._offer_typed_to_lilith(outgoing_text):
+        if (
+            getattr(self, "_request_channel", "") != "telegram"
+            and outgoing_text == self._current_input_transcript
+            and await self._offer_typed_to_lilith(outgoing_text)
+        ):
             return True
+        if getattr(self, "_request_channel", "") == "telegram":
+            outgoing_text = (
+                "[CANAL TELEGRAM DE SOLO LECTURA] Responde en castellano y de forma adecuada "
+                "para móvil. No ejecutes acciones mutables, domótica, shell, voz ni audio. "
+                "Solo puedes conversar, buscar con fuentes, consultar memoria existente y usar "
+                "herramientas de lectura del servidor. Las consultas de métricas, estado y logs "
+                "de solo lectura ya están autorizadas y no requieren pedir confirmación. "
+                "Petición del usuario: " + outgoing_text
+            )
+            if self._pending_web_search_result:
+                outgoing_text += (
+                    "\n\n[RESULTADO WEB VERIFICADO DEL NÚCLEO JARVIS] Usa estos datos para "
+                    "responder y conserva sus URLs como fuentes; no inventes otras:\n"
+                    + self._pending_web_search_result
+                )
+            if self._pending_local_read_context:
+                outgoing_text += (
+                    "\n\n[DATOS LOCALES REALES YA CONSULTADOS POR JARVIS] Responde usando "
+                    "estos datos. No pidas permiso ni digas que no puedes consultarlos. Resume "
+                    "los logs y cita su origen; no inventes valores:\n"
+                    + self._pending_local_read_context
+                )
         await self.session.send_client_content(
             turns={"parts": [{"text": outgoing_text}]},
             turn_complete=True,
         )
         return True
+
+    async def ask_text(self, text: str, *, channel: str = "local", timeout: float = 120.0) -> str:
+        """Submit one serialized text turn to this running JARVIS instance and await its reply."""
+        if asyncio.get_running_loop() is not self._loop:
+            raise RuntimeError("ask_text must run on the JARVIS event loop")
+        if self._text_request_lock is None:
+            self._text_request_lock = asyncio.Lock()
+        async with self._text_request_lock:
+            if not self.session or self.conversation_state not in {
+                ConversationState.LISTENING, ConversationState.RECONNECTING,
+            }:
+                raise RuntimeError("JARVIS is not ready for text requests")
+            future = asyncio.get_running_loop().create_future()
+            self._pending_text_future = future
+            self._pending_text_input = str(text or "").strip()
+            self._pending_web_search_result = ""
+            self._pending_local_read_context = ""
+            self._request_channel = str(channel or "local").strip().lower()
+            try:
+                if self._request_channel == "telegram":
+                    self._pending_local_read_context = await asyncio.to_thread(
+                        self._telegram_local_read_context, self._pending_text_input
+                    )
+                if self._request_channel == "telegram" and self._needs_verified_web(self._pending_text_input):
+                    from actions.web_search import web_search
+                    self._pending_web_search_result = await asyncio.to_thread(
+                        web_search, {"query": self._pending_text_input}
+                    )
+                    logger.info("TELEGRAM_WEB_PREFETCH completed chars=%d", len(self._pending_web_search_result))
+                accepted = await self.send_text(self._pending_text_input)
+                if not accepted:
+                    raise RuntimeError("JARVIS rejected the text request")
+                response = await asyncio.wait_for(future, timeout=timeout)
+                return self._append_verified_web_sources(response)
+            finally:
+                if self._pending_text_future is future:
+                    self._pending_text_future = None
+                self._pending_text_input = ""
+                self._pending_web_search_result = ""
+                self._pending_local_read_context = ""
+                self._request_channel = ""
+
+    def _complete_text_request(self, response: str) -> None:
+        future = self._pending_text_future
+        if future is not None and not future.done():
+            future.set_result(str(response or "").strip())
+
+    def _append_verified_web_sources(self, answer: str) -> str:
+        """Append URLs returned by the real web tool when the model omits them."""
+        result = self._pending_web_search_result
+        if not result or re.search(r"https?://", answer):
+            return answer
+        lines = result.splitlines()
+        sources: list[tuple[str, str]] = []
+        seen: set[str] = set()
+        for index, line in enumerate(lines):
+            url = line.strip()
+            if not url.startswith(("https://", "http://")) or url in seen:
+                continue
+            seen.add(url)
+            title = "Fuente web"
+            for previous in reversed(lines[:index]):
+                candidate = previous.strip()
+                if re.match(r"^\d+[\.)]\s+", candidate):
+                    title = re.sub(r"^\d+[\.)]\s*", "", candidate)
+                    break
+            sources.append((title[:200], url))
+            if len(sources) >= 6:
+                break
+        if not sources:
+            return answer
+        rendered = [answer.rstrip(), "", "Fuentes:"]
+        for index, (title, url) in enumerate(sources, 1):
+            rendered.extend([f"{index}. {title}", f"   {url}"])
+        return "\n".join(rendered)
+
+    @staticmethod
+    def _needs_verified_web(text: str) -> bool:
+        normalized = str(text or "").lower()
+        explicit_search = re.search(r"\b(busca|buscar|buscad[ao]|investiga|fuentes?)\b", normalized)
+        time_sensitive = re.search(r"\b(últim[oa]s?|actual(?:es)?|hoy|reciente(?:s)?)\b", normalized)
+        local_query = re.search(
+            r"\b(servidor|jarvis|lilith|logs?|errores?|journal|systemd|procesos?|ram|cpu|discos?)\b",
+            normalized,
+        )
+        return bool((explicit_search or time_sensitive) and not local_query)
+
+    @staticmethod
+    def _telegram_local_read_context(text: str) -> str:
+        """Route unambiguous server reads to the existing fixed, read-only tools."""
+        normalized = str(text or "").lower()
+        sections: list[str] = []
+        from core import headless_tools
+
+        if re.search(r"\b(logs?|errores?|journal)\b", normalized):
+            component = "jarvis"
+            for candidate in ("docker", "postgresql", "mosquitto", "lilith"):
+                if candidate in normalized:
+                    component = candidate
+                    break
+            sections.append(
+                f"Origen de logs: {component}\n{headless_tools.service_logs(component, lines=50)}"
+            )
+        if re.search(r"\b(discos?|espacio|almacenamiento|storage)\b", normalized):
+            sections.append(f"Discos: {headless_tools.disk_status()}")
+        if "docker" in normalized and not JarvisLive._needs_verified_web(normalized):
+            sections.append(f"Docker: {headless_tools.docker_status()}")
+        component_aliases = {
+            "postgres": "postgresql",
+            "postgresql": "postgresql",
+            "mosquitto": "mosquitto",
+            "mqtt": "mosquitto",
+            "ollama": "ollama",
+        }
+        for marker, component in component_aliases.items():
+            if marker in normalized:
+                sections.append(
+                    f"{component}: {headless_tools.infrastructure_status(component)}"
+                )
+                break
+        if re.search(r"\b(servicios? fallando|servicios? ca[ií]dos|systemd)\b", normalized):
+            sections.append(f"Unidades systemd de usuario fallidas: {headless_tools.systemd_list_failed()}")
+        if re.search(r"\b(procesos?|consume|consumiendo)\b", normalized):
+            sections.append(f"Procesos: {headless_tools.process_list()[:15]}")
+        if re.search(r"\b(c[oó]mo est[aá] el servidor|estado del servidor|cpu|ram|temperaturas?)\b", normalized):
+            sections.append(f"Sistema: {headless_tools.system_status()}")
+            sections.append(f"Infraestructura: {headless_tools.infrastructure_status('all')}")
+        return "\n\n".join(sections)
 
     async def _offer_typed_to_lilith(self, text: str) -> bool:
         """True if LILITH executed the typed text (do not also send it to Gemini)."""
@@ -3054,6 +3293,7 @@ class JarvisLive:
         if not outcome.handled:
             return False
         self.ui.write_log(f"LILITH: {outcome.message}")
+        self._complete_text_request(outcome.message)
         return True
 
     async def send_audio_chunk(
@@ -3462,6 +3702,21 @@ class JarvisLive:
     async def _execute_tool(self, fc) -> types.FunctionResponse:
         name = fc.name
         args = dict(fc.args or {})
+
+        if (
+            getattr(self, "_request_channel", "") == "telegram"
+            and name not in TELEGRAM_READ_ONLY_ACTIONS
+        ):
+            logger.warning("TELEGRAM_TOOL_DENIED tool=%s", name)
+            return types.FunctionResponse(
+                id=fc.id,
+                name=name,
+                response={
+                    "result": (
+                        f"Tool '{name}' is unavailable from the read-only Telegram channel."
+                    )
+                },
+            )
 
         if getattr(self, "cloud_safe", False) and name not in CLOUD_SAFE_ACTIONS:
             try:
@@ -4375,6 +4630,24 @@ class JarvisLive:
                 from core.headless_tools import system_status
                 result = str(system_status())
 
+            elif name == "disk_status":
+                from core.headless_tools import disk_status
+                result = str(disk_status())
+
+            elif name == "docker_status":
+                from core.headless_tools import docker_status
+                result = str(docker_status())
+
+            elif name == "infrastructure_status":
+                from core.headless_tools import infrastructure_status
+                result = str(infrastructure_status(args.get("component", "all")))
+
+            elif name == "service_logs":
+                from core.headless_tools import service_logs
+                result = service_logs(
+                    args.get("component", ""), lines=int(args.get("lines", 50))
+                )
+
             elif name == "process_list":
                 from core.headless_tools import process_list
                 filt = str(args.get("filter", ""))
@@ -4487,6 +4760,8 @@ class JarvisLive:
         if not self.ui.muted:
             self.ui.set_state("LISTENING")
 
+        if getattr(self, "_request_channel", "") == "telegram" and name == "web_search":
+            self._pending_web_search_result = str(result)
         print(f"[JARVIS] 📤 {name} → {str(result)[:80]}")
         logger.info("TOOL_RESULT  %s  result=%s", name, str(result)[:120])
         return types.FunctionResponse(
@@ -5825,6 +6100,17 @@ class JarvisLive:
                 logger.info("TURN start id=%s", live_turn_id)
                 async for response in self.session.receive():
                     received_message = True
+                    if (
+                        not _input_validated
+                        and self._pending_text_future is not None
+                        and self._pending_text_input
+                    ):
+                        # Gemini Live does not consistently echo text input through
+                        # input_transcription. Mark the explicit text turn as validated
+                        # so its read-only tools and response are handled normally.
+                        in_buf = [self._pending_text_input]
+                        _input_validated = True
+                        _last_input_transcript_t = time.monotonic()
                     if self._internal_continuation_active:
                         _internal_recovery_turn = True
                     if response.tool_call:
@@ -6113,6 +6399,10 @@ class JarvisLive:
                                 and not _false_barge_in_turn
                             )
                             full_out = " ".join(out_buf).strip()
+                            if self._pending_text_future is not None:
+                                self._complete_text_request(
+                                    full_out or "No he recibido una respuesta de texto del modelo."
+                                )
                             _void_classification = _classify_void_turn(
                                 input_text=full_in,
                                 output_text=full_out,

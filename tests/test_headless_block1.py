@@ -163,8 +163,13 @@ class TestHeadlessToolProfile(unittest.TestCase):
         from main import HEADLESS_ACTIONS
 
         EXPECTED_HEADLESS_TOOLS = {
+            "web_search",
             "date_time",
             "system_status",
+            "disk_status",
+            "docker_status",
+            "infrastructure_status",
+            "service_logs",
             "process_list",
             "process_info",
             "systemd_status",
@@ -665,17 +670,23 @@ class TestPlaybackStreamLifecycle(unittest.TestCase):
         self.assertFalse(jarvis.headless)
 
     def test_close_playback_stream_handles_none(self):
+        import threading
         from main import JarvisLive
-        JarvisLive._close_playback_stream(None)
+        jarvis = object.__new__(JarvisLive)
+        jarvis._playback_stream_lock = threading.Lock()
+        jarvis._close_playback_stream(None)
 
     def test_close_playback_stream_handles_exception(self):
+        import threading
         from main import JarvisLive
 
         class FakeStream:
             def stop(self): raise RuntimeError("test")
             def close(self): pass
 
-        JarvisLive._close_playback_stream(FakeStream())
+        jarvis = object.__new__(JarvisLive)
+        jarvis._playback_stream_lock = threading.Lock()
+        jarvis._close_playback_stream(FakeStream())
 
     def test_silence_prime_headless(self):
         """Headless _open_playback_stream writes silence to prime the buffer."""

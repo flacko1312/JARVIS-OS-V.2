@@ -42,6 +42,10 @@ def _register(tool: str, action: str, level: PermissionLevel, desc: str = "") ->
 
 # ── System tools ──
 _register("system_status", "*", PermissionLevel.READ_ONLY, "System metrics are always safe to read")
+_register("disk_status", "*", PermissionLevel.READ_ONLY, "Filesystem capacity is read-only")
+_register("docker_status", "*", PermissionLevel.READ_ONLY, "Docker inspection is read-only")
+_register("infrastructure_status", "*", PermissionLevel.READ_ONLY, "Known service probes are read-only")
+_register("service_logs", "*", PermissionLevel.READ_ONLY, "Bounded allowlisted log reading is read-only")
 _register("process_list", "*", PermissionLevel.READ_ONLY, "Process listing is read-only")
 _register("process_info", "*", PermissionLevel.READ_ONLY, "Process detail is read-only")
 _register("systemd_status", "*", PermissionLevel.READ_ONLY, "Service status is read-only")

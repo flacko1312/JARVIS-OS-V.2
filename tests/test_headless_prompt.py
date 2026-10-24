@@ -1,4 +1,4 @@
-"""Tests for the Headless system prompt — ensures it matches the 16-tool profile."""
+"""Tests for the Headless system prompt — ensures it matches the current tool profile."""
 import ast
 import re
 import unittest
@@ -10,10 +10,11 @@ def _read_main():
 
 
 class TestHeadlessSystemRules(unittest.TestCase):
-    """Verify HEADLESS_SYSTEM_RULES reflects the current 16-tool profile."""
+    """Verify HEADLESS_SYSTEM_RULES reflects the current tool profile."""
 
     EXPECTED_TOOLS = {
-        "date_time", "system_status", "process_list", "process_info",
+        "web_search", "date_time", "system_status", "disk_status", "docker_status",
+        "infrastructure_status", "service_logs", "process_list", "process_info",
         "systemd_status", "systemd_action", "systemd_list_failed", "journal_read",
         "lilith_memory_search", "lilith_memory_store", "lilith_memory_delete",
         "lilith_home_action", "lilith_home_status", "lilith_health",

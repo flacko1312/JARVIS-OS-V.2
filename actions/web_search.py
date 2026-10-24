@@ -37,24 +37,48 @@ def _get_api_key() -> str:
 
 
 def _gemini_search(query: str) -> str:
-    from google import genai
+    from core.gemini_config import component_model, gemini_client
 
-    client   = genai.Client(api_key=_get_api_key())
+    client = gemini_client(api_key=_get_api_key())
     response = client.models.generate_content(
-        model="gemini-2.5-flash",
+        model=component_model("web_search"),
         contents=query,
         config={"tools": [{"google_search": {}}]},
     )
 
+    candidate = response.candidates[0]
     text = ""
-    for part in response.candidates[0].content.parts:
+    for part in candidate.content.parts:
         if hasattr(part, "text") and part.text:
             text += part.text
 
     text = text.strip()
     if not text:
         raise ValueError("Gemini returned an empty response.")
+    sources = _grounding_sources(candidate)
+    if sources and "Fuentes:" not in text:
+        lines = [text, "", "Fuentes:"]
+        for index, source in enumerate(sources, 1):
+            lines.extend([f"{index}. {source['title']}", f"   {source['url']}"])
+        text = "\n".join(lines)
     return text
+
+
+def _grounding_sources(candidate) -> list[dict[str, str]]:
+    """Extract real URLs returned by Gemini grounding metadata, preserving order."""
+    metadata = getattr(candidate, "grounding_metadata", None)
+    chunks = getattr(metadata, "grounding_chunks", None) or []
+    sources: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for chunk in chunks:
+        web = getattr(chunk, "web", None)
+        url = str(getattr(web, "uri", "") or "").strip()
+        if not url or url in seen or not url.startswith(("https://", "http://")):
+            continue
+        seen.add(url)
+        title = str(getattr(web, "title", "") or "Fuente web").strip()
+        sources.append({"title": title, "url": url})
+    return sources
 
 
 def _ddg_search(query: str, max_results: int = 6) -> list[dict]:

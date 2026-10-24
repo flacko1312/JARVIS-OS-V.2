@@ -157,9 +157,13 @@ def main() -> None:
 
     import health_server
     health_server.start(jarvis)
+    import text_gateway_server
+    text_gateway = text_gateway_server.start(jarvis)
     from core.voice_stability import get_monitor as _get_voice_monitor
     _get_voice_monitor().start()
     logger.info("Health server listening on 127.0.0.1:%d", 7470)
+    if not text_gateway.get("started"):
+        logger.error("Text gateway unavailable: %s", text_gateway.get("reason", "unknown error"))
 
     jarvis.start_conversation()
 
