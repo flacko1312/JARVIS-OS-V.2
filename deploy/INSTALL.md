@@ -42,3 +42,8 @@ journalctl --user -u jarvis-headless -f
 - **StartLimitBurst=4 / StartLimitIntervalSec=120**: max 4 restarts in 2 minutes
 - **KillSignal=SIGTERM**: clean shutdown via `jarvis.request_shutdown()`
 - **Health endpoint**: 127.0.0.1:7470 (local only, daemon thread dies with process)
+
+## Telegram text gateway
+
+See [`../docs/TELEGRAM_GATEWAY.md`](../docs/TELEGRAM_GATEWAY.md) for the owner-only long-polling
+adapter, private configuration, systemd unit, operations and physical acceptance sequence.

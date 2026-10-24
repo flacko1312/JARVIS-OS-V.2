@@ -6,6 +6,7 @@ and log reading — all with proper permission gating.
 from __future__ import annotations
 
 import logging
+import json
 import os
 import shutil
 import subprocess
@@ -14,6 +15,8 @@ from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
 from typing import Any
+from urllib.error import URLError
+from urllib.request import urlopen
 
 logger = logging.getLogger("jarvis.headless.tools")
 
@@ -56,6 +59,16 @@ _JOURNAL_ALLOWLIST = frozenset({
 
 _MAX_JOURNAL_LINES = 100
 _MAX_PROCESS_LIST = 50
+
+_INFRASTRUCTURE_COMPONENTS = frozenset({
+    "all", "docker", "postgresql", "mosquitto", "ollama", "lilith", "jarvis",
+})
+
+_CONTAINER_COMPONENTS = {
+    "postgresql": "lilith_postgres",
+    "mosquitto": "lilith_mqtt",
+    "lilith": "lilith_core",
+}
 
 
 def system_status() -> dict[str, Any]:
@@ -153,6 +166,161 @@ def system_status() -> dict[str, Any]:
         result["jarvis_service"] = "unknown"
 
     return result
+
+
+def disk_status() -> list[dict[str, Any]]:
+    """Return capacity for real local filesystems without accepting a path or command."""
+    mounts: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    try:
+        with open("/proc/mounts", encoding="utf-8") as proc_mounts:
+            rows = [line.split()[:3] for line in proc_mounts if len(line.split()) >= 3]
+    except OSError as exc:
+        return [{"error": str(exc)}]
+
+    ignored = {
+        "autofs", "bpf", "cgroup", "cgroup2", "configfs", "debugfs", "devpts",
+        "devtmpfs", "efivarfs", "fusectl", "hugetlbfs", "mqueue", "overlay",
+        "proc", "pstore", "securityfs", "squashfs", "sysfs", "tmpfs", "tracefs",
+    }
+    for device, mount, filesystem in rows:
+        if filesystem in ignored or mount in seen:
+            continue
+        try:
+            stats = os.statvfs(mount)
+        except OSError:
+            continue
+        total = stats.f_blocks * stats.f_frsize
+        available = stats.f_bavail * stats.f_frsize
+        if total <= 0:
+            continue
+        seen.add(mount)
+        mounts.append({
+            "device": device,
+            "mount": mount.replace("\\040", " "),
+            "filesystem": filesystem,
+            "total_gb": round(total / (1024 ** 3), 1),
+            "available_gb": round(available / (1024 ** 3), 1),
+            "used_pct": round((1 - available / total) * 100, 1),
+        })
+    return mounts
+
+
+def _run_json_lines(command: list[str], timeout: int = 8) -> tuple[list[dict[str, Any]], str]:
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, timeout=timeout)
+    except (subprocess.SubprocessError, OSError) as exc:
+        return [], str(exc)
+    if result.returncode != 0:
+        return [], (result.stderr.strip() or f"exit code {result.returncode}")
+    rows: list[dict[str, Any]] = []
+    try:
+        for line in result.stdout.splitlines():
+            if line.strip():
+                rows.append(json.loads(line))
+    except json.JSONDecodeError as exc:
+        return [], f"invalid Docker response: {exc}"
+    return rows, ""
+
+
+def docker_status() -> dict[str, Any]:
+    """Read Docker daemon and container state using a fixed, non-mutating command."""
+    rows, error = _run_json_lines(["docker", "ps", "-a", "--format", "{{json .}}"])
+    if error:
+        return {"available": False, "error": error}
+    containers = [
+        {
+            "name": row.get("Names", ""),
+            "image": row.get("Image", ""),
+            "state": row.get("State", "unknown"),
+            "status": row.get("Status", ""),
+        }
+        for row in rows
+    ]
+    return {
+        "available": True,
+        "total": len(containers),
+        "running": sum(item["state"] == "running" for item in containers),
+        "not_running": [item for item in containers if item["state"] != "running"],
+        "containers": containers,
+    }
+
+
+def _container_status(name: str) -> dict[str, Any]:
+    rows, error = _run_json_lines([
+        "docker", "inspect", "--format",
+        "{{json .State}}", name,
+    ])
+    if error:
+        return {"available": False, "container": name, "error": error}
+    state = rows[0] if rows else {}
+    return {
+        "available": True,
+        "container": name,
+        "running": bool(state.get("Running")),
+        "status": state.get("Status", "unknown"),
+        "health": (state.get("Health") or {}).get("Status", "not_configured"),
+        "started_at": state.get("StartedAt", ""),
+    }
+
+
+def _ollama_status() -> dict[str, Any]:
+    try:
+        with urlopen("http://127.0.0.1:11434/api/tags", timeout=3) as response:
+            payload = json.loads(response.read(512 * 1024))
+        models = [item.get("name", "") for item in payload.get("models", [])]
+        return {"available": True, "running": True, "models": models}
+    except (OSError, URLError, ValueError, json.JSONDecodeError) as exc:
+        return {"available": False, "running": False, "error": str(exc)}
+
+
+def infrastructure_status(component: str = "all") -> dict[str, Any]:
+    """Inspect known JARVIS/LILITH infrastructure; input selects a fixed probe only."""
+    selected = str(component or "all").strip().lower()
+    if selected not in _INFRASTRUCTURE_COMPONENTS:
+        return {"error": f"Unknown component '{selected}'."}
+    probes: dict[str, Any] = {}
+    wanted = _INFRASTRUCTURE_COMPONENTS - {"all"} if selected == "all" else {selected}
+    if "docker" in wanted:
+        probes["docker"] = docker_status()
+    for name, container in _CONTAINER_COMPONENTS.items():
+        if name in wanted:
+            probes[name] = _container_status(container)
+    if "ollama" in wanted:
+        probes["ollama"] = _ollama_status()
+    if "jarvis" in wanted:
+        probes["jarvis"] = systemd_status("jarvis-headless")
+    return probes if selected == "all" else probes.get(selected, {})
+
+
+def service_logs(component: str, lines: int = 50) -> str:
+    """Read bounded logs from a fixed service/container allowlist."""
+    selected = str(component or "").strip().lower()
+    lines = max(1, min(int(lines), _MAX_JOURNAL_LINES))
+    if selected in _CONTAINER_COMPONENTS:
+        command = ["docker", "logs", "--tail", str(lines), _CONTAINER_COMPONENTS[selected]]
+    elif selected == "docker":
+        command = [
+            "journalctl", "-u", "docker.service", "--no-pager", "-n", str(lines),
+            "--output=short-iso",
+        ]
+    elif selected == "jarvis":
+        return journal_read("jarvis-headless", lines=lines)
+    else:
+        return f"Component '{component}' is not in the allowed log list."
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, timeout=10)
+        output = "\n".join(part for part in (result.stdout.strip(), result.stderr.strip()) if part)
+        return _redact_log_output(output) or "(no entries)"
+    except (subprocess.SubprocessError, OSError) as exc:
+        return f"Error reading logs: {exc}"
+
+
+def _redact_log_output(output: str) -> str:
+    for secret_pattern in ("API_KEY", "TOKEN", "SECRET", "PASSWORD", "BEARER"):
+        if secret_pattern in output.upper():
+            return "[REDACTED: potential secret detected in log output]"
+    return output
 
 
 def _read_temperatures() -> dict[str, str] | None:
@@ -312,11 +480,7 @@ def journal_read(service: str, lines: int = 50, priority: str = "", since: str =
     try:
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
         output = r.stdout.strip()
-        for secret_pattern in ("API_KEY", "TOKEN", "SECRET", "PASSWORD", "BEARER"):
-            if secret_pattern in output.upper():
-                output = "[REDACTED: potential secret detected in log output]"
-                break
-        return output or "(no entries)"
+        return _redact_log_output(output) or "(no entries)"
     except (subprocess.SubprocessError, OSError) as e:
         return f"Error reading journal: {e}"
 

@@ -163,8 +163,13 @@ class TestHeadlessToolProfile(unittest.TestCase):
         from main import HEADLESS_ACTIONS
 
         EXPECTED_HEADLESS_TOOLS = {
+            "web_search",
             "date_time",
             "system_status",
+            "disk_status",
+            "docker_status",
+            "infrastructure_status",
+            "service_logs",
             "process_list",
             "process_info",
             "systemd_status",
