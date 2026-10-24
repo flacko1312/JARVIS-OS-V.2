@@ -1,6 +1,14 @@
-# JARVIS Project State
+# AURORA / JARVIS Windows — Project State
 
-Status: **CANONICAL CURRENT STATE** as of 2026-10-23.
+Status: **CANONICAL CURRENT STATE** as of 2026-10-24.
+
+## Ecosystem boundary
+
+- Runtime checkout: `C:\JARVIS`.
+- This checkout is the canonical **AURORA / JARVIS Windows adapter**.
+- **LILITH CORE** is the central persistent/cognitive core; AURORA does not replace it.
+- JARVIS Ubuntu Headless is a separate Ubuntu adapter/runtime on `server-lilith` at `/home/flako1312/jarvis-headless`.
+- The final 24-hour ecosystem soak is **DEFERRED** until AURORA, JARVIS Ubuntu, Monitor and the final integration baseline are all frozen. Windows work may continue now without pretending a final soak is active.
 
 ## Verdict
 

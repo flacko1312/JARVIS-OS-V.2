@@ -1,6 +1,12 @@
-# JARVIS Architecture
+# AURORA / JARVIS Windows — Architecture
 
-Status: **CANONICAL**. Last reconciled against executable code: 2026-10-16. When it conflicts with historical prose, code plus tests plus the recovery audit win.
+Status: **CANONICAL**. Last reconciled against executable code and ecosystem topology: 2026-10-24. When it conflicts with historical prose, code plus tests plus the current project state win.
+
+## Ecosystem role
+
+**LILITH CORE is the central persistent/cognitive core.** AURORA / JARVIS Windows is the Windows adapter/runtime at `C:\JARVIS`: it owns the Windows human interface, Gemini Live session, microphone/playback and Windows-local actions, while persistent cognitive state, Home Assistant authority, routines, approvals and long-term memory remain in LILITH CORE.
+
+JARVIS Ubuntu Headless is a separate Ubuntu adapter/runtime on `server-lilith` at `/home/flako1312/jarvis-headless`. The two adapters may share repository ancestry and integration contracts, but neither should become a second independent cognitive core.
 
 ## System boundary
 

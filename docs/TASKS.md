@@ -1,6 +1,10 @@
-# JARVIS Tasks
+# AURORA / JARVIS Windows — Tasks
 
-Status: **CANONICAL ACTIONABLE BACKLOG**. Do not use historical prompts or audit findings as a second task system.
+Status: **CANONICAL ACTIONABLE BACKLOG** as of 2026-10-24. Do not use historical prompts or audit findings as a second task system.
+
+## Global coordination
+
+AURORA is the active Windows adapter for LILITH CORE. JARVIS Ubuntu Headless is maintained separately on `server-lilith`. The final 24-hour ecosystem soak is deferred until AURORA, Ubuntu Headless, Monitor and the integration configuration are all frozen. Continue Windows stabilization now; do not treat partial soak evidence as final certification.
 
 ## Current voice stabilization state — 2026-10-23
 
@@ -23,7 +27,7 @@ Status: **PASS / NO NEW SILENT BLOCKER FOUND**.
 - Reviewed shadow_v4 runtime window: 0 errors and 0 warnings.
 - The old 29-item physical plan is retained as historical certification coverage, but it is no longer the actionable backlog. Use this file plus AURORA_SILENT_AUDIT_2026-10-23.md for current closure order.
 
-Current critical closure order: **Spotify v4 physical acceptance -> final barge-in/audio-device recovery -> real Gemini transport recovery -> soak**. Keep the 2500 ms turn timing frozen.
+Current critical closure order for AURORA: **Spotify v4 physical acceptance -> final barge-in/audio-device recovery -> real Gemini transport recovery -> freeze AURORA**. The global soak comes later, after Ubuntu Headless, Monitor and the integration baseline are also frozen. Keep the 2500 ms turn timing frozen.
 
 ## Current validation state
 
@@ -33,7 +37,7 @@ Status: **PENDING / NOT PHYSICALLY FORCED**.
 
 F8 pause/resume and immediate conversational continuity are physically validated. The owner established `88`, paused and resumed with F8, and JARVIS correctly answered `176` when asked for the previous number multiplied by two. Normal multi-turn operation stays on one Live connection and resume produces no new greeting.
 
-The next task is to establish context in an active conversation, force a real recoverable network/Live interruption, observe `RECONNECTING` and return to `LISTENING`, then verify the prior immediate context without a greeting, traceback, or LILITH-memory workaround. Do not mark session resumption as physically passed until this succeeds. Do not start JL-A10 work or the 24-hour soak before this validation is complete.
+The next task is to establish context in an active conversation, force a real recoverable network/Live interruption, observe `RECONNECTING` and return to `LISTENING`, then verify the prior immediate context without a greeting, traceback, or LILITH-memory workaround. Do not mark session resumption as physically passed until this succeeds. JL-A10 is already closed; this transport-recovery check is a separate remaining physical gate. The final 24-hour soak stays deferred until the whole ecosystem is frozen.
 
 ### AUT-9 — subsequent autonomous work block
 

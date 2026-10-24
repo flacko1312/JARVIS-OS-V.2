@@ -1,4 +1,13 @@
-# JARVIS Changelog
+# AURORA / JARVIS Windows — Changelog
+
+## 2026-10-24 — ecosystem documentation reconciliation
+
+- Reaffirmed `C:\JARVIS` as the canonical AURORA/Windows runtime and GitHub `main` line.
+- Documented LILITH CORE as the central persistent/cognitive authority, with AURORA Windows and JARVIS Ubuntu Headless as separate adapters.
+- Recorded the canonical Ubuntu Headless runtime at `/home/flako1312/jarvis-headless` and removed ambiguity with its development/legacy clones.
+- Corrected the task backlog so JL-A10 remains closed and Gemini transport recovery is treated as a separate physical gate.
+- Deferred the final 24-hour ecosystem soak until AURORA, Ubuntu Headless, Monitor and the integration baseline are all frozen.
+- Current Windows stabilization work remains active; this documentation update does not change runtime behavior.
 
 ## 2026-10-23 - voice turn timing, transcript assembly, and Spotify isolation
 

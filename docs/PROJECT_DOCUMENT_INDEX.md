@@ -1,6 +1,8 @@
-# JARVIS Document Index
+# AURORA / JARVIS Windows — Document Index
 
 Navigation only. This file is not a second architecture, state, or backlog authority.
+
+Deployment note (2026-10-24): `C:\JARVIS` is the canonical AURORA/Windows runtime and GitHub `main` line. JARVIS Ubuntu Headless is maintained separately on `server-lilith` at `/home/flako1312/jarvis-headless`. LILITH CORE remains the central persistent/cognitive authority for both adapters.
 
 | Path | Purpose | Classification | Canonical authority | Maintained | Relationship / superseded by |
 |---|---|---|---|---|---|
