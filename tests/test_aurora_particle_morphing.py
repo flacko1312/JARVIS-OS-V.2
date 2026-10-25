@@ -48,7 +48,8 @@ def test_graph_is_deterministic_irregular_and_not_a_spherical_shell():
     assert np.array_equal(first.nodes, second.nodes)
     radii = np.linalg.norm(first.nodes, axis=1)
     assert np.std(radii) > .16
-    assert np.ptp(first.nodes[:, 0]) > np.ptp(first.nodes[:, 1])
+    assert np.ptp(first.nodes[:, 2]) < max(np.ptp(first.nodes[:, 0]), np.ptp(first.nodes[:, 1]))
+    assert abs(float(np.ptp(first.nodes[:, 1]) - np.ptp(first.nodes[:, 0]))) < .20
     assert np.count_nonzero(radii < .20) > 45
 
 
@@ -116,6 +117,7 @@ def test_shader_separates_rms_bass_mid_high_and_directed_impulses():
     assert "absorb" in widget.DEFORM_GLSL and "emit" in widget.DEFORM_GLSL
     assert "1.0-phase" in widget.EDGE_FRAGMENT_SHADER
     assert "pulse" in widget.EDGE_FRAGMENT_SHADER
+    assert "uGlowPass" in widget.EDGE_FRAGMENT_SHADER
     assert "glDrawArrays(GL_LINES" in open(widget.__file__, encoding="utf-8").read()
     assert "glDrawArrays(GL_POINTS" in open(widget.__file__, encoding="utf-8").read()
 

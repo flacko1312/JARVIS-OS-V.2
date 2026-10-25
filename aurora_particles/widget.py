@@ -46,12 +46,16 @@ vec3 neuralDeform(vec3 p,float seed,float role){
   float absorb=listening*(.030+.145*rms+.055*bass)*(.30+.70*role);
   float emit=speaking*(.035+.135*rms+.045*bass)*(.24+.76*role);
   p*=breath-absorb+emit;
+  p*=1.0-standby*.12*role;
+  float standbyEnvelope=1.0-standby*.08*role;
+  p.x*=standbyEnvelope+listening*.12+speaking*.28;
+  p.y*=1.0+listening*.22+processing*.12+speaking*.35;
   float curl=(processing*(.045+.11*mid)+listening*.035*mid+speaking*.050*mid);
   p+=vec3(-p.y,p.x,sin(seed*18.0+uTime*1.3)*.24)*curl*(.25+.75*role);
   p+=radial*high*(.006+.020*role)*sin(uTime*7.0+seed*73.0);
   p.z+=sin(uTime*.53+seed*11.0)*(.006+.010*standby);
   p=rotY(uTime*(.020+.025*processing))*rotX(sin(uTime*.19)*.055)*p;
-  p=p*.90+vec3(0.,.045,0.);
+  p=p*.80+vec3(0.,.075,0.);
   p.x/=max(.56,uAspect);
   return p;
 }
@@ -61,7 +65,7 @@ NODE_VERTEX_SHADER = """
 #version 120
 attribute vec3 aPosition;
 attribute float aSeed,aRole,aDepth;
-uniform float uTime,uAspect,uPointSize,uError;
+uniform float uTime,uAspect,uPointSize,uError,uNodeGlow;
 uniform vec4 uState,uAudio;
 varying float vSeed,vRole,vDepth,vEnergy;
 """ + DEFORM_GLSL + """
@@ -72,7 +76,7 @@ void main(){
   float high=uAudio.w,rms=uAudio.x;
   float spark=step(.86,fract(aSeed*19.0+uTime*(.10+high*.85)))*high;
   float depthScale=.68+.54*aDepth;
-  gl_PointSize=uPointSize*depthScale*min(1.65,1.0+high*.40+rms*.18+spark*.28);
+  gl_PointSize=uPointSize*depthScale*min(1.65,1.0+high*.40+rms*.18+spark*.28)*mix(1.0,3.2,uNodeGlow);
   vSeed=aSeed;vRole=aRole;vDepth=aDepth;
   vEnergy=clamp(.20+processing*.24+speaking*.24+listening*.14+rms*.42+spark*.28+uError*.20,0.,1.);
 }
@@ -82,16 +86,17 @@ NODE_FRAGMENT_SHADER = """
 #version 120
 uniform vec3 uViolet,uMagenta,uCyan;
 uniform vec4 uState,uAudio;
+uniform float uNodeGlow;
 varying float vSeed,vRole,vDepth,vEnergy;
 void main(){
   vec2 q=gl_PointCoord-vec2(.5);float d=dot(q,q);if(d>.25)discard;
   float halo=smoothstep(.25,.01,d);
   vec3 branch=mix(vec3(.96,.12,.58),vec3(.06,.78,1.0),clamp(vRole*.72+fract(vSeed*7.0)*.28,0.,1.));
   vec3 color=mix(vec3(.45,.12,.96),branch,.38+.48*vRole);
-  float core=(1.0-vRole)*uState.w*(.35+.65*uAudio.x);
+  float core=(1.0-vRole)*(.18+uState.z*.22+uState.w*(.38+.62*uAudio.x));
   color=mix(color,vec3(1.0,.94,1.0),clamp(core,0.,.82));
-  float alpha=halo*(.62+.24*vEnergy)*(.72+.28*vDepth);
-  gl_FragColor=vec4(color*(.54+.24*vEnergy),alpha);
+  float alpha=halo*(.62+.24*vEnergy)*(.72+.28*vDepth)*mix(1.0,.13,uNodeGlow);
+  gl_FragColor=vec4(color*(.54+.24*vEnergy+uNodeGlow*.22),alpha);
 }
 """
 
@@ -113,7 +118,7 @@ void main(){
 
 EDGE_FRAGMENT_SHADER = """
 #version 120
-uniform float uTime;
+uniform float uTime,uGlowPass;
 uniform vec3 uViolet,uMagenta,uCyan;
 uniform vec4 uState,uAudio;
 varying float vSeed,vPath,vDepth,vEnergy;
@@ -126,11 +131,12 @@ void main(){
   float pulse=exp(-delta*delta/(.00022+uAudio.w*.00070));
   float occasional=step(.76,fract(vSeed*13.7+uTime*.035));
   pulse*=clamp(.10+listening*.80+processing*.92+speaking*.88+uState.x*.12*occasional,0.,1.);
-  vec3 base=mix(vec3(.46,.10,.92),vec3(.98,.10,.55),fract(vSeed*5.2));
-  base=mix(base,vec3(.05,.82,1.0),clamp(listening*.55+vPath*.25,0.,.72));
+  vec3 base=mix(vec3(.48,.12,.98),vec3(1.0,.08,.58),fract(vSeed*5.2));
+  base=mix(base,vec3(.04,.78,1.0),clamp(listening*.32+vPath*.18+step(.82,vSeed)*.34,0.,.66));
   vec3 color=mix(base,vec3(1.0,.95,1.0),pulse*.48);
-  float alpha=(.30+.16*vEnergy+pulse*.26)*(.66+.34*vDepth);
-  gl_FragColor=vec4(color*(.54+pulse*.28),alpha);
+  float alpha=(.27+.15*vEnergy+pulse*.30)*(.62+.38*vDepth);
+  alpha*=mix(1.0,.24,uGlowPass);
+  gl_FragColor=vec4(color*(.58+pulse*.34+uGlowPass*.16),alpha);
 }
 """
 
@@ -153,6 +159,12 @@ class ParticleMorphingCanvas(QOpenGLWidget):
         "STANDBY": "STANDBY", "IDLE": "STANDBY", "INITIALISING": "STANDBY",
         "LISTENING": "ESCUCHANDO", "THINKING": "PROCESANDO",
         "PROCESSING": "PROCESANDO", "SPEAKING": "HABLANDO", "MUTED": "MIC OFF",
+    }
+    _STATE_SUBTITLES = {
+        "STANDBY": "ESPERANDO", "IDLE": "ESPERANDO", "INITIALISING": "INICIANDO",
+        "LISTENING": "TU VOZ ENTRA", "THINKING": "ANALIZANDO",
+        "PROCESSING": "ANALIZANDO", "SPEAKING": "JARVIS RESPONDE",
+        "MUTED": "MICRÓFONO SILENCIADO",
     }
 
     def __init__(self, face_path: str = "", parent=None, config=None,
@@ -353,11 +365,16 @@ class ParticleMorphingCanvas(QOpenGLWidget):
             stride=24
             edge=self._edge_program; edge.bind(); self._edge_vbo.bind()
             self._attributes(edge,(("aPosition",0,3),("aSeed",12,1),("aPath",16,1),("aDepth",20,1)),stride)
-            self._uniforms(edge); g.glDrawArrays(GL_LINES,0,len(self._graph.edge_vertices)); self._edge_vbo.release(); edge.release()
+            self._uniforms(edge)
+            edge.setUniformValue("uGlowPass",1.0); g.glLineWidth(2.4); g.glDrawArrays(GL_LINES,0,len(self._graph.edge_vertices))
+            edge.setUniformValue("uGlowPass",0.0); g.glLineWidth(1.0); g.glDrawArrays(GL_LINES,0,len(self._graph.edge_vertices))
+            self._edge_vbo.release(); edge.release()
             node=self._node_program; node.bind(); self._node_vbo.bind()
             self._attributes(node,(("aPosition",0,3),("aSeed",12,1),("aRole",16,1),("aDepth",20,1)),stride)
             self._uniforms(node); node.setUniformValue("uPointSize",float(self._quality.current.point_size))
-            g.glDrawArrays(GL_POINTS,0,self._quality.current.particle_count); self._node_vbo.release(); node.release()
+            node.setUniformValue("uNodeGlow",1.0); g.glDrawArrays(GL_POINTS,0,self._quality.current.particle_count)
+            node.setUniformValue("uNodeGlow",0.0); g.glDrawArrays(GL_POINTS,0,self._quality.current.particle_count)
+            self._node_vbo.release(); node.release()
         else: self._paint_fallback()
         self._paint_overlay()
 
@@ -383,6 +400,10 @@ class ParticleMorphingCanvas(QOpenGLWidget):
 
     def _paint_overlay(self):
         painter=QPainter(self); label=self._STATE_LABELS.get(self.state,self.state)
-        font=painter.font(); font.setPixelSize(max(11,min(15,self.height()//34))); font.setLetterSpacing(font.SpacingType.AbsoluteSpacing,2.0); painter.setFont(font)
-        rect=self.rect().adjusted(24,0,-24,-26); rect.setTop(max(0,self.height()-70)); painter.setPen(QColor(198,151,255,205))
-        painter.drawText(rect,int(Qt.AlignmentFlag.AlignHCenter|Qt.AlignmentFlag.AlignVCenter),label); painter.end()
+        subtitle=self._STATE_SUBTITLES.get(self.state,"")
+        font=painter.font(); font.setBold(True); font.setPixelSize(max(14,min(20,self.height()//28))); font.setLetterSpacing(font.SpacingType.AbsoluteSpacing,4.0); painter.setFont(font)
+        rect=self.rect().adjusted(24,0,-24,-42); rect.setTop(max(0,self.height()-104)); painter.setPen(QColor(255,71,190,225))
+        painter.drawText(rect,int(Qt.AlignmentFlag.AlignHCenter|Qt.AlignmentFlag.AlignVCenter),label)
+        subfont=painter.font(); subfont.setBold(False); subfont.setPixelSize(max(8,min(11,self.height()//48))); subfont.setLetterSpacing(subfont.SpacingType.AbsoluteSpacing,2.4); painter.setFont(subfont)
+        subrect=rect.translated(0,24); painter.setPen(QColor(190,153,255,180))
+        painter.drawText(subrect,int(Qt.AlignmentFlag.AlignHCenter|Qt.AlignmentFlag.AlignVCenter),subtitle); painter.end()

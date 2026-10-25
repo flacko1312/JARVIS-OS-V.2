@@ -36,9 +36,8 @@ def build_neural_graph(node_count: int, edge_count: int, seed: int = 7319) -> Ne
     rng = np.random.default_rng(seed + node_count * 3 + edge_count)
     nodes = np.zeros((node_count, 3), dtype=np.float32)
     parents = np.zeros(node_count, dtype=np.int32)
-    branch_count = max(12, min(28, node_count // 30))
+    branch_count = max(20, min(44, node_count // 20))
     cursor = 1
-    branch_nodes: list[list[int]] = []
 
     # Compact asymmetric nucleus: no spherical shell and no orbital geometry.
     nucleus_count = max(20, int(node_count * .12))
@@ -48,38 +47,45 @@ def build_neural_graph(node_count: int, edge_count: int, seed: int = 7319) -> Ne
 
     allocations = np.full(branch_count, (node_count - cursor) // branch_count, dtype=np.int32)
     allocations[:(node_count - cursor) % branch_count] += 1
-    golden = np.pi * (3.0 - np.sqrt(5.0))
     for branch_index, amount in enumerate(allocations):
         if amount <= 0:
             continue
-        azimuth = branch_index * golden + rng.normal(0.0, .15)
-        elevation = rng.uniform(-.72, .72)
+        azimuth = (branch_index / branch_count) * np.pi * 2.0 + rng.normal(0.0, .055)
+        vertical_sign = 1.0 if np.sin(azimuth) >= 0.0 else -1.0
         direction = _unit(np.asarray((
-            np.cos(azimuth) * np.cos(elevation),
-            np.sin(elevation) * .78,
-            np.sin(azimuth) * np.cos(elevation),
+            np.cos(azimuth) * rng.uniform(.72, .94),
+            np.sin(azimuth) * rng.uniform(.86, 1.08),
+            np.sin(azimuth * 2.3 + .7) * rng.uniform(.26, .48),
         ), dtype=np.float32))
         parent = int(rng.integers(0, nucleus_count))
-        branch: list[int] = []
-        curl_axis = _unit(rng.normal(size=3).astype(np.float32))
+        start = nodes[parent].copy()
+        length = rng.uniform(.74, 1.08)
+        endpoint = start * .18 + direction * length
+        tangent = _unit(np.cross(direction, _unit(rng.normal(size=3).astype(np.float32))))
+        control_a = start + direction * length * .28 + tangent * rng.uniform(.08, .18)
+        control_b = start + direction * length * .70 - tangent * rng.uniform(.06, .16)
+        control_b[1] += vertical_sign * rng.uniform(.03, .11)
         for step in range(int(amount)):
             index = cursor
             cursor += 1
             progress = (step + 1) / max(1, int(amount))
-            direction = _unit(direction * .94 + rng.normal(0.0, .10, 3).astype(np.float32))
-            curve = np.cross(direction, curl_axis) * (.018 + .018 * np.sin(progress * np.pi))
-            length = rng.uniform(.033, .055) * (1.0 - progress * .14)
-            nodes[index] = nodes[parent] + direction * length + curve
+            omt = 1.0 - progress
+            point = (
+                omt**3 * start
+                + 3.0 * omt**2 * progress * control_a
+                + 3.0 * omt * progress**2 * control_b
+                + progress**3 * endpoint
+            )
+            jitter = rng.normal(0.0, .006, 3).astype(np.float32) * np.sin(progress*np.pi)
+            nodes[index] = point + jitter
             parents[index] = parent
-            branch.append(index)
             parent = index
-        branch_nodes.append(branch)
 
     # Normalize into an anisotropic, slightly tilted volume with open negative
     # space. This keeps the silhouette organic instead of becoming a ball.
     nodes -= nodes.mean(axis=0, keepdims=True)
-    nodes[:, 0] *= 1.10
-    nodes[:, 1] *= .86
+    nodes[:, 0] *= 1.12
+    nodes[:, 1] *= 1.06
     nodes[:, 2] *= .94
     radius = np.percentile(np.linalg.norm(nodes, axis=1), 99.5)
     nodes /= max(float(radius), 1e-6)
@@ -90,14 +96,14 @@ def build_neural_graph(node_count: int, edge_count: int, seed: int = 7319) -> Ne
     # Add local cross-links. Candidate sampling avoids a large NxN allocation.
     while len(edges) < edge_count:
         a = int(rng.integers(0, node_count))
-        candidates = rng.integers(0, node_count, size=12)
+        candidates = rng.integers(0, node_count, size=18)
         distances = np.linalg.norm(nodes[candidates] - nodes[a], axis=1)
         b = int(candidates[int(np.argmin(distances + (candidates == a) * 100.0))])
         key = tuple(sorted((a, b)))
         if a == b or key in seen:
             continue
         # Keep graph routes local enough to read as filaments, not chords.
-        if float(np.linalg.norm(nodes[a] - nodes[b])) > .36:
+        if float(np.linalg.norm(nodes[a] - nodes[b])) > .24:
             continue
         seen.add(key)
         if np.linalg.norm(nodes[a]) <= np.linalg.norm(nodes[b]):

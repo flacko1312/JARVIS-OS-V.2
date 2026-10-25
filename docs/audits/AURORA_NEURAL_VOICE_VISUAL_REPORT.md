@@ -6,6 +6,20 @@ Baseline: `b759b3f`
 Visual checkpoint: `b93a0f5`  
 Status: implemented and automatically validated; final owner-operated HUD/audio validation pending.
 
+## Reference-directed refinement — 2026-10-25
+
+The visual was refined against the owner-provided holographic neural triptych.
+The same graph now uses a radial flower/constellation silhouette, a brighter
+white-magenta nucleus, cyan route accents, symmetric-but-organic tendrils and
+separate soft/sharp glow passes. STANDBY remains compact; listening increases
+cyan inward activity; speaking expands the full neural corona. Only real state
+and audio inputs are displayed—none of the fictional CPU, temperature, memory
+or subsystem metrics shown in the aesthetic reference were copied.
+
+Current framebuffer evidence:
+
+`C:\JARVIS_CHECKPOINTS\neural-reference-style-v5-2026-10-25`
+
 ## Outcome
 
 The central voice visual is now one continuous holographic neural entity rather
@@ -41,13 +55,14 @@ Normal animation performs no geometry creation and no per-frame NumPy packing.
 1. **Node VBO:** position, deterministic seed, radial role and depth.
 2. **Filament VBO:** quadratic-Bezier connections stored as three line segments,
    with route position and depth per vertex.
-3. **Filament draw:** one `GL_LINES` call. A fragment pulse moves along each
-   route; direction is reversed for listening and outward for speaking.
-4. **Node draw:** one `GL_POINTS` call with depth-dependent size and circular
-   point sprites.
+3. **Filament draws:** a faint wide halo pass and one sharp `GL_LINES` pass. A
+   fragment pulse moves along each route; direction reverses for listening and
+   runs outward for speaking.
+4. **Node draws:** one soft point-glow pass and one sharp `GL_POINTS` pass with
+   depth-dependent size and circular point sprites.
 
-The renderer therefore uses two reusable programs, two reusable VBOs and two
-draw calls. Curves are sampled once. Pulses are shader calculations, not pooled
+The renderer therefore uses two reusable programs, two reusable VBOs and four
+bounded draw calls. Curves are sampled once. Pulses are shader calculations, not pooled
 Python objects. A QPainter graph fallback remains available when OpenGL setup
 fails.
 
@@ -130,16 +145,19 @@ are **not measured**.
 
 | Preset/scenario | Average FPS | 1% low FPS | Mean frame | Process CPU |
 |---|---:|---:|---:|---:|
-| LOW idle | 20.00 | 16.07 | 48.17 ms | 2.08% |
-| LOW state+audio | 20.72 | 19.38 | 47.07 ms | 4.20% |
-| MEDIUM idle | 60.80 | 57.42 | 16.41 ms | 8.26% |
-| MEDIUM state+audio | 59.62 | 57.74 | 16.66 ms | 5.97% |
-| HIGH idle | 61.07 | 57.63 | 16.34 ms | 5.19% |
-| HIGH state+audio | 59.60 | 57.63 | 16.67 ms | 9.01% |
+| LOW idle | 20.67 | 19.87 | 46.77 ms | 0.00%* |
+| LOW state+audio | 20.74 | 17.46 | 46.95 ms | 1.80% |
+| MEDIUM idle | 60.39 | 59.14 | 16.54 ms | 11.41% |
+| MEDIUM state+audio | 59.64 | 58.89 | 16.66 ms | 7.17% |
+| HIGH idle | 59.85 | 59.05 | 16.67 ms | 11.43% |
+| HIGH state+audio | 59.63 | 58.99 | 16.66 ms | 8.42% |
+
+\*The short LOW idle CPU sampling interval rounded measured process time to
+zero; this is not a claim of zero real CPU usage.
 
 After 10 warm-up cycles, 100 accelerated
 `STANDBY→ESCUCHANDO→PROCESANDO→HABLANDO→STANDBY` cycles at HIGH changed RSS
-from 157.375 MiB to 155.617 MiB (`-1.758 MiB`). This is evidence against an
+from 159.648 MiB to 156.883 MiB (`-2.766 MiB`). This is evidence against an
 obvious short-window leak, not a long-soak or driver VRAM certification.
 
 ## Automated validation
