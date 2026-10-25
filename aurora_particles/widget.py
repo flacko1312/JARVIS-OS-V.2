@@ -18,6 +18,7 @@ from PyQt6.QtWidgets import QSizePolicy
 
 from .audio import AudioAnalyzer
 from .neural_graph import NeuralGraph, build_neural_graph
+from .neural_morph import MORPH_GLSL
 from .neural_state import NeuralStateController
 from .quality import QualityManager
 
@@ -35,31 +36,7 @@ GL_ONE_MINUS_SRC_ALPHA = 0x0303
 GL_PROGRAM_POINT_SIZE = 0x8642
 GL_POINT_SPRITE = 0x8861
 
-DEFORM_GLSL = """
-mat3 rotY(float a){float c=cos(a),s=sin(a);return mat3(c,0.,-s,0.,1.,0.,s,0.,c);}
-mat3 rotX(float a){float c=cos(a),s=sin(a);return mat3(1.,0.,0.,0.,c,-s,0.,s,c);}
-vec3 neuralDeform(vec3 p,float seed,float role){
-  float standby=uState.x, listening=uState.y, processing=uState.z, speaking=uState.w;
-  float rms=uAudio.x,bass=uAudio.y,mid=uAudio.z,high=uAudio.w;
-  vec3 radial=normalize(p+vec3(sin(seed*91.7),cos(seed*43.1),sin(seed*27.4))*.025);
-  float breath=1.0+standby*.025*sin(uTime*.72+seed*2.4);
-  float absorb=listening*(.030+.145*rms+.055*bass)*(.30+.70*role);
-  float emit=speaking*(.035+.135*rms+.045*bass)*(.24+.76*role);
-  p*=breath-absorb+emit;
-  p*=1.0-standby*.12*role;
-  float standbyEnvelope=1.0-standby*.08*role;
-  p.x*=standbyEnvelope+listening*.12+speaking*.28;
-  p.y*=1.0+listening*.22+processing*.12+speaking*.35;
-  float curl=(processing*(.045+.11*mid)+listening*.035*mid+speaking*.050*mid);
-  p+=vec3(-p.y,p.x,sin(seed*18.0+uTime*1.3)*.24)*curl*(.25+.75*role);
-  p+=radial*high*(.006+.020*role)*sin(uTime*7.0+seed*73.0);
-  p.z+=sin(uTime*.53+seed*11.0)*(.006+.010*standby);
-  p=rotY(uTime*(.020+.025*processing))*rotX(sin(uTime*.19)*.055)*p;
-  p=p*.80+vec3(0.,.075,0.);
-  p.x/=max(.56,uAspect);
-  return p;
-}
-"""
+DEFORM_GLSL = MORPH_GLSL
 
 NODE_VERTEX_SHADER = """
 #version 120
@@ -109,7 +86,7 @@ uniform vec4 uState,uAudio;
 varying float vSeed,vPath,vDepth,vEnergy;
 """ + DEFORM_GLSL + """
 void main(){
-  vec3 p=neuralDeform(aPosition,aSeed,aPath);
+  vec3 p=neuralDeform(aPosition,aSeed,clamp(length(aPosition.xy)/.88,0.,1.));
   gl_Position=vec4(p.xy,p.z*.28,1.0);
   vSeed=aSeed;vPath=aPath;vDepth=aDepth;
   vEnergy=clamp(.18+uAudio.x*.36+uAudio.z*.28+uState.z*.18+uState.w*.20+uError*.12,0.,1.);

@@ -7,6 +7,7 @@ import pytest
 
 from aurora_particles.audio import AudioAnalyzer, pcm16_features
 from aurora_particles.neural_graph import build_neural_graph
+from aurora_particles.neural_morph import reference_morph_positions
 from aurora_particles.neural_state import MODE_INDEX, NeuralStateController
 from aurora_particles.quality import QualityManager
 from aurora_particles.sampler import ModelPointSampler
@@ -114,12 +115,42 @@ def test_transition_durations_remain_within_requested_inertia_range():
 def test_shader_separates_rms_bass_mid_high_and_directed_impulses():
     import aurora_particles.widget as widget
     assert "rms=uAudio.x,bass=uAudio.y,mid=uAudio.z,high=uAudio.w" in widget.DEFORM_GLSL
-    assert "absorb" in widget.DEFORM_GLSL and "emit" in widget.DEFORM_GLSL
+    assert "listenPull" in widget.DEFORM_GLSL and "speakOpen" in widget.DEFORM_GLSL
+    assert "branchDrift" in widget.DEFORM_GLSL and "idleMorph" in widget.DEFORM_GLSL
+    assert "petal" in widget.DEFORM_GLSL and "attention" in widget.DEFORM_GLSL
     assert "1.0-phase" in widget.EDGE_FRAGMENT_SHADER
     assert "pulse" in widget.EDGE_FRAGMENT_SHADER
     assert "uGlowPass" in widget.EDGE_FRAGMENT_SHADER
     assert "glDrawArrays(GL_LINES" in open(widget.__file__, encoding="utf-8").read()
     assert "glDrawArrays(GL_POINTS" in open(widget.__file__, encoding="utf-8").read()
+
+
+def test_standby_morph_changes_silhouette_without_audio():
+    graph = build_neural_graph(800, 1_600)
+    start = reference_morph_positions(graph.nodes, graph.node_role, (1, 0, 0, 0), time_seconds=0.0)
+    later = reference_morph_positions(graph.nodes, graph.node_role, (1, 0, 0, 0), time_seconds=7.0)
+    displacement = np.linalg.norm(later[:, :2] - start[:, :2], axis=1)
+    start_span = np.ptp(start[:, :2], axis=0)
+    later_span = np.ptp(later[:, :2], axis=0)
+    assert np.mean(displacement) > .018
+    assert np.max(np.abs(later_span - start_span)) > .025
+
+
+def test_state_gestures_change_global_shape_not_only_energy():
+    graph = build_neural_graph(800, 1_600)
+    audio = (.42, .35, .25, .18)
+    states = {
+        "standby": (1, 0, 0, 0), "listening": (0, 1, 0, 0),
+        "processing": (0, 0, 1, 0), "speaking": (0, 0, 0, 1),
+    }
+    shapes = {name: reference_morph_positions(graph.nodes, graph.node_role, weights, audio, time_seconds=4.0)
+              for name, weights in states.items()}
+    radial = {name: np.linalg.norm(points[:, :2], axis=1) for name, points in shapes.items()}
+    spans = {name: np.ptp(points[:, :2], axis=0) for name, points in shapes.items()}
+    assert np.quantile(radial["listening"], .90) < np.quantile(radial["standby"], .90) * .94
+    assert np.quantile(radial["speaking"], .90) > np.quantile(radial["standby"], .90) * 1.28
+    assert np.linalg.norm(spans["processing"] - spans["standby"]) > .10
+    assert np.linalg.norm(spans["speaking"] - spans["listening"]) > .55
 
 
 def test_sampler_remains_available_for_future_model_sources():

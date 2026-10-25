@@ -2,10 +2,11 @@
 
 from .controller import MorphController, MorphState
 from .neural_graph import NeuralGraph, build_neural_graph
+from .neural_morph import MORPH_GLSL, reference_morph_positions
 from .neural_state import NeuralStateController
 from .quality import QualityManager
 from .sampler import ModelPointSampler
 from .state_mapping import STATE_SHAPE_MAP, shape_for_state
 from .widget import ParticleMorphingCanvas
 
-__all__ = ["ModelPointSampler", "MorphController", "MorphState", "NeuralGraph", "NeuralStateController", "ParticleMorphingCanvas", "QualityManager", "STATE_SHAPE_MAP", "build_neural_graph", "shape_for_state"]
+__all__ = ["MORPH_GLSL", "ModelPointSampler", "MorphController", "MorphState", "NeuralGraph", "NeuralStateController", "ParticleMorphingCanvas", "QualityManager", "STATE_SHAPE_MAP", "build_neural_graph", "reference_morph_positions", "shape_for_state"]
