@@ -1041,11 +1041,29 @@ def _pcm16_level(pcm) -> float:
 def _report_audio_level(ui, kind: str, pcm) -> None:
     """Forward a real audio level to the UI; never touches or stores the audio."""
     setter = getattr(ui, f"set_{kind}_audio_level", None)
-    if callable(setter):
-        try:
-            setter(_pcm16_level(pcm))
-        except Exception:
-            pass
+    spectrum_setter = getattr(ui, f"set_{kind}_audio_spectrum", None)
+    try:
+        if callable(spectrum_setter):
+            from aurora_particles.audio import pcm16_features
+            level, bands = pcm16_features(pcm, 24_000 if kind == "output" else 16_000)
+            spectrum_setter(*bands)
+        else:
+            level = _pcm16_level(pcm)
+        if callable(setter):
+            setter(level)
+        now = time.monotonic()
+        last = getattr(_report_audio_level, "_last_log", {})
+        if now - float(last.get(kind, 0.0)) >= 1.0:
+            log_bands = bands if callable(spectrum_setter) else (0.0, 0.0, 0.0)
+            logger.info(
+                "PARTICLE_AUDIO %s rms=%.3f bass=%.3f mid=%.3f treble=%.3f",
+                kind, level, *log_bands,
+            )
+            last[kind] = now
+            _report_audio_level._last_log = last
+    except Exception:
+        # Visual telemetry must never affect the microphone/playback pipeline.
+        pass
 
 
 def _clean_transcript(text: str) -> str:    

@@ -16,6 +16,7 @@ import psutil
 
 from ui_locale import t, state_display, status_abbrev, STATE_DISPLAY, UI_TEXT
 from core.voice_config import GEMINI_VOICES
+from aurora_particles import ParticleMorphingCanvas
 
 from PyQt6.QtCore import (
     QEasingCurve, QEvent, QMimeData, QObject, QPointF, QPropertyAnimation,
@@ -7077,6 +7078,12 @@ class MainWindow(QMainWindow):
     _tool_sig      = pyqtSignal(str)          # tool log line for ToolLogWidget
     _theme_sig     = pyqtSignal(str)
     _graphics_sig  = pyqtSignal(str)
+    _input_audio_sig = pyqtSignal(float)
+    _output_audio_sig = pyqtSignal(float)
+    _input_fft_sig = pyqtSignal(float, float, float)
+    _output_fft_sig = pyqtSignal(float, float, float)
+    _particle_executing_sig = pyqtSignal(bool)
+    _particle_error_sig = pyqtSignal(float)
     _vision_preview_sig = pyqtSignal(str)
     _vision_preview_hide_sig = pyqtSignal(int)
     _research_progress_sig = pyqtSignal(object)
@@ -7181,7 +7188,12 @@ class MainWindow(QMainWindow):
         hud_config = HudConfig()
         ai_config = AIActivityConfig()
 
-        self.hud = HolographicCoreCanvas(face_path, config=hud_config)
+        # The surrounding HUD remains native PyQt; only the central visual is
+        # replaced by the isolated GPU particle-morphing canvas.
+        self.hud = ParticleMorphingCanvas(
+            face_path, config=hud_config,
+            palette_provider=lambda: (C.PURPLE, C.PRI),
+        )
         self.hud.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         ai_core_lay.addWidget(self.hud, stretch=4)
 
@@ -7279,6 +7291,12 @@ class MainWindow(QMainWindow):
         self._tool_sig.connect(self._mission.tool_widget.push)
         self._theme_sig.connect(ThemeManager.set_theme)
         self._graphics_sig.connect(self._apply_graphics_quality_live)
+        self._input_audio_sig.connect(self.hud.set_input_audio_level)
+        self._output_audio_sig.connect(self.hud.set_output_audio_level)
+        self._input_fft_sig.connect(self.hud.set_input_audio_spectrum)
+        self._output_fft_sig.connect(self.hud.set_output_audio_spectrum)
+        self._particle_executing_sig.connect(self.hud.set_executing)
+        self._particle_error_sig.connect(self.hud.flag_error)
         self._vision_preview_sig.connect(self._show_vision_preview)
         self._vision_preview_hide_sig.connect(self._hide_vision_preview)
         self._research_progress_sig.connect(lambda update: self._research_progress.update_progress(**update))
@@ -7373,6 +7391,10 @@ class MainWindow(QMainWindow):
         sc_command.activated.connect(
             lambda: self._set_command_center(not self._command_center_open)
         )
+        if os.environ.get("JARVIS_PARTICLE_DEV_SHORTCUTS", "0") == "1":
+            for sequence, shape in (("Ctrl+Alt+1", "core"), ("Ctrl+Alt+2", "brain"), ("Ctrl+Alt+3", "vortex")):
+                shortcut = QShortcut(QKeySequence(sequence), self)
+                shortcut.activated.connect(lambda _checked=False, value=shape: self.hud.morphTo(value))
         sc_esc = QShortcut(QKeySequence("Escape"), self)
         sc_esc.activated.connect(self._dismiss_overlays)
 
@@ -8997,8 +9019,12 @@ class MainWindow(QMainWindow):
                 print(f"[JARVIS] Message processing failed: {exc}")
 
     def _apply_state(self, state: str):
-        self.hud.state    = state
-        self.hud.speaking = (state == "SPEAKING")
+        state_setter = getattr(self.hud, "set_state", None)
+        if callable(state_setter):
+            state_setter(state)
+        else:
+            self.hud.state = state
+            self.hud.speaking = (state == "SPEAKING")
         if hasattr(self, "_conversation_btn"):
             active = state not in ("STANDBY", "STOPPING")
             self._conversation_btn.setText(
@@ -9673,16 +9699,24 @@ class JarvisUI:
 
     def set_input_audio_level(self, level: float):
         """Real microphone RMS (0..1) for the core visual; display only."""
-        self._win.hud.set_input_audio_level(level)
+        self._win._input_audio_sig.emit(float(level))
 
     def set_output_audio_level(self, level: float):
         """Real voice-output RMS (0..1) for the core visual; display only."""
-        self._win.hud.set_output_audio_level(level)
+        self._win._output_audio_sig.emit(float(level))
+
+    def set_input_audio_spectrum(self, bass: float, mid: float, treble: float):
+        """Real microphone FFT bands for the core visual; display only."""
+        self._win._input_fft_sig.emit(float(bass), float(mid), float(treble))
+
+    def set_output_audio_spectrum(self, bass: float, mid: float, treble: float):
+        """Real voice-output FFT bands for the core visual; display only."""
+        self._win._output_fft_sig.emit(float(bass), float(mid), float(treble))
 
     def write_log(self, text: str):
         text = t(str(text or ""))
         if str(text or "").lstrip().upper().startswith("ERR"):
-            self._win.hud.flag_error()
+            self._win._particle_error_sig.emit(6.0)
         self._win._log_sig.emit(text)
         self._win._parse_log_for_context(text)
 
@@ -9817,7 +9851,7 @@ class JarvisUI:
     def show_tool_progress(self, tool_name: str):
         """Show tool execution progress indicator."""
         try:
-            self._win.hud.set_executing(True)
+            self._win._particle_executing_sig.emit(True)
             self._win._tool_progress.show_tool(tool_name)
         except Exception:
             pass
@@ -9825,7 +9859,7 @@ class JarvisUI:
     def hide_tool_progress(self):
         """Hide tool execution progress indicator."""
         try:
-            self._win.hud.set_executing(False)
+            self._win._particle_executing_sig.emit(False)
             self._win._tool_progress.hide_tool()
         except Exception:
             pass
