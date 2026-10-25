@@ -47,13 +47,16 @@ uniform vec4 uState,uAudio;
 varying float vSeed,vRole,vDepth,vEnergy;
 """ + DEFORM_GLSL + """
 void main(){
-  vec3 p=neuralDeform(aPosition,aSeed,aRole);
+  vec3 p=neuralDeform(aPosition,aSeed,aRole,aRole);
   gl_Position=vec4(p.xy,p.z*.28,1.0);
   float listening=uState.y,processing=uState.z,speaking=uState.w;
   float high=uAudio.w,rms=uAudio.x;
   float spark=step(.86,fract(aSeed*19.0+uTime*(.10+high*.85)))*high;
   float depthScale=.68+.54*aDepth;
-  gl_PointSize=uPointSize*depthScale*min(1.65,1.0+high*.40+rms*.18+spark*.28)*mix(1.0,3.2,uNodeGlow);
+  float accent=step(.78,fract(aSeed*17.0));
+  float coreWeight=(1.0-aRole)*(1.0-aRole);
+  gl_PointSize=uPointSize*depthScale*(.30+.40*accent+1.25*coreWeight)
+      *min(1.50,1.0+high*.34+rms*.14+spark*.24)*mix(1.0,2.7,uNodeGlow);
   vSeed=aSeed;vRole=aRole;vDepth=aDepth;
   vEnergy=clamp(.20+processing*.24+speaking*.24+listening*.14+rms*.42+spark*.28+uError*.20,0.,1.);
 }
@@ -67,28 +70,30 @@ uniform float uNodeGlow;
 varying float vSeed,vRole,vDepth,vEnergy;
 void main(){
   vec2 q=gl_PointCoord-vec2(.5);float d=dot(q,q);if(d>.25)discard;
+  if(vRole>.18 && fract(vSeed*37.0)<.48)discard;
   float halo=smoothstep(.25,.01,d);
   vec3 branch=mix(vec3(.96,.12,.58),vec3(.06,.78,1.0),clamp(vRole*.72+fract(vSeed*7.0)*.28,0.,1.));
   vec3 color=mix(vec3(.45,.12,.96),branch,.38+.48*vRole);
   float core=(1.0-vRole)*(.18+uState.z*.22+uState.w*(.38+.62*uAudio.x));
   color=mix(color,vec3(1.0,.94,1.0),clamp(core,0.,.82));
-  float alpha=halo*(.62+.24*vEnergy)*(.72+.28*vDepth)*mix(1.0,.13,uNodeGlow);
-  gl_FragColor=vec4(color*(.54+.24*vEnergy+uNodeGlow*.22),alpha);
+  float coreWeight=(1.0-vRole)*(1.0-vRole);
+  float alpha=halo*(.30+.18*vEnergy+.58*coreWeight)*(.68+.32*vDepth)*mix(1.0,.16,uNodeGlow);
+  gl_FragColor=vec4(color*(.44+.20*vEnergy+coreWeight*.34+uNodeGlow*.22),alpha);
 }
 """
 
 EDGE_VERTEX_SHADER = """
 #version 120
 attribute vec3 aPosition;
-attribute float aSeed,aPath,aDepth;
+attribute float aSeed,aPath,aDepth,aLayer;
 uniform float uTime,uAspect,uError;
 uniform vec4 uState,uAudio;
-varying float vSeed,vPath,vDepth,vEnergy;
+varying float vSeed,vPath,vDepth,vEnergy,vLayer;
 """ + DEFORM_GLSL + """
 void main(){
-  vec3 p=neuralDeform(aPosition,aSeed,clamp(length(aPosition.xy)/.88,0.,1.));
+  vec3 p=neuralDeform(aPosition,aSeed,clamp(length(aPosition.xy)/.88,0.,1.),aPath);
   gl_Position=vec4(p.xy,p.z*.28,1.0);
-  vSeed=aSeed;vPath=aPath;vDepth=aDepth;
+  vSeed=aSeed;vPath=aPath;vDepth=aDepth;vLayer=aLayer;
   vEnergy=clamp(.18+uAudio.x*.36+uAudio.z*.28+uState.z*.18+uState.w*.20+uError*.12,0.,1.);
 }
 """
@@ -98,7 +103,7 @@ EDGE_FRAGMENT_SHADER = """
 uniform float uTime,uGlowPass;
 uniform vec3 uViolet,uMagenta,uCyan;
 uniform vec4 uState,uAudio;
-varying float vSeed,vPath,vDepth,vEnergy;
+varying float vSeed,vPath,vDepth,vEnergy,vLayer;
 void main(){
   float listening=uState.y,processing=uState.z,speaking=uState.w;
   float rate=.055+uAudio.x*.38+processing*.30+speaking*.18;
@@ -108,10 +113,13 @@ void main(){
   float pulse=exp(-delta*delta/(.00022+uAudio.w*.00070));
   float occasional=step(.76,fract(vSeed*13.7+uTime*.035));
   pulse*=clamp(.10+listening*.80+processing*.92+speaking*.88+uState.x*.12*occasional,0.,1.);
-  vec3 base=mix(vec3(.48,.12,.98),vec3(1.0,.08,.58),fract(vSeed*5.2));
-  base=mix(base,vec3(.04,.78,1.0),clamp(listening*.32+vPath*.18+step(.82,vSeed)*.34,0.,.66));
-  vec3 color=mix(base,vec3(1.0,.95,1.0),pulse*.48);
-  float alpha=(.27+.15*vEnergy+pulse*.30)*(.62+.38*vDepth);
+  float secondary=step(.5,vLayer)-step(1.5,vLayer);float wisp=step(1.5,vLayer);
+  vec3 base=mix(vec3(.64,.12,1.0),vec3(1.0,.05,.54),fract(vSeed*5.2));
+  base=mix(base,vec3(.02,.66,1.0),clamp(secondary*.68+wisp*.32+listening*.16,0.,.76));
+  vec3 color=mix(base,vec3(1.0,.90,1.0),pulse*.22);
+  float layerAlpha=1.0-secondary*.16-wisp*.46;
+  float routeFade=.48+.52*(1.0-smoothstep(.08,1.0,vPath));
+  float alpha=(.30+.16*vEnergy+pulse*.24)*(.62+.38*vDepth)*layerAlpha*routeFade;
   alpha*=mix(1.0,.24,uGlowPass);
   gl_FragColor=vec4(color*(.58+pulse*.34+uGlowPass*.16),alpha);
 }
@@ -246,6 +254,7 @@ class ParticleMorphingCanvas(QOpenGLWidget):
             "gpu": self._gpu_ready, "error": self._gl_error, "quality": preset.name,
             "particles": preset.particle_count, "nodes": preset.particle_count,
             "connections": preset.edge_count, "mode": self._state_controller.current,
+            "filaments": self._graph.filament_count if self._graph is not None else 0,
             "target_mode": self._state_controller.target,
             "transition_progress": round(float(self._state_controller.progress), 3),
         }
@@ -281,7 +290,7 @@ class ParticleMorphingCanvas(QOpenGLWidget):
         if not self._gpu_ready or self._graph is None: return
         graph = self._graph
         node_data = np.column_stack((graph.nodes, graph.node_seed, graph.node_role, graph.node_depth)).astype(np.float32)
-        edge_data = np.column_stack((graph.edge_vertices, graph.edge_seed, graph.edge_path, graph.edge_depth)).astype(np.float32)
+        edge_data = np.column_stack((graph.edge_vertices, graph.edge_seed, graph.edge_path, graph.edge_depth, graph.edge_layer)).astype(np.float32)
         for vbo, packed in ((self._node_vbo, node_data), (self._edge_vbo, edge_data)):
             vbo.bind(); vbo.allocate(int(packed.nbytes)); vbo.write(0, sip.voidptr(packed.ctypes.data), int(packed.nbytes)); vbo.release()
         self._pending_upload = False
@@ -339,17 +348,23 @@ class ParticleMorphingCanvas(QOpenGLWidget):
             if self._pending_upload: self._upload()
             g=self._gl; g.glClearColor(.003,.004,.014,0.0); g.glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
             g.glEnable(GL_BLEND); g.glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA); g.glEnable(GL_PROGRAM_POINT_SIZE); g.glEnable(GL_POINT_SPRITE)
-            stride=24
             edge=self._edge_program; edge.bind(); self._edge_vbo.bind()
-            self._attributes(edge,(("aPosition",0,3),("aSeed",12,1),("aPath",16,1),("aDepth",20,1)),stride)
+            self._attributes(edge,(("aPosition",0,3),("aSeed",12,1),("aPath",16,1),("aDepth",20,1),("aLayer",24,1)),28)
             self._uniforms(edge)
-            edge.setUniformValue("uGlowPass",1.0); g.glLineWidth(2.4); g.glDrawArrays(GL_LINES,0,len(self._graph.edge_vertices))
-            edge.setUniformValue("uGlowPass",0.0); g.glLineWidth(1.0); g.glDrawArrays(GL_LINES,0,len(self._graph.edge_vertices))
+            g.glBlendFunc(GL_SRC_ALPHA,GL_ONE)
+            edge.setUniformValue("uGlowPass",1.0); g.glLineWidth(3.0); g.glDrawArrays(GL_LINES,0,len(self._graph.edge_vertices))
+            g.glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA)
+            edge.setUniformValue("uGlowPass",0.0)
+            first=0
+            for width,segments in zip((1.8,1.15,1.0),self._graph.layer_segment_counts):
+                count=segments*2; g.glLineWidth(width); g.glDrawArrays(GL_LINES,first,count); first+=count
             self._edge_vbo.release(); edge.release()
             node=self._node_program; node.bind(); self._node_vbo.bind()
-            self._attributes(node,(("aPosition",0,3),("aSeed",12,1),("aRole",16,1),("aDepth",20,1)),stride)
+            self._attributes(node,(("aPosition",0,3),("aSeed",12,1),("aRole",16,1),("aDepth",20,1)),24)
             self._uniforms(node); node.setUniformValue("uPointSize",float(self._quality.current.point_size))
+            g.glBlendFunc(GL_SRC_ALPHA,GL_ONE)
             node.setUniformValue("uNodeGlow",1.0); g.glDrawArrays(GL_POINTS,0,self._quality.current.particle_count)
+            g.glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA)
             node.setUniformValue("uNodeGlow",0.0); g.glDrawArrays(GL_POINTS,0,self._quality.current.particle_count)
             self._node_vbo.release(); node.release()
         else: self._paint_fallback()
@@ -368,11 +383,12 @@ class ParticleMorphingCanvas(QOpenGLWidget):
         if self._graph is None: painter.end(); return
         scale=min(self.width(),self.height())*.38; cx,cy=self.width()/2,self.height()*.46
         painter.setPen(QPen(QColor(114,72,210,70),1.0)); vertices=self._graph.edge_vertices
-        for index in range(0,len(vertices),6):
-            a,b=vertices[index],vertices[min(index+5,len(vertices)-1)]
+        for index in range(0,len(vertices),2):
+            a,b=vertices[index],vertices[index+1]
             painter.drawLine(int(cx+a[0]*scale),int(cy-a[1]*scale),int(cx+b[0]*scale),int(cy-b[1]*scale))
         painter.setPen(QPen(QColor(221,121,255,185),1.8))
-        for x,y,_z in self._graph.nodes: painter.drawPoint(int(cx+x*scale),int(cy-y*scale))
+        for (x,y,_z),seed in zip(self._graph.nodes,self._graph.node_seed):
+            if seed>.55: painter.drawPoint(int(cx+x*scale),int(cy-y*scale))
         painter.end()
 
     def _paint_overlay(self):

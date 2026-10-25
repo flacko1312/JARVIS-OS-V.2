@@ -36,9 +36,11 @@ def test_graph_has_exact_finite_pooled_buffers(quality):
     preset = QualityManager.PRESETS[quality]
     graph = build_neural_graph(preset.particle_count, preset.edge_count)
     assert graph.nodes.shape == (preset.particle_count, 3)
-    assert graph.edge_vertices.shape == (preset.edge_count * 6, 3)
+    assert graph.edge_vertices.shape == (preset.edge_count * 2, 3)
     assert graph.node_seed.shape == (preset.particle_count,)
-    assert graph.edge_path.shape == (preset.edge_count * 6,)
+    assert graph.edge_path.shape == graph.edge_layer.shape == (preset.edge_count * 2,)
+    assert sum(graph.filament_segment_counts) == preset.edge_count
+    assert sum(graph.layer_segment_counts) == preset.edge_count
     assert graph.nodes.dtype == graph.edge_vertices.dtype == np.float32
     assert np.isfinite(graph.nodes).all() and np.isfinite(graph.edge_vertices).all()
 
@@ -54,13 +56,20 @@ def test_graph_is_deterministic_irregular_and_not_a_spherical_shell():
     assert np.count_nonzero(radii < .20) > 45
 
 
-def test_curved_edges_have_three_segments_and_continuous_paths():
+def test_filaments_are_long_continuous_cubic_paths_in_three_layers():
     graph = build_neural_graph(450, 800)
-    paths = graph.edge_path.reshape(-1, 6)
-    assert np.allclose(paths[0], [0, 1/3, 1/3, 2/3, 2/3, 1])
-    edges = graph.edge_vertices.reshape(-1, 6, 3)
-    assert np.allclose(edges[:, 1], edges[:, 2])
-    assert np.allclose(edges[:, 3], edges[:, 4])
+    assert graph.filament_count == len(graph.filament_segment_counts)
+    assert graph.filament_count >= 42
+    assert set(np.unique(graph.edge_layer)) == {0.0, 1.0, 2.0}
+    offset = 0
+    for segment_count in graph.filament_segment_counts:
+        points = graph.edge_vertices[offset:offset + segment_count * 2]
+        route = graph.edge_path[offset:offset + segment_count * 2]
+        assert np.allclose(points[1:-1:2], points[2::2])
+        assert route[0] == pytest.approx(0.0)
+        assert route[-1] == pytest.approx(1.0)
+        offset += segment_count * 2
+    assert offset == len(graph.edge_vertices)
 
 
 def test_state_controller_inertially_blends_without_geometry_swap():

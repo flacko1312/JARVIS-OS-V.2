@@ -1,4 +1,4 @@
-"""Deterministic organic neural graph used by AURORA's GPU renderer."""
+"""Deterministic organic filament field used by AURORA's GPU renderer."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -8,6 +8,8 @@ import numpy as np
 
 @dataclass(frozen=True)
 class NeuralGraph:
+    """Logical particles plus a separate spline-based visual representation."""
+
     nodes: np.ndarray
     node_seed: np.ndarray
     node_role: np.ndarray
@@ -16,141 +18,166 @@ class NeuralGraph:
     edge_seed: np.ndarray
     edge_path: np.ndarray
     edge_depth: np.ndarray
+    edge_layer: np.ndarray
     edge_count: int
+    filament_count: int
+    filament_segment_counts: tuple[int, ...]
+    layer_segment_counts: tuple[int, int, int]
 
 
-def _unit(vector: np.ndarray) -> np.ndarray:
-    length = float(np.linalg.norm(vector))
-    return vector / max(length, 1e-6)
+def _polar(radius: float, angle: float, z: float) -> np.ndarray:
+    return np.asarray((radius * np.cos(angle), radius * np.sin(angle), z), dtype=np.float32)
+
+
+def _segment_budget(total: int, counts: tuple[int, int, int]) -> list[list[int]]:
+    """Distribute an exact segment budget while keeping every spline smooth."""
+    weights = (.38, .44, .18)
+    targets = [int(total * weight) for weight in weights]
+    targets[-1] += total - sum(targets)
+    result: list[list[int]] = []
+    for target, count in zip(targets, counts):
+        base = max(6, target // count)
+        layer = [base] * count
+        delta = target - sum(layer)
+        index = 0
+        while delta > 0:
+            layer[index % count] += 1
+            delta -= 1
+            index += 1
+        while delta < 0:
+            slot = index % count
+            if layer[slot] > 6:
+                layer[slot] -= 1
+                delta += 1
+            index += 1
+        result.append(layer)
+    return result
+
+
+def _cubic(start: np.ndarray, control_a: np.ndarray, control_b: np.ndarray,
+           end: np.ndarray, steps: int) -> np.ndarray:
+    t = np.linspace(0.0, 1.0, steps + 1, dtype=np.float32)[:, None]
+    omt = 1.0 - t
+    return (
+        omt**3 * start
+        + 3.0 * omt**2 * t * control_a
+        + 3.0 * omt * t**2 * control_b
+        + t**3 * end
+    ).astype(np.float32)
 
 
 def build_neural_graph(node_count: int, edge_count: int, seed: int = 7319) -> NeuralGraph:
-    """Build one irregular branched network with curved cross-connections.
+    """Build a layered field of long cubic filaments around one bright core.
 
-    Edges are ordered from the denser interior toward the exterior where
-    possible. That stable direction lets the fragment shader reverse impulses
-    for listening without rebuilding buffers.
+    ``edge_count`` is the exact rendered line-segment budget. Logical nodes are
+    sampled from the curves but are intentionally independent from the visual
+    topology: the renderer never needs to expose a graph of node-to-node links.
     """
     node_count = max(64, int(node_count))
-    edge_count = max(node_count - 1, int(edge_count))
+    edge_count = max(360, int(edge_count))
     rng = np.random.default_rng(seed + node_count * 3 + edge_count)
-    nodes = np.zeros((node_count, 3), dtype=np.float32)
-    parents = np.zeros(node_count, dtype=np.int32)
-    branch_count = max(20, min(44, node_count // 20))
-    cursor = 1
 
-    # Compact asymmetric nucleus: no spherical shell and no orbital geometry.
-    nucleus_count = max(20, int(node_count * .12))
-    nodes[:nucleus_count] = rng.normal(0.0, (.13, .11, .12), (nucleus_count, 3))
-    parents[1:nucleus_count] = rng.integers(0, np.arange(1, nucleus_count))
-    cursor = nucleus_count
+    filament_count = max(42, min(150, node_count // 8))
+    main_count = max(12, int(filament_count * .25))
+    secondary_count = max(20, int(filament_count * .50))
+    wisp_count = filament_count - main_count - secondary_count
+    layer_counts = (main_count, secondary_count, wisp_count)
+    budgets = _segment_budget(edge_count, layer_counts)
 
-    allocations = np.full(branch_count, (node_count - cursor) // branch_count, dtype=np.int32)
-    allocations[:(node_count - cursor) % branch_count] += 1
-    for branch_index, amount in enumerate(allocations):
-        if amount <= 0:
-            continue
-        azimuth = (branch_index / branch_count) * np.pi * 2.0 + rng.normal(0.0, .055)
-        vertical_sign = 1.0 if np.sin(azimuth) >= 0.0 else -1.0
-        direction = _unit(np.asarray((
-            np.cos(azimuth) * rng.uniform(.72, .94),
-            np.sin(azimuth) * rng.uniform(.86, 1.08),
-            np.sin(azimuth * 2.3 + .7) * rng.uniform(.26, .48),
-        ), dtype=np.float32))
-        parent = int(rng.integers(0, nucleus_count))
-        start = nodes[parent].copy()
-        length = rng.uniform(.74, 1.08)
-        endpoint = start * .18 + direction * length
-        tangent = _unit(np.cross(direction, _unit(rng.normal(size=3).astype(np.float32))))
-        control_a = start + direction * length * .28 + tangent * rng.uniform(.08, .18)
-        control_b = start + direction * length * .70 - tangent * rng.uniform(.06, .16)
-        control_b[1] += vertical_sign * rng.uniform(.03, .11)
-        for step in range(int(amount)):
-            index = cursor
-            cursor += 1
-            progress = (step + 1) / max(1, int(amount))
-            omt = 1.0 - progress
-            point = (
-                omt**3 * start
-                + 3.0 * omt**2 * progress * control_a
-                + 3.0 * omt * progress**2 * control_b
-                + progress**3 * endpoint
+    vertices: list[np.ndarray] = []
+    seeds: list[float] = []
+    paths: list[float] = []
+    depths: list[float] = []
+    layers: list[float] = []
+    sampled_paths: list[np.ndarray] = []
+    filament_segments: list[int] = []
+    layer_segment_totals = [0, 0, 0]
+
+    for layer, (count, segment_counts) in enumerate(zip(layer_counts, budgets)):
+        for filament_index, segments in enumerate(segment_counts):
+            identity = float(rng.random())
+            base_angle = (
+                filament_index / max(1, count) * np.pi * 2.0
+                + layer * .17
+                + rng.normal(0.0, .075 + layer * .025)
             )
-            jitter = rng.normal(0.0, .006, 3).astype(np.float32) * np.sin(progress*np.pi)
-            nodes[index] = point + jitter
-            parents[index] = parent
-            parent = index
+            handedness = -1.0 if (filament_index + layer) % 2 else 1.0
+            if layer == 0:
+                start_radius = rng.uniform(.010, .055)
+                end_radius = rng.uniform(.78, 1.02)
+                curl = rng.uniform(.55, .96) * handedness
+                z_scale = .38
+            elif layer == 1:
+                start_radius = rng.uniform(.025, .115)
+                end_radius = rng.uniform(.52, .88)
+                curl = rng.uniform(.40, .78) * handedness
+                z_scale = .52
+            else:
+                start_radius = rng.uniform(.055, .20)
+                end_radius = rng.uniform(.34, .70)
+                curl = rng.uniform(.28, .64) * handedness
+                z_scale = .70
 
-    # Normalize into an anisotropic, slightly tilted volume with open negative
-    # space. This keeps the silhouette organic instead of becoming a ball.
-    nodes -= nodes.mean(axis=0, keepdims=True)
-    nodes[:, 0] *= 1.12
-    nodes[:, 1] *= 1.06
-    nodes[:, 2] *= .94
-    radius = np.percentile(np.linalg.norm(nodes, axis=1), 99.5)
-    nodes /= max(float(radius), 1e-6)
-    nodes *= .88
+            end_angle = base_angle + rng.normal(0.0, .14) + curl * rng.uniform(.25, .50)
+            start = _polar(start_radius, base_angle + curl * .12, rng.uniform(-.055, .055))
+            end = _polar(end_radius, end_angle, rng.uniform(-z_scale, z_scale))
+            control_a = _polar(
+                end_radius * rng.uniform(.18, .31),
+                base_angle + curl * rng.uniform(.78, 1.14),
+                rng.uniform(-z_scale, z_scale) * .35,
+            )
+            control_b = _polar(
+                end_radius * rng.uniform(.54, .78),
+                end_angle - curl * rng.uniform(.48, .88),
+                end[2] * rng.uniform(.48, .82) + rng.uniform(-.10, .10),
+            )
+            points = _cubic(start, control_a, control_b, end, segments)
+            progress = np.linspace(0.0, 1.0, segments + 1, dtype=np.float32)
+            lift = np.sin(progress * np.pi) * rng.uniform(.028, .090) * handedness
+            tangent = np.asarray((-np.sin(base_angle), np.cos(base_angle)), dtype=np.float32)
+            points[:, :2] += lift[:, None] * tangent
+            sampled_paths.append(points)
+            filament_segments.append(segments)
+            layer_segment_totals[layer] += segments
+            for segment in range(segments):
+                for point_index in (segment, segment + 1):
+                    point = points[point_index]
+                    vertices.append(point)
+                    seeds.append(identity)
+                    paths.append(point_index / segments)
+                    depths.append(float(np.clip((point[2] + 1.0) * .5, 0.0, 1.0)))
+                    layers.append(float(layer))
 
-    edges: list[tuple[int, int]] = [(int(parents[i]), i) for i in range(1, node_count)]
-    seen = {tuple(sorted(edge)) for edge in edges}
-    # Add local cross-links. Candidate sampling avoids a large NxN allocation.
-    while len(edges) < edge_count:
-        a = int(rng.integers(0, node_count))
-        candidates = rng.integers(0, node_count, size=18)
-        distances = np.linalg.norm(nodes[candidates] - nodes[a], axis=1)
-        b = int(candidates[int(np.argmin(distances + (candidates == a) * 100.0))])
-        key = tuple(sorted((a, b)))
-        if a == b or key in seen:
-            continue
-        # Keep graph routes local enough to read as filaments, not chords.
-        if float(np.linalg.norm(nodes[a] - nodes[b])) > .24:
-            continue
-        seen.add(key)
-        if np.linalg.norm(nodes[a]) <= np.linalg.norm(nodes[b]):
-            edges.append((a, b))
-        else:
-            edges.append((b, a))
+    edge_vertices = np.ascontiguousarray(np.asarray(vertices, dtype=np.float32))
+    route_points = np.concatenate(sampled_paths, axis=0)
+    nucleus_count = max(28, int(node_count * .16))
+    nodes = np.empty((node_count, 3), dtype=np.float32)
+    nodes[:nucleus_count] = rng.normal(0.0, (.095, .082, .090), (nucleus_count, 3))
+    sample_indices = np.linspace(0, len(route_points) - 1, node_count - nucleus_count, dtype=np.int32)
+    rng.shuffle(sample_indices)
+    nodes[nucleus_count:] = route_points[sample_indices]
+    nodes[nucleus_count:] += rng.normal(0.0, .004, (node_count - nucleus_count, 3)).astype(np.float32)
 
-    # Each curved connection is three independent GL_LINES segments sampled
-    # from a quadratic Bezier. Curvature is deterministic and stored once.
-    subdivisions = 3
-    edge_vertices = np.empty((edge_count * subdivisions * 2, 3), dtype=np.float32)
-    edge_seed_values = np.empty(edge_count * subdivisions * 2, dtype=np.float32)
-    edge_path = np.empty(edge_count * subdivisions * 2, dtype=np.float32)
-    edge_depth = np.empty(edge_count * subdivisions * 2, dtype=np.float32)
-    write = 0
-    seeds = rng.random(edge_count).astype(np.float32)
-    for edge_index, (a, b) in enumerate(edges[:edge_count]):
-        start, end = nodes[a], nodes[b]
-        delta = end - start
-        normal = np.cross(delta, np.asarray((.21, .73, .43), dtype=np.float32))
-        if np.linalg.norm(normal) < 1e-5:
-            normal = np.cross(delta, np.asarray((.77, .12, .61), dtype=np.float32))
-        normal = _unit(normal)
-        bend = normal * min(.055, float(np.linalg.norm(delta)) * .22) * (1 if seeds[edge_index] > .5 else -1)
-        control = (start + end) * .5 + bend
-        for segment in range(subdivisions):
-            for t in (segment / subdivisions, (segment + 1) / subdivisions):
-                omt = 1.0 - t
-                point = omt * omt * start + 2.0 * omt * t * control + t * t * end
-                edge_vertices[write] = point
-                edge_seed_values[write] = seeds[edge_index]
-                edge_path[write] = t
-                edge_depth[write] = np.clip((point[2] + 1.0) * .5, 0.0, 1.0)
-                write += 1
-
-    radii = np.linalg.norm(nodes, axis=1)
+    max_radius = max(float(np.percentile(np.linalg.norm(nodes, axis=1), 99.7)), 1e-6)
+    if max_radius > 1.02:
+        nodes /= max_radius / 1.02
+        edge_vertices /= max_radius / 1.02
+    radii = np.linalg.norm(nodes[:, :2], axis=1)
     node_role = np.clip(radii / max(float(radii.max()), 1e-6), 0.0, 1.0).astype(np.float32)
     node_depth = np.clip((nodes[:, 2] + 1.0) * .5, 0.0, 1.0).astype(np.float32)
-    node_seed = rng.random(node_count).astype(np.float32)
+
     return NeuralGraph(
         nodes=np.ascontiguousarray(nodes),
-        node_seed=node_seed,
+        node_seed=rng.random(node_count).astype(np.float32),
         node_role=node_role,
         node_depth=node_depth,
-        edge_vertices=np.ascontiguousarray(edge_vertices),
-        edge_seed=edge_seed_values,
-        edge_path=edge_path,
-        edge_depth=edge_depth,
+        edge_vertices=edge_vertices,
+        edge_seed=np.asarray(seeds, dtype=np.float32),
+        edge_path=np.asarray(paths, dtype=np.float32),
+        edge_depth=np.asarray(depths, dtype=np.float32),
+        edge_layer=np.asarray(layers, dtype=np.float32),
         edge_count=edge_count,
+        filament_count=filament_count,
+        filament_segment_counts=tuple(filament_segments),
+        layer_segment_counts=tuple(layer_segment_totals),
     )

@@ -13,7 +13,7 @@ MORPH_GLSL = r"""
 mat3 rotY(float a){float c=cos(a),s=sin(a);return mat3(c,0.,-s,0.,1.,0.,s,0.,c);}
 mat3 rotX(float a){float c=cos(a),s=sin(a);return mat3(1.,0.,0.,0.,c,-s,0.,s,c);}
 mat3 rotZ(float a){float c=cos(a),s=sin(a);return mat3(c,-s,0.,s,c,0.,0.,0.,1.);}
-vec3 neuralDeform(vec3 p,float seed,float role){
+vec3 neuralDeform(vec3 p,float seed,float role,float path){
   float standby=uState.x, listening=uState.y, processing=uState.z, speaking=uState.w;
   float rms=uAudio.x,bass=uAudio.y,mid=uAudio.z,high=uAudio.w;
   float radius=max(length(p.xy),.001);
@@ -21,15 +21,21 @@ vec3 neuralDeform(vec3 p,float seed,float role){
   float outer=clamp(role,0.,1.);
   float core=1.0-smoothstep(.12,.48,radius);
   float slow=uTime*.24;
+  float branchPhase=seed*6.2831853;
+  float routeArc=sin(clamp(path,0.,1.)*3.1415927);
 
   /* Always-on coherent life: silhouette drift, branch sway and asymmetry. */
-  float branchDrift=sin(theta*3.0+slow+p.z*2.2)+.52*sin(theta*5.0-slow*.71);
+  float branchDrift=sin(theta*3.0+slow+p.z*2.2+branchPhase)+.52*sin(theta*5.0-slow*.71-branchPhase*.7);
   float livingScale=1.0+(.018*sin(uTime*.61)+.030*branchDrift)*(.22+.78*outer);
   p.xy*=livingScale;
   p=rotZ((.028*sin(slow*.83+theta*2.0)+.018*sin(slow*.47-theta*4.0))*outer)*p;
   p.x+=.030*sin(slow*.76+theta*2.0+p.z*2.0)*outer;
   p.y+=.024*cos(slow*.59-theta*3.0)*outer;
   p.z+=.018*sin(slow*.91+theta*2.4+seed*1.7)*(.25+.75*outer);
+  vec2 routeNormal=normalize(vec2(-p.y,p.x)+vec2(.001));
+  float routeSway=(.030+.034*fract(seed*17.0))*routeArc
+      *sin(uTime*(.20+.16*fract(seed*11.0))+branchPhase+path*2.4);
+  p.xy+=routeNormal*routeSway*(.45+.55*outer);
 
   /* STANDBY: compact, breathing and visibly changing its outline. */
   float idleMorph=standby*(.036*sin(uTime*.31+theta*2.0)+.024*cos(uTime*.19-theta*5.0));
@@ -46,7 +52,8 @@ vec3 neuralDeform(vec3 p,float seed,float role){
   p.x*=1.0-listening*(.18+.055*mid);
   p.y*=1.0+listening*(.040+.025*bass);
   p*=1.0-listening*core*(.10+.07*rms);
-  p=rotZ(listening*outer*(.055*sin(theta*4.0-uTime*.46)-.035))*p;
+  p=rotZ(listening*outer*(.055*sin(theta*4.0-uTime*.46+branchPhase)-.035))*p;
+  p.xy-=routeNormal*listening*routeArc*(.018+.036*rms)*(.35+.65*path);
 
   /* PROCESSING: compact convergence with a coherent internal re-route. */
   float thinkWave=sin(theta*4.0+uTime*.72)+.45*cos(theta*7.0-uTime*.39);
@@ -55,6 +62,7 @@ vec3 neuralDeform(vec3 p,float seed,float role){
   p.x+=processing*.040*sin(theta*3.0+uTime*.63)*(outer-core*.3);
   p.y+=processing*.045*cos(theta*2.0-uTime*.51)*(outer-core*.2);
   p.z+=processing*.060*sin(theta*3.0+uTime*.58)*outer;
+  p.xy+=routeNormal*processing*routeArc*.055*sin(uTime*.64+branchPhase+path*4.0);
 
   /* SPEAKING: radial petal openings and an expressive, audio-driven corona. */
   float petal=.5+.5*sin(theta*6.0-uTime*.34+p.z*2.0);
@@ -63,6 +71,8 @@ vec3 neuralDeform(vec3 p,float seed,float role){
   p.x*=1.0+speaking*(.105+.055*petal);
   p.y*=1.0+speaking*(.165+.075*(1.0-petal));
   p.xy+=normalize(p.xy+vec2(.001))*speaking*outer*(.030+.075*rms)*petal;
+  p.xy+=routeNormal*speaking*routeArc*(.035+.055*mid)
+      *sin(uTime*(.32+.22*fract(seed*9.0))+branchPhase+path*3.0);
   p*=1.0+speaking*core*(.075+.090*rms);
   p=rotZ(speaking*outer*.070*sin(theta*5.0+uTime*.57))*p;
   p.y/=1.0+speaking*.28*abs(p.y);

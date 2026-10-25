@@ -62,6 +62,11 @@ def main() -> None:
 
     started = time.perf_counter()
     save(widget, output / "01_standby_stable.png")
+    standby_sequence = output / "standby_sequence"
+    standby_sequence.mkdir(exist_ok=True)
+    for frame in range(6):
+        if frame: wait(app, 1_000)
+        save(widget, standby_sequence / f"{frame + 1:02d}.png")
 
     widget.set_state("LISTENING")
     wait_mode(app, widget, "listening")
@@ -89,6 +94,17 @@ def main() -> None:
     wait(app, 650)
     wait_mode(app, widget, "speaking")
     save(widget, output / "07_speaking_audio.png")
+    speaking_sequence = output / "speaking_sequence"
+    speaking_sequence.mkdir(exist_ok=True)
+    phrase_envelope = (
+        (.16,.14,.10,.08),(.38,.32,.24,.18),(.25,.18,.30,.16),
+        (.47,.40,.22,.26),(.20,.15,.18,.12),(.34,.26,.28,.20),
+    )
+    for frame,(rms,bass,mid,high) in enumerate(phrase_envelope,1):
+        widget.set_output_audio_level(rms)
+        widget.set_output_audio_spectrum(bass,mid,high)
+        wait(app, 360)
+        save(widget, speaking_sequence / f"{frame:02d}.png")
 
     widget.set_state("STANDBY")
     wait(app, 520)
@@ -103,6 +119,8 @@ def main() -> None:
         f"elapsed_seconds={elapsed:.3f}\n"
         f"transition_duration_seconds={widget._state_controller.duration:.3f}\n"
         f"processing_hold_seconds=0.420\n"
+        "standby_sequence_frames=6 interval_ms=1000\n"
+        "speaking_sequence_frames=6 interval_ms=360 synthetic_audio=true\n"
         f"renderer={widget.renderer_status}\n",
         encoding="utf-8",
     )
