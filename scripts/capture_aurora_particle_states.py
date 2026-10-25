@@ -38,6 +38,16 @@ def save(widget: ParticleMorphingCanvas, path: Path) -> None:
         raise RuntimeError(f"Could not save framebuffer: {path}")
 
 
+def wait_mode(app: QApplication, widget: ParticleMorphingCanvas, mode: str,
+              timeout_ms: int = 4000) -> None:
+    deadline = time.perf_counter() + timeout_ms / 1000.0
+    while time.perf_counter() < deadline:
+        if widget._state_controller.current == mode and widget._state_controller.stable:
+            return
+        wait(app, 30)
+    raise RuntimeError(f"Visual mode did not stabilize: {mode}; {widget.renderer_status}")
+
+
 def main() -> None:
     output = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else DEFAULT_OUTPUT
     output.mkdir(parents=True, exist_ok=True)
@@ -51,39 +61,48 @@ def main() -> None:
     wait(app, 650)
 
     started = time.perf_counter()
+    save(widget, output / "01_standby_stable.png")
+
     widget.set_state("LISTENING")
-    save(widget, output / "01_core_stable.png")
-    widget.set_input_audio_level(.34)
-    widget.set_input_audio_spectrum(.34, .22, .17)
-    wait(app, 80)
-    save(widget, output / "02_core_audio.png")
+    wait_mode(app, widget, "listening")
+    widget.set_input_audio_level(.10)
+    widget.set_input_audio_spectrum(.08, .06, .04)
+    wait(app, 100)
+    save(widget, output / "02_listening_low_audio.png")
+    widget.set_input_audio_level(.48)
+    widget.set_input_audio_spectrum(.42, .32, .28)
+    wait(app, 100)
+    save(widget, output / "03_listening_high_audio.png")
 
     widget.set_state("THINKING")
     wait(app, 520)
-    save(widget, output / "03_core_to_brain.png")
+    save(widget, output / "04_listening_to_processing.png")
     wait(app, 650)
-    save(widget, output / "04_brain_stable.png")
+    wait_mode(app, widget, "processing")
+    save(widget, output / "05_processing_stable.png")
 
     widget.set_state("SPEAKING")
     widget.set_output_audio_level(.28)
     widget.set_output_audio_spectrum(.30, .20, .18)
     wait(app, 520)
-    save(widget, output / "05_brain_to_vortex.png")
+    save(widget, output / "06_processing_to_speaking.png")
     wait(app, 650)
-    save(widget, output / "06_vortex_stable_audio.png")
+    wait_mode(app, widget, "speaking")
+    save(widget, output / "07_speaking_audio.png")
 
-    widget.set_state("LISTENING")
+    widget.set_state("STANDBY")
     wait(app, 520)
-    save(widget, output / "07_vortex_to_core.png")
+    save(widget, output / "08_speaking_to_standby.png")
     wait(app, 650)
-    save(widget, output / "08_core_returned.png")
+    wait_mode(app, widget, "standby")
+    save(widget, output / "09_standby_returned.png")
 
     elapsed = time.perf_counter() - started
     (output / "capture-summary.txt").write_text(
         "AURORA native framebuffer capture\n"
         f"elapsed_seconds={elapsed:.3f}\n"
-        f"morph_duration_seconds={widget._morph.duration:.3f}\n"
-        f"brain_min_hold_seconds={widget._brain_min_hold:.3f}\n"
+        f"transition_duration_seconds={widget._state_controller.duration:.3f}\n"
+        f"processing_hold_seconds=0.420\n"
         f"renderer={widget.renderer_status}\n",
         encoding="utf-8",
     )

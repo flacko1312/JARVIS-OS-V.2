@@ -1,5 +1,9 @@
 # AURORA Particle Morphing — Implementation Report
 
+> Historical baseline. The current visual implementation is documented in
+> `AURORA_NEURAL_VOICE_VISUAL_REPORT.md`. The procedural CORE/BRAIN/VORTEX
+> renderer described below remains recoverable from checkpoint commit `b93a0f5`.
+
 Date: 2026-10-25  
 Baseline HEAD: `b759b3fccc31ee2339279ec817748abe6eb84d75`  
 Status: implemented and automatically validated; physical HUD/voice validation pending.

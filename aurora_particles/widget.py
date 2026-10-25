@@ -1,15 +1,14 @@
 from __future__ import annotations
 
-import math
 import logging
-from collections import deque
+import math
 import time
 from typing import Callable
 
 import numpy as np
 from PyQt6 import sip
 from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QColor, QPainter, QPen, QVector3D
+from PyQt6.QtGui import QColor, QPainter, QPen, QVector3D, QVector4D
 from PyQt6.QtOpenGL import (
     QOpenGLBuffer, QOpenGLShader, QOpenGLShaderProgram,
     QOpenGLVersionFunctionsFactory, QOpenGLVersionProfile,
@@ -18,10 +17,9 @@ from PyQt6.QtOpenGLWidgets import QOpenGLWidget
 from PyQt6.QtWidgets import QSizePolicy
 
 from .audio import AudioAnalyzer
-from .controller import MorphController
+from .neural_graph import NeuralGraph, build_neural_graph
+from .neural_state import NeuralStateController
 from .quality import QualityManager
-from .shapes import SHAPE_FACTORIES, accent_mask
-from .state_mapping import shape_for_state
 
 logger = logging.getLogger("jarvis.aurora_particles")
 
@@ -29,68 +27,133 @@ GL_COLOR_BUFFER_BIT = 0x00004000
 GL_DEPTH_BUFFER_BIT = 0x00000100
 GL_FLOAT = 0x1406
 GL_POINTS = 0x0000
+GL_LINES = 0x0001
 GL_BLEND = 0x0BE2
 GL_SRC_ALPHA = 0x0302
 GL_ONE = 1
+GL_ONE_MINUS_SRC_ALPHA = 0x0303
 GL_PROGRAM_POINT_SIZE = 0x8642
 GL_POINT_SPRITE = 0x8861
 
-VERTEX_SHADER = """
-#version 120
-attribute vec3 aSource;
-attribute vec3 aTarget;
-attribute float aSeed;
-attribute float aAccentSource;
-attribute float aAccentTarget;
-uniform float uTime, uProgress, uDissolve, uBass, uMid, uTreble, uError;
-uniform float uPointSize, uTurbulence, uAspect, uIntensity;
-varying float vEnergy;
-varying float vAccent;
-mat3 rotY(float a){float c=cos(a),s=sin(a);return mat3(c,0.,-s, 0.,1.,0., s,0.,c);}
-void main(){
-  float e=uProgress*uProgress*(3.0-2.0*uProgress);
-  vec3 p=mix(aSource,aTarget,e);
-  vec3 dir=normalize(p+vec3(sin(aSeed*91.7),cos(aSeed*47.3),sin(aSeed*23.1))*.18);
-  float wave=sin(uTime*1.7+aSeed*38.0+p.y*8.0);
-  p += dir*uDissolve*(.18+.24*sin(aSeed*71.0))*uTurbulence;
-  p += dir*(.012+.060*uBass)*sin(uTime*1.3+aSeed*12.0);
-  p += vec3(0., wave*(.008+.035*uMid), 0.);
-  p += uError*vec3(sin(aSeed*83.0+uTime*13.0), cos(aSeed*61.0+uTime*11.0), 0.)*.022;
-  p = rotY(uTime*.09)*p;
-  p = p*.84 + vec3(0., .07, 0.); // reserve a clear lower HUD status band
-  p.x/=max(.55,uAspect);
-  gl_Position=vec4(p.xy, p.z*.25, 1.0);
-  vAccent=mix(aAccentSource,aAccentTarget,e);
-  gl_PointSize=uPointSize*min(1.65,1.0+uBass*.18+uTreble*.55+uDissolve*.18+vAccent*.10);
-  vEnergy=clamp(.48+uIntensity*.42+uTreble*.50+wave*.10+uError*.18,0.,1.);
+DEFORM_GLSL = """
+mat3 rotY(float a){float c=cos(a),s=sin(a);return mat3(c,0.,-s,0.,1.,0.,s,0.,c);}
+mat3 rotX(float a){float c=cos(a),s=sin(a);return mat3(1.,0.,0.,0.,c,-s,0.,s,c);}
+vec3 neuralDeform(vec3 p,float seed,float role){
+  float standby=uState.x, listening=uState.y, processing=uState.z, speaking=uState.w;
+  float rms=uAudio.x,bass=uAudio.y,mid=uAudio.z,high=uAudio.w;
+  vec3 radial=normalize(p+vec3(sin(seed*91.7),cos(seed*43.1),sin(seed*27.4))*.025);
+  float breath=1.0+standby*.025*sin(uTime*.72+seed*2.4);
+  float absorb=listening*(.030+.145*rms+.055*bass)*(.30+.70*role);
+  float emit=speaking*(.035+.135*rms+.045*bass)*(.24+.76*role);
+  p*=breath-absorb+emit;
+  float curl=(processing*(.045+.11*mid)+listening*.035*mid+speaking*.050*mid);
+  p+=vec3(-p.y,p.x,sin(seed*18.0+uTime*1.3)*.24)*curl*(.25+.75*role);
+  p+=radial*high*(.006+.020*role)*sin(uTime*7.0+seed*73.0);
+  p.z+=sin(uTime*.53+seed*11.0)*(.006+.010*standby);
+  p=rotY(uTime*(.020+.025*processing))*rotX(sin(uTime*.19)*.055)*p;
+  p=p*.90+vec3(0.,.045,0.);
+  p.x/=max(.56,uAspect);
+  return p;
 }
 """
 
-FRAGMENT_SHADER = """
+NODE_VERTEX_SHADER = """
 #version 120
-uniform vec3 uColorA, uColorB;
-uniform vec3 uAccentColor;
-varying float vEnergy;
-varying float vAccent;
+attribute vec3 aPosition;
+attribute float aSeed,aRole,aDepth;
+uniform float uTime,uAspect,uPointSize,uError;
+uniform vec4 uState,uAudio;
+varying float vSeed,vRole,vDepth,vEnergy;
+""" + DEFORM_GLSL + """
 void main(){
-  vec2 q=gl_PointCoord-vec2(.5);
-  float d=dot(q,q);
-  if(d>.25) discard;
-  float alpha=smoothstep(.25,.01,d)*(.25+vEnergy*.35);
-  vec3 base=mix(uColorA,uColorB,vEnergy);
-  vec3 c=mix(base,uAccentColor,clamp(vAccent*.72,0.,1.));
-  c*=1.0+vAccent*.10;
-  gl_FragColor=vec4(c,alpha);
+  vec3 p=neuralDeform(aPosition,aSeed,aRole);
+  gl_Position=vec4(p.xy,p.z*.28,1.0);
+  float listening=uState.y,processing=uState.z,speaking=uState.w;
+  float high=uAudio.w,rms=uAudio.x;
+  float spark=step(.86,fract(aSeed*19.0+uTime*(.10+high*.85)))*high;
+  float depthScale=.68+.54*aDepth;
+  gl_PointSize=uPointSize*depthScale*min(1.65,1.0+high*.40+rms*.18+spark*.28);
+  vSeed=aSeed;vRole=aRole;vDepth=aDepth;
+  vEnergy=clamp(.20+processing*.24+speaking*.24+listening*.14+rms*.42+spark*.28+uError*.20,0.,1.);
 }
 """
+
+NODE_FRAGMENT_SHADER = """
+#version 120
+uniform vec3 uViolet,uMagenta,uCyan;
+uniform vec4 uState,uAudio;
+varying float vSeed,vRole,vDepth,vEnergy;
+void main(){
+  vec2 q=gl_PointCoord-vec2(.5);float d=dot(q,q);if(d>.25)discard;
+  float halo=smoothstep(.25,.01,d);
+  vec3 branch=mix(vec3(.96,.12,.58),vec3(.06,.78,1.0),clamp(vRole*.72+fract(vSeed*7.0)*.28,0.,1.));
+  vec3 color=mix(vec3(.45,.12,.96),branch,.38+.48*vRole);
+  float core=(1.0-vRole)*uState.w*(.35+.65*uAudio.x);
+  color=mix(color,vec3(1.0,.94,1.0),clamp(core,0.,.82));
+  float alpha=halo*(.62+.24*vEnergy)*(.72+.28*vDepth);
+  gl_FragColor=vec4(color*(.54+.24*vEnergy),alpha);
+}
+"""
+
+EDGE_VERTEX_SHADER = """
+#version 120
+attribute vec3 aPosition;
+attribute float aSeed,aPath,aDepth;
+uniform float uTime,uAspect,uError;
+uniform vec4 uState,uAudio;
+varying float vSeed,vPath,vDepth,vEnergy;
+""" + DEFORM_GLSL + """
+void main(){
+  vec3 p=neuralDeform(aPosition,aSeed,aPath);
+  gl_Position=vec4(p.xy,p.z*.28,1.0);
+  vSeed=aSeed;vPath=aPath;vDepth=aDepth;
+  vEnergy=clamp(.18+uAudio.x*.36+uAudio.z*.28+uState.z*.18+uState.w*.20+uError*.12,0.,1.);
+}
+"""
+
+EDGE_FRAGMENT_SHADER = """
+#version 120
+uniform float uTime;
+uniform vec3 uViolet,uMagenta,uCyan;
+uniform vec4 uState,uAudio;
+varying float vSeed,vPath,vDepth,vEnergy;
+void main(){
+  float listening=uState.y,processing=uState.z,speaking=uState.w;
+  float rate=.055+uAudio.x*.38+processing*.30+speaking*.18;
+  float phase=fract(vSeed+uTime*rate);
+  float directed=mix(phase,1.0-phase,listening/(listening+speaking+.001));
+  float delta=abs(vPath-directed);delta=min(delta,1.0-delta);
+  float pulse=exp(-delta*delta/(.00022+uAudio.w*.00070));
+  float occasional=step(.76,fract(vSeed*13.7+uTime*.035));
+  pulse*=clamp(.10+listening*.80+processing*.92+speaking*.88+uState.x*.12*occasional,0.,1.);
+  vec3 base=mix(vec3(.46,.10,.92),vec3(.98,.10,.55),fract(vSeed*5.2));
+  base=mix(base,vec3(.05,.82,1.0),clamp(listening*.55+vPath*.25,0.,.72));
+  vec3 color=mix(base,vec3(1.0,.95,1.0),pulse*.48);
+  float alpha=(.30+.16*vEnergy+pulse*.26)*(.66+.34*vDepth);
+  gl_FragColor=vec4(color*(.54+pulse*.28),alpha);
+}
+"""
+
+
+def _mode_for_state(state: str) -> str:
+    state = str(state or "STANDBY").strip().upper()
+    if state in {"LISTENING", "ESCUCHANDO"}:
+        return "listening"
+    if state in {"THINKING", "PROCESSING", "PENSANDO", "TOOL", "EXECUTING"}:
+        return "processing"
+    if state in {"SPEAKING", "HABLANDO"}:
+        return "speaking"
+    return "standby"
 
 
 class ParticleMorphingCanvas(QOpenGLWidget):
-    """AURORA's isolated GPU point-cloud core with a safe raster fallback."""
+    """One living neural entity with state and real-audio driven deformation."""
 
-    _STATE_LABELS = {"INITIALISING": "INITIALISING", "LISTENING": "ESCUCHANDO",
-                     "THINKING": "PENSANDO", "PROCESSING": "PENSANDO",
-                     "SPEAKING": "HABLANDO", "MUTED": "MIC OFF"}
+    _STATE_LABELS = {
+        "STANDBY": "STANDBY", "IDLE": "STANDBY", "INITIALISING": "STANDBY",
+        "LISTENING": "ESCUCHANDO", "THINKING": "PROCESANDO",
+        "PROCESSING": "PROCESANDO", "SPEAKING": "HABLANDO", "MUTED": "MIC OFF",
+    }
 
     def __init__(self, face_path: str = "", parent=None, config=None,
                  palette_provider: Callable[[], tuple[str, str]] | None = None):
@@ -106,206 +169,150 @@ class ParticleMorphingCanvas(QOpenGLWidget):
         self.executing = False
         self._error_until = 0.0
         self._palette_provider = palette_provider
-        self._quality = QualityManager((config or {}).get("graphics_quality", "medium") if isinstance(config, dict) else "medium")
-        self._morph = MorphController()
-        self._visual_queue: deque[tuple[str, str]] = deque()
-        self._visual_hold_until = 0.0
-        self._brain_min_hold = .45
+        quality = (config or {}).get("graphics_quality", "medium") if isinstance(config, dict) else "medium"
+        self._quality = QualityManager(quality)
+        self._state_controller = NeuralStateController()
         self._audio = AudioAnalyzer()
-        self._in_level = self._out_level = 0.0
-        self._shapes: dict[str, np.ndarray] = {}
-        self._source = self._target = np.empty((0, 3), dtype=np.float32)
-        self._source_accent = self._target_accent = np.empty(0, dtype=np.float32)
-        self._seeds = np.empty(0, dtype=np.float32)
-        self._program: QOpenGLShaderProgram | None = None
-        self._vbo = QOpenGLBuffer(QOpenGLBuffer.Type.VertexBuffer)
+        self._in_level = self._out_level = self._visual_rms = 0.0
+        self._graph: NeuralGraph | None = None
+        self._node_program: QOpenGLShaderProgram | None = None
+        self._edge_program: QOpenGLShaderProgram | None = None
+        self._node_vbo = QOpenGLBuffer(QOpenGLBuffer.Type.VertexBuffer)
+        self._edge_vbo = QOpenGLBuffer(QOpenGLBuffer.Type.VertexBuffer)
         self._gl = None
         self._gpu_ready = False
         self._gl_error = ""
         self._pending_upload = True
         self._last = time.perf_counter()
         self._time = 0.0
-        self._load_shapes()
+        self._load_graph()
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._step)
         self._timer.start(self._quality.current.frame_ms)
 
-    # Public engine API -------------------------------------------------
-    def register_shape(self, name: str, positions) -> None:
-        points = np.asarray(positions, dtype=np.float32).reshape(-1, 3)
-        if len(points) != self._quality.current.particle_count:
-            raise ValueError("shape particle count must match active quality")
-        self._shapes[str(name)] = np.ascontiguousarray(points)
-
-    registerShape = register_shape
+    def set_state(self, state: str) -> bool:
+        normalized = str(state or "STANDBY").strip().upper()
+        self.logical_state = normalized
+        self.state = normalized
+        self.speaking = normalized in {"SPEAKING", "HABLANDO"}
+        mode = _mode_for_state(normalized)
+        logger.info("NEURAL_STATE logical=%s visual_target=%s", normalized, mode)
+        started = self._state_controller.request(mode)
+        if started:
+            logger.info("NEURAL_TRANSITION start %s -> %s duration=%.2f",
+                        self._state_controller.current, mode, self._state_controller.duration)
+        elif self._state_controller._queue:
+            logger.info("NEURAL_TRANSITION enqueue=%s depth=%d", mode, len(self._state_controller._queue))
+        return started
 
     def morph_to(self, name: str) -> bool:
-        if name not in self._shapes:
+        aliases = {"core": "standby", "brain": "processing", "vortex": "speaking"}
+        mode = aliases.get(str(name).lower(), str(name).lower())
+        if mode not in {"standby", "listening", "processing", "speaking"}:
             raise KeyError(name)
-        started = self._morph.request(name)
-        if started:
-            logger.info("PARTICLE_MORPH %s -> %s", self._morph.current_shape, name)
-            self._source = self._shapes[self._morph.current_shape]
-            self._target = self._shapes[name]
-            self._source_accent = self._shape_accents[self._morph.current_shape]
-            self._target_accent = self._shape_accents[name]
-            self._pending_upload = True
-        return started
+        return self._state_controller.request(mode)
 
     morphTo = morph_to
 
-    def set_state(self, state: str) -> bool:
-        normalized = str(state or "IDLE").strip().upper()
-        self.logical_state = normalized
-        self.speaking = normalized in ("SPEAKING", "HABLANDO")
-        logger.info("PARTICLE_STATE logical %s", normalized)
-        target = shape_for_state(normalized)
-        if not target:
-            self.state = normalized
-            return False
-        return self._enqueue_visual_state(normalized, target)
+    def register_shape(self, name: str, positions) -> None:
+        raise RuntimeError("The neural renderer uses one continuous graph; external shape registration is unsupported")
 
-    def _enqueue_visual_state(self, state: str, shape: str) -> bool:
-        if self._morph.state.value == "STABLE" and not self._visual_queue and time.perf_counter() >= self._visual_hold_until:
-            if shape == self._morph.current_shape:
-                self.state = state
-                return False
-            self.state = state
-            return self.morph_to(shape)
-        pending_shape = self._visual_queue[-1][1] if self._visual_queue else self._morph.target_shape
-        if pending_shape == shape:
-            if self._visual_queue:
-                self._visual_queue[-1] = (state, shape)
-            return False
-        if len(self._visual_queue) >= 4:
-            if len(self._visual_queue) > 1 and self._visual_queue[-2][1] == shape:
-                self._visual_queue.pop()
-            self._visual_queue[-1] = (state, shape)
-        else:
-            self._visual_queue.append((state, shape))
-        logger.info("PARTICLE_VISUAL enqueue %s", shape)
-        return False
-
-    def _advance_visual_queue(self, now: float) -> None:
-        if self._morph.state.value != "STABLE" or now < self._visual_hold_until or not self._visual_queue:
-            return
-        state, shape = self._visual_queue.popleft()
-        self.state = state
-        if shape != self._morph.current_shape:
-            self.morph_to(shape)
+    registerShape = register_shape
 
     def force_dissolve(self) -> None:
-        order = ("core", "brain", "vortex")
-        self.morph_to(order[(order.index(self._morph.current_shape) + 1) % len(order)])
+        order = ("standby", "listening", "processing", "speaking")
+        current = self._state_controller.target
+        self._state_controller.request(order[(order.index(current) + 1) % len(order)])
 
     def set_input_audio_level(self, level: float):
-        # Microphone PCM is materially quieter than Gemini playback on the
-        # validated hardware. Apply visual-only gain; logged/analyzed values and
-        # the audio pipeline remain untouched.
-        self._in_level = max(0., min(1., float(level) * 1.85))
-    def set_output_audio_level(self, level: float): self._out_level = max(0., min(1., float(level)))
+        self._in_level = max(0.0, min(1.0, float(level) * 1.85))
+
+    def set_output_audio_level(self, level: float):
+        self._out_level = max(0.0, min(1.0, float(level)))
+
     def set_input_audio_spectrum(self, bass: float, mid: float, treble: float):
         self._audio.set_bands("input", (bass * 1.85, mid * 1.65, treble * 1.85))
-    def set_output_audio_spectrum(self, bass: float, mid: float, treble: float): self._audio.set_bands("output", (bass, mid, treble))
+
+    def set_output_audio_spectrum(self, bass: float, mid: float, treble: float):
+        self._audio.set_bands("output", (bass, mid, treble))
+
     def set_executing(self, active: bool):
         self.executing = bool(active)
-        if self.executing:
-            self.morph_to("brain")
-        else:
-            target = shape_for_state(self.state)
-            if target:
-                self.morph_to(target)
-    def flag_error(self, seconds: float = 6.0): self._error_until = time.time() + seconds
+        self._state_controller.request("processing" if self.executing else _mode_for_state(self.logical_state))
+
+    def flag_error(self, seconds: float = 6.0):
+        self._error_until = time.time() + seconds
 
     def set_graphics_quality(self, quality: str):
         old = self._quality.current.name
         preset = self._quality.set(quality)
         self._timer.setInterval(preset.frame_ms)
         if preset.name != old:
-            current, target = self._morph.current_shape, self._morph.target_shape
-            self._load_shapes()
-            self._morph = MorphController(current)
-            if target != current:
-                self.morph_to(target)
-            self._pending_upload = True
+            self._load_graph(); self._pending_upload = True
 
     @property
     def renderer_status(self) -> dict:
-        return {"gpu": self._gpu_ready, "error": self._gl_error,
-                "quality": self._quality.current.name,
-                "particles": self._quality.current.particle_count,
-                "shape": self._morph.current_shape, "morph_state": self._morph.state.value}
+        preset = self._quality.current
+        return {
+            "gpu": self._gpu_ready, "error": self._gl_error, "quality": preset.name,
+            "particles": preset.particle_count, "nodes": preset.particle_count,
+            "connections": preset.edge_count, "mode": self._state_controller.current,
+            "target_mode": self._state_controller.target,
+            "transition_progress": round(float(self._state_controller.progress), 3),
+        }
 
-    # Lifecycle ---------------------------------------------------------
-    def _load_shapes(self):
-        n = self._quality.current.particle_count
-        self._shapes = {name: factory(n) for name, factory in SHAPE_FACTORIES.items()}
-        self._shape_accents = {name: accent_mask(name, n) for name in self._shapes}
-        current = self._morph.current_shape if hasattr(self, "_morph") else "core"
-        self._source = self._target = self._shapes.get(current, self._shapes["core"])
-        self._source_accent = self._target_accent = self._shape_accents.get(current, self._shape_accents["core"])
-        self._seeds = np.random.default_rng(4409).random(n).astype(np.float32)
+    def _load_graph(self) -> None:
+        preset = self._quality.current
+        self._graph = build_neural_graph(preset.particle_count, preset.edge_count)
+
+    @staticmethod
+    def _build_program(parent, vertex: str, fragment: str) -> QOpenGLShaderProgram:
+        program = QOpenGLShaderProgram(parent)
+        if not program.addShaderFromSourceCode(QOpenGLShader.ShaderTypeBit.Vertex, vertex): raise RuntimeError(program.log())
+        if not program.addShaderFromSourceCode(QOpenGLShader.ShaderTypeBit.Fragment, fragment): raise RuntimeError(program.log())
+        if not program.link(): raise RuntimeError(program.log())
+        return program
 
     def initializeGL(self):
         try:
-            profile = QOpenGLVersionProfile()
-            profile.setVersion(2, 0)
+            profile = QOpenGLVersionProfile(); profile.setVersion(2, 0)
             self._gl = QOpenGLVersionFunctionsFactory.get(profile, self.context())
-            if self._gl is None:
-                raise RuntimeError("compatible OpenGL functions unavailable")
+            if self._gl is None: raise RuntimeError("compatible OpenGL functions unavailable")
             self._gl.initializeOpenGLFunctions()
-            program = QOpenGLShaderProgram(self)
-            if not program.addShaderFromSourceCode(QOpenGLShader.ShaderTypeBit.Vertex, VERTEX_SHADER):
-                raise RuntimeError(program.log())
-            if not program.addShaderFromSourceCode(QOpenGLShader.ShaderTypeBit.Fragment, FRAGMENT_SHADER):
-                raise RuntimeError(program.log())
-            if not program.link():
-                raise RuntimeError(program.log())
-            self._program = program
-            if not self._vbo.create():
-                raise RuntimeError("VBO creation failed")
-            self._gpu_ready = True
-            self._upload()
+            self._node_program = self._build_program(self, NODE_VERTEX_SHADER, NODE_FRAGMENT_SHADER)
+            self._edge_program = self._build_program(self, EDGE_VERTEX_SHADER, EDGE_FRAGMENT_SHADER)
+            if not self._node_vbo.create() or not self._edge_vbo.create(): raise RuntimeError("neural VBO creation failed")
+            self._gpu_ready = True; self._upload()
         except Exception as exc:
             self._gpu_ready = False
-            self._gl_error = f"{type(exc).__name__}: {exc}"[:240]
+            self._gl_error = f"{type(exc).__name__}: {exc}"[:300]
+            logger.warning("NEURAL_RENDER fallback reason=%s", self._gl_error)
 
     def _upload(self):
-        if not self._gpu_ready or not self._vbo.isCreated():
-            return
-        packed = np.column_stack((self._source, self._target, self._seeds,
-                                  self._source_accent, self._target_accent)).astype(np.float32)
-        self._vbo.bind()
-        self._vbo.allocate(int(packed.nbytes))
-        self._vbo.write(0, sip.voidptr(packed.ctypes.data), int(packed.nbytes))
-        self._vbo.release()
+        if not self._gpu_ready or self._graph is None: return
+        graph = self._graph
+        node_data = np.column_stack((graph.nodes, graph.node_seed, graph.node_role, graph.node_depth)).astype(np.float32)
+        edge_data = np.column_stack((graph.edge_vertices, graph.edge_seed, graph.edge_path, graph.edge_depth)).astype(np.float32)
+        for vbo, packed in ((self._node_vbo, node_data), (self._edge_vbo, edge_data)):
+            vbo.bind(); vbo.allocate(int(packed.nbytes)); vbo.write(0, sip.voidptr(packed.ctypes.data), int(packed.nbytes)); vbo.release()
         self._pending_upload = False
 
     def _step(self):
-        now = time.perf_counter()
-        dt = min(.1, max(.001, now - self._last))
-        self._last = now
-        self._time += dt
-        completed = self._morph.update(dt)
-        if completed:
-            logger.info("PARTICLE_MORPH complete shape=%s", self._morph.current_shape)
-            if self._morph.current_shape == "brain":
-                self._visual_hold_until = now + self._brain_min_hold
-        if completed and self._morph.state.value != "STABLE":
-            self._source = self._shapes[self._morph.current_shape]
-            self._target = self._shapes[self._morph.target_shape]
-            self._source_accent = self._shape_accents[self._morph.current_shape]
-            self._target_accent = self._shape_accents[self._morph.target_shape]
-            self._pending_upload = True
-        self._audio.decay(math.exp(-dt * 1.15))
-        self._in_level *= math.exp(-dt * 2.0)
-        self._out_level *= math.exp(-dt * 1.65)
-        self._advance_visual_queue(now)
+        now = time.perf_counter(); dt = min(.1, max(.001, now-self._last)); self._last = now; self._time += dt
+        downgrade = self._quality.observe_frame(dt) if self.isVisible() else None
+        if downgrade:
+            logger.warning("NEURAL_QUALITY auto_downgrade %s -> %s", self._quality.current.name, downgrade)
+            self.set_graphics_quality(downgrade)
+        completed = self._state_controller.update(dt)
+        if completed: logger.info("NEURAL_TRANSITION complete mode=%s", completed)
+        raw_rms = self._out_level if self.speaking else self._in_level
+        factor = 1.0-math.exp(-dt*(10.0 if raw_rms > self._visual_rms else 4.2))
+        self._visual_rms += (raw_rms-self._visual_rms)*factor
+        self._audio.decay(math.exp(-dt*1.15)); self._in_level *= math.exp(-dt*2.0); self._out_level *= math.exp(-dt*1.65)
         self.update()
 
     def hideEvent(self, event):
-        self._timer.stop()
-        super().hideEvent(event)
+        self._timer.stop(); super().hideEvent(event)
 
     def showEvent(self, event):
         self._last = time.perf_counter()
@@ -314,92 +321,68 @@ class ParticleMorphingCanvas(QOpenGLWidget):
 
     def closeEvent(self, event):
         self._timer.stop()
-        if self.context() and self._vbo.isCreated():
-            self.makeCurrent(); self._vbo.destroy(); self.doneCurrent()
+        if self.context():
+            self.makeCurrent()
+            for vbo in (self._node_vbo, self._edge_vbo):
+                if vbo.isCreated(): vbo.destroy()
+            self.doneCurrent()
         super().closeEvent(event)
 
-    # Rendering ---------------------------------------------------------
+    def _uniforms(self, program: QOpenGLShaderProgram) -> None:
+        bands = self._audio.output if self.speaking else self._audio.input
+        program.setUniformValue("uTime", float(self._time))
+        program.setUniformValue("uAspect", float(max(1,self.width())/max(1,self.height())))
+        program.setUniformValue("uState", QVector4D(*(float(x) for x in self._state_controller.weights)))
+        program.setUniformValue("uAudio", QVector4D(float(self._visual_rms), *(float(x) for x in bands)))
+        program.setUniformValue("uError", 1.0 if time.time() < self._error_until else 0.0)
+        violet, magenta = self._theme_colors()
+        program.setUniformValue("uViolet", violet); program.setUniformValue("uMagenta", magenta)
+        program.setUniformValue("uCyan", QVector3D(.16,.88,1.0))
+
+    @staticmethod
+    def _attributes(program, specs, stride):
+        for name, offset, size in specs:
+            location = program.attributeLocation(name); program.enableAttributeArray(location)
+            program.setAttributeBuffer(location, GL_FLOAT, offset, size, stride)
+
     def paintGL(self):
-        if self._gpu_ready and self._program and self._gl:
+        if self._gpu_ready and self._node_program and self._edge_program and self._gl and self._graph:
             if self._pending_upload: self._upload()
-            g = self._gl
-            g.glClearColor(0., 0., 0., 0.)
-            g.glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
-            g.glEnable(GL_BLEND); g.glBlendFunc(GL_SRC_ALPHA, GL_ONE)
-            g.glEnable(GL_PROGRAM_POINT_SIZE); g.glEnable(GL_POINT_SPRITE)
-            p = self._program; p.bind(); self._vbo.bind()
-            stride = 9 * 4
-            for name, offset, size in (("aSource", 0, 3), ("aTarget", 12, 3), ("aSeed", 24, 1),
-                                       ("aAccentSource", 28, 1), ("aAccentTarget", 32, 1)):
-                loc = p.attributeLocation(name); p.enableAttributeArray(loc); p.setAttributeBuffer(loc, GL_FLOAT, offset, size, stride)
-            bands = self._audio.output if self.logical_state == "SPEAKING" else self._audio.input
-            p.setUniformValue("uTime", float(self._time)); p.setUniformValue("uProgress", float(self._morph.progress))
-            p.setUniformValue("uDissolve", float(self._morph.dissolve)); p.setUniformValue("uBass", float(bands[0]))
-            p.setUniformValue("uMid", float(bands[1])); p.setUniformValue("uTreble", float(bands[2]))
-            error_active = time.time() < self._error_until
-            p.setUniformValue("uError", 1.0 if error_active else 0.0)
-            p.setUniformValue("uPointSize", self._quality.current.point_size); p.setUniformValue("uTurbulence", self._quality.current.turbulence)
-            p.setUniformValue("uAspect", float(max(1, self.width()) / max(1, self.height())))
-            state_energy = {
-                "STANDBY": .12, "IDLE": .12, "LISTENING": .32,
-                "THINKING": .58, "PROCESSING": .58, "SPEAKING": .48,
-                "MUTED": .04,
-            }.get(self.state, .24)
-            active_level = self._out_level if self.speaking else self._in_level
-            intensity = state_energy + (.30 if self.executing else 0.) + active_level * .85
-            p.setUniformValue("uIntensity", float(intensity))
-            color_a, color_b = self._theme_colors()
-            if error_active:
-                color_b = QVector3D(1.0, .08, .20)
-            p.setUniformValue("uColorA", color_a); p.setUniformValue("uColorB", color_b)
-            p.setUniformValue("uAccentColor", QVector3D(.78, .42, 1.0))
-            g.glDrawArrays(GL_POINTS, 0, self._quality.current.particle_count)
-            self._vbo.release(); p.release()
-        else:
-            self._paint_fallback()
+            g=self._gl; g.glClearColor(.003,.004,.014,0.0); g.glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
+            g.glEnable(GL_BLEND); g.glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA); g.glEnable(GL_PROGRAM_POINT_SIZE); g.glEnable(GL_POINT_SPRITE)
+            stride=24
+            edge=self._edge_program; edge.bind(); self._edge_vbo.bind()
+            self._attributes(edge,(("aPosition",0,3),("aSeed",12,1),("aPath",16,1),("aDepth",20,1)),stride)
+            self._uniforms(edge); g.glDrawArrays(GL_LINES,0,len(self._graph.edge_vertices)); self._edge_vbo.release(); edge.release()
+            node=self._node_program; node.bind(); self._node_vbo.bind()
+            self._attributes(node,(("aPosition",0,3),("aSeed",12,1),("aRole",16,1),("aDepth",20,1)),stride)
+            self._uniforms(node); node.setUniformValue("uPointSize",float(self._quality.current.point_size))
+            g.glDrawArrays(GL_POINTS,0,self._quality.current.particle_count); self._node_vbo.release(); node.release()
+        else: self._paint_fallback()
         self._paint_overlay()
 
     def _theme_colors(self):
         try:
-            raw_a, raw_b = self._palette_provider() if self._palette_provider else ("#8b5cf6", "#ff5fd0")
-            a, b = QColor(raw_a), QColor(raw_b)
-            if not a.isValid() or not b.isValid():
-                raise ValueError("invalid theme colour")
-            return (QVector3D(a.redF(), a.greenF(), a.blueF()),
-                    QVector3D(b.redF(), b.greenF(), b.blueF()))
-        except Exception:
-            return QVector3D(.55, .30, 1.), QVector3D(1., .36, .82)
+            raw_a,raw_b=self._palette_provider() if self._palette_provider else ("#8b5cf6","#ff4fa3")
+            a,b=QColor(raw_a),QColor(raw_b)
+            if not a.isValid() or not b.isValid(): raise ValueError("invalid theme colour")
+            return QVector3D(a.redF(),a.greenF(),a.blueF()),QVector3D(b.redF(),b.greenF(),b.blueF())
+        except Exception: return QVector3D(.52,.24,1.0),QVector3D(1.0,.22,.64)
 
     def _paint_fallback(self):
-        painter = QPainter(self); painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        painter.fillRect(self.rect(), QColor(7, 5, 18, 0))
-        points = (1-self._morph.progress)*self._source[::max(1,len(self._source)//700)] + self._morph.progress*self._target[::max(1,len(self._target)//700)]
-        s = min(self.width(), self.height()) * .36; cx, cy = self.width()/2, self.height()*.47
-        painter.setPen(QPen(QColor(183, 148, 255, 175), 1.6))
-        for x, y, z in points:
-            painter.drawPoint(int(cx+x*s), int(cy-y*s))
+        painter=QPainter(self); painter.setRenderHint(QPainter.RenderHint.Antialiasing,True); painter.fillRect(self.rect(),QColor(1,2,10,245))
+        if self._graph is None: painter.end(); return
+        scale=min(self.width(),self.height())*.38; cx,cy=self.width()/2,self.height()*.46
+        painter.setPen(QPen(QColor(114,72,210,70),1.0)); vertices=self._graph.edge_vertices
+        for index in range(0,len(vertices),6):
+            a,b=vertices[index],vertices[min(index+5,len(vertices)-1)]
+            painter.drawLine(int(cx+a[0]*scale),int(cy-a[1]*scale),int(cx+b[0]*scale),int(cy-b[1]*scale))
+        painter.setPen(QPen(QColor(221,121,255,185),1.8))
+        for x,y,_z in self._graph.nodes: painter.drawPoint(int(cx+x*scale),int(cy-y*scale))
         painter.end()
 
     def _paint_overlay(self):
-        painter = QPainter(self); painter.setPen(QColor(183, 148, 255, 185))
-        font = painter.font(); font.setPixelSize(10); font.setLetterSpacing(font.SpacingType.AbsoluteSpacing, 1.2); painter.setFont(font)
-        painter.drawText(12, 22, "YAW   AUTO")
-        painter.drawText(12, 38, "PIT   AUTO")
-        painter.drawText(12, 54, f"CAPAS 03  NODOS {self._quality.current.particle_count}")
-        painter.drawText(12, self.height()-34, f"MODO  {self._morph.current_shape.upper()}")
-        painter.drawText(12, self.height()-18, f"ENTR {self._in_level:.2f}  SAL {self._out_level:.2f}")
-        label = self._STATE_LABELS.get(self.state, self.state)
-        display_label = " ".join(label)
-        status_font = painter.font()
-        status_font.setBold(True)
-        status_font.setPixelSize(max(16, min(24, self.height() // 24)))
-        status_font.setLetterSpacing(status_font.SpacingType.AbsoluteSpacing, 2.0)
-        painter.setFont(status_font)
-        status_rect = self.rect().adjusted(24, 0, -24, -38)
-        status_rect.setTop(max(0, self.height() - 96))
-        painter.setPen(QColor(8, 4, 20, 220))
-        painter.drawText(status_rect.translated(1, 2), int(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter), display_label)
-        color_a, _ = self._theme_colors()
-        painter.setPen(QColor.fromRgbF(color_a.x(), color_a.y(), color_a.z(), .95))
-        painter.drawText(status_rect, int(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter), display_label)
-        painter.end()
+        painter=QPainter(self); label=self._STATE_LABELS.get(self.state,self.state)
+        font=painter.font(); font.setPixelSize(max(11,min(15,self.height()//34))); font.setLetterSpacing(font.SpacingType.AbsoluteSpacing,2.0); painter.setFont(font)
+        rect=self.rect().adjusted(24,0,-24,-26); rect.setTop(max(0,self.height()-70)); painter.setPen(QColor(198,151,255,205))
+        painter.drawText(rect,int(Qt.AlignmentFlag.AlignHCenter|Qt.AlignmentFlag.AlignVCenter),label); painter.end()

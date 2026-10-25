@@ -7,6 +7,7 @@ from dataclasses import dataclass
 class QualityPreset:
     name: str
     particle_count: int
+    edge_count: int
     frame_ms: int
     point_size: float
     turbulence: float
@@ -17,13 +18,15 @@ class QualityManager:
         # The Windows compositor quantizes 33/50 ms timers to lower-than-target
         # swap rates on the audited RX 5500 XT. 16 ms keeps medium/high vsynced;
         # low remains deliberately reduced for power-constrained systems.
-        "low": QualityPreset("low", 4_000, 33, 2.0, 0.55),
-        "medium": QualityPreset("medium", 10_000, 16, 2.2, 0.80),
-        "high": QualityPreset("high", 20_000, 16, 2.4, 1.00),
+        "low": QualityPreset("low", 450, 800, 33, 2.55, 0.55),
+        "medium": QualityPreset("medium", 800, 1_600, 16, 2.85, 0.80),
+        "high": QualityPreset("high", 1_200, 2_400, 16, 3.05, 1.00),
     }
 
     def __init__(self, initial: str = "medium") -> None:
         self._name = self.normalize(initial)
+        self._slow_seconds = 0.0
+        self._cooldown_seconds = 0.0
 
     @classmethod
     def normalize(cls, value: str) -> str:
@@ -36,4 +39,22 @@ class QualityManager:
 
     def set(self, value: str) -> QualityPreset:
         self._name = self.normalize(value)
+        self._slow_seconds = 0.0
+        self._cooldown_seconds = 4.0
         return self.current
+
+    def observe_frame(self, dt: float) -> str | None:
+        """Return a lower runtime preset after sustained sub-24 FPS rendering."""
+        dt = max(0.0, min(.25, float(dt)))
+        if self._cooldown_seconds > 0.0:
+            self._cooldown_seconds = max(0.0, self._cooldown_seconds - dt)
+            return None
+        if self._name == "low":
+            return None
+        if dt > (1.0 / 24.0):
+            self._slow_seconds += dt
+        else:
+            self._slow_seconds = max(0.0, self._slow_seconds - dt * 1.8)
+        if self._slow_seconds < 3.0:
+            return None
+        return "medium" if self._name == "high" else "low"
