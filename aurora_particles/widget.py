@@ -47,7 +47,7 @@ uniform vec4 uState,uAudio;
 varying float vSeed,vRole,vDepth,vEnergy;
 """ + DEFORM_GLSL + """
 void main(){
-  vec3 p=neuralDeform(aPosition,aSeed,aRole,aRole);
+  vec3 p=neuralDeform(aPosition,aSeed,aRole,aRole,1.0);
   gl_Position=vec4(p.xy,p.z*.28,1.0);
   float listening=uState.y,processing=uState.z,speaking=uState.w;
   float high=uAudio.w,rms=uAudio.x;
@@ -66,7 +66,7 @@ NODE_FRAGMENT_SHADER = """
 #version 120
 uniform vec3 uViolet,uMagenta,uCyan;
 uniform vec4 uState,uAudio;
-uniform float uNodeGlow;
+uniform float uNodeGlow,uTime;
 varying float vSeed,vRole,vDepth,vEnergy;
 void main(){
   vec2 q=gl_PointCoord-vec2(.5);float d=dot(q,q);if(d>.25)discard;
@@ -76,6 +76,8 @@ void main(){
   vec3 color=mix(vec3(.45,.12,.96),branch,.38+.48*vRole);
   float core=(1.0-vRole)*(.18+uState.z*.22+uState.w*(.38+.62*uAudio.x));
   color=mix(color,vec3(1.0,.94,1.0),clamp(core,0.,.82));
+  float amber=uState.z*step(.91,fract(vSeed*29.0+uTime*.08));
+  color=mix(color,vec3(1.0,.32,.035),amber*.52);
   float coreWeight=(1.0-vRole)*(1.0-vRole);
   float alpha=halo*(.30+.18*vEnergy+.58*coreWeight)*(.68+.32*vDepth)*mix(1.0,.16,uNodeGlow);
   gl_FragColor=vec4(color*(.44+.20*vEnergy+coreWeight*.34+uNodeGlow*.22),alpha);
@@ -91,7 +93,7 @@ uniform vec4 uState,uAudio;
 varying float vSeed,vPath,vDepth,vEnergy,vLayer;
 """ + DEFORM_GLSL + """
 void main(){
-  vec3 p=neuralDeform(aPosition,aSeed,clamp(length(aPosition.xy)/.88,0.,1.),aPath);
+  vec3 p=neuralDeform(aPosition,aSeed,clamp(length(aPosition.xy)/.88,0.,1.),aPath,aLayer);
   gl_Position=vec4(p.xy,p.z*.28,1.0);
   vSeed=aSeed;vPath=aPath;vDepth=aDepth;vLayer=aLayer;
   vEnergy=clamp(.18+uAudio.x*.36+uAudio.z*.28+uState.z*.18+uState.w*.20+uError*.12,0.,1.);
@@ -106,20 +108,35 @@ uniform vec4 uState,uAudio;
 varying float vSeed,vPath,vDepth,vEnergy,vLayer;
 void main(){
   float listening=uState.y,processing=uState.z,speaking=uState.w;
-  float rate=.055+uAudio.x*.38+processing*.30+speaking*.18;
-  float phase=fract(vSeed+uTime*rate);
-  float directed=mix(phase,1.0-phase,listening/(listening+speaking+.001));
-  float delta=abs(vPath-directed);delta=min(delta,1.0-delta);
-  float pulse=exp(-delta*delta/(.00022+uAudio.w*.00070));
+  float rate=.045+uAudio.x*.34+processing*.27+speaking*.20;
+  float reverse=listening/(listening+speaking+.001);
+  float phaseA=fract(vSeed+uTime*rate*(.72+.18*vLayer));
+  float phaseB=fract(vSeed*3.17+.37+uTime*rate*(1.18+.11*vLayer));
+  float phaseC=fract(vSeed*7.31+.71+uTime*rate*(1.72+.09*vLayer));
+  phaseA=mix(phaseA,1.0-phaseA,reverse);phaseB=mix(phaseB,1.0-phaseB,reverse);phaseC=mix(phaseC,1.0-phaseC,reverse);
+  float deltaA=abs(vPath-phaseA);float deltaB=abs(vPath-phaseB);float deltaC=abs(vPath-phaseC);
+  float pulseA=exp(-deltaA*deltaA/(.00018+uAudio.w*.00062));
+  float pulseB=exp(-deltaB*deltaB/(.00010+uAudio.w*.00045));
+  float pulseC=exp(-deltaC*deltaC/(.00007+uAudio.w*.00034));
+  float pulse=max(pulseA,max(pulseB*.78,pulseC*.56));
   float occasional=step(.76,fract(vSeed*13.7+uTime*.035));
   pulse*=clamp(.10+listening*.80+processing*.92+speaking*.88+uState.x*.12*occasional,0.,1.);
   float secondary=step(.5,vLayer)-step(1.5,vLayer);float wisp=step(1.5,vLayer);
-  vec3 base=mix(vec3(.64,.12,1.0),vec3(1.0,.05,.54),fract(vSeed*5.2));
-  base=mix(base,vec3(.02,.66,1.0),clamp(secondary*.68+wisp*.32+listening*.16,0.,.76));
-  vec3 color=mix(base,vec3(1.0,.90,1.0),pulse*.22);
-  float layerAlpha=1.0-secondary*.16-wisp*.46;
+  vec3 mainColor=mix(vec3(.48,.035,.94),vec3(1.0,.025,.42),fract(vSeed*5.2));
+  vec3 secondaryColor=mix(vec3(.10,.055,.92),vec3(.0,.60,1.0),fract(vSeed*7.7));
+  vec3 microColor=mix(vec3(.008,.018,.30),vec3(.0,.62,.70),step(.82,fract(vSeed*23.0)));
+  vec3 base=mix(mainColor,secondaryColor,secondary);
+  base=mix(base,microColor,wisp);
+  base=mix(base,vec3(.0,.78,1.0),listening*(.18+.40*secondary+.52*wisp));
+  base=mix(base,vec3(.01,.86,.78),wisp*step(.86,fract(vSeed*23.0))*.44);
+  float amber=processing*step(.78,fract(vSeed*31.0+floor(uTime*.45)*.13));
+  base=mix(base,vec3(1.0,.27,.025),amber*.64);
+  vec3 impulse=mix(vec3(.10,.72,1.0),vec3(1.0,.24,.72),speaking);
+  impulse=mix(impulse,vec3(1.0,.72,.24),processing*amber*.72);
+  vec3 color=mix(base,impulse,pulse*(.26+.18*speaking));
+  float layerAlpha=1.0-secondary*.20-wisp*.70;
   float routeFade=.48+.52*(1.0-smoothstep(.08,1.0,vPath));
-  float alpha=(.30+.16*vEnergy+pulse*.24)*(.62+.38*vDepth)*layerAlpha*routeFade;
+  float alpha=(.28+.15*vEnergy+pulse*.32)*(.32+.68*vDepth)*layerAlpha*routeFade;
   alpha*=mix(1.0,.24,uGlowPass);
   gl_FragColor=vec4(color*(.58+pulse*.34+uGlowPass*.16),alpha);
 }
@@ -255,6 +272,8 @@ class ParticleMorphingCanvas(QOpenGLWidget):
             "particles": preset.particle_count, "nodes": preset.particle_count,
             "connections": preset.edge_count, "mode": self._state_controller.current,
             "filaments": self._graph.filament_count if self._graph is not None else 0,
+            "filaments_by_layer": self._graph.layer_filament_counts if self._graph is not None else (0,0,0),
+            "segments_by_layer": self._graph.layer_segment_counts if self._graph is not None else (0,0,0),
             "target_mode": self._state_controller.target,
             "transition_progress": round(float(self._state_controller.progress), 3),
         }

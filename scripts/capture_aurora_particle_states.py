@@ -85,6 +85,11 @@ def main() -> None:
     wait(app, 650)
     wait_mode(app, widget, "processing")
     save(widget, output / "05_processing_stable.png")
+    processing_sequence = output / "processing_sequence"
+    processing_sequence.mkdir(exist_ok=True)
+    for frame in range(6):
+        if frame: wait(app, 600)
+        save(widget, processing_sequence / f"{frame + 1:02d}.png")
 
     widget.set_state("SPEAKING")
     widget.set_output_audio_level(.28)
@@ -120,6 +125,7 @@ def main() -> None:
         f"transition_duration_seconds={widget._state_controller.duration:.3f}\n"
         f"processing_hold_seconds=0.420\n"
         "standby_sequence_frames=6 interval_ms=1000\n"
+        "processing_sequence_frames=6 interval_ms=600\n"
         "speaking_sequence_frames=6 interval_ms=360 synthetic_audio=true\n"
         f"renderer={widget.renderer_status}\n",
         encoding="utf-8",

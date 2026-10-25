@@ -15,7 +15,7 @@ from aurora_particles.sampler import ModelPointSampler
 
 def test_quality_presets_match_bounded_neural_budget():
     assert {k: (v.particle_count, v.edge_count) for k, v in QualityManager.PRESETS.items()} == {
-        "low": (450, 800), "medium": (800, 1_600), "high": (1_200, 2_400),
+        "low": (450, 2_000), "medium": (800, 3_200), "high": (1_200, 5_500),
     }
     assert QualityManager().current.name == "medium"
 
@@ -46,8 +46,8 @@ def test_graph_has_exact_finite_pooled_buffers(quality):
 
 
 def test_graph_is_deterministic_irregular_and_not_a_spherical_shell():
-    first = build_neural_graph(800, 1_600)
-    second = build_neural_graph(800, 1_600)
+    first = build_neural_graph(800, 3_200)
+    second = build_neural_graph(800, 3_200)
     assert np.array_equal(first.nodes, second.nodes)
     radii = np.linalg.norm(first.nodes, axis=1)
     assert np.std(radii) > .16
@@ -57,7 +57,7 @@ def test_graph_is_deterministic_irregular_and_not_a_spherical_shell():
 
 
 def test_filaments_are_long_continuous_cubic_paths_in_three_layers():
-    graph = build_neural_graph(450, 800)
+    graph = build_neural_graph(450, 2_000)
     assert graph.filament_count == len(graph.filament_segment_counts)
     assert graph.filament_count >= 42
     assert set(np.unique(graph.edge_layer)) == {0.0, 1.0, 2.0}
@@ -70,6 +70,22 @@ def test_filaments_are_long_continuous_cubic_paths_in_three_layers():
         assert route[-1] == pytest.approx(1.0)
         offset += segment_count * 2
     assert offset == len(graph.edge_vertices)
+
+
+def test_medium_uses_hierarchical_branches_instead_of_radial_only_routes():
+    graph = build_neural_graph(800, 3_200)
+    assert graph.layer_filament_counts == (42, 110, 280)
+    starts = [[], [], []]
+    offset = 0
+    filament = 0
+    for layer, count in enumerate(graph.layer_filament_counts):
+        for _ in range(count):
+            starts[layer].append(float(np.linalg.norm(graph.edge_vertices[offset, :2])))
+            offset += graph.filament_segment_counts[filament] * 2
+            filament += 1
+    assert np.quantile(starts[0], .9) < .06
+    assert np.median(starts[1]) > .18
+    assert np.median(starts[2]) > .20
 
 
 def test_state_controller_inertially_blends_without_geometry_swap():
@@ -135,7 +151,7 @@ def test_shader_separates_rms_bass_mid_high_and_directed_impulses():
 
 
 def test_standby_morph_changes_silhouette_without_audio():
-    graph = build_neural_graph(800, 1_600)
+    graph = build_neural_graph(800, 3_200)
     start = reference_morph_positions(graph.nodes, graph.node_role, (1, 0, 0, 0), time_seconds=0.0)
     later = reference_morph_positions(graph.nodes, graph.node_role, (1, 0, 0, 0), time_seconds=7.0)
     displacement = np.linalg.norm(later[:, :2] - start[:, :2], axis=1)
@@ -146,7 +162,7 @@ def test_standby_morph_changes_silhouette_without_audio():
 
 
 def test_state_gestures_change_global_shape_not_only_energy():
-    graph = build_neural_graph(800, 1_600)
+    graph = build_neural_graph(800, 3_200)
     audio = (.42, .35, .25, .18)
     states = {
         "standby": (1, 0, 0, 0), "listening": (0, 1, 0, 0),
@@ -207,7 +223,8 @@ def test_widget_api_single_graph_and_raster_fallback():
     widget._timer.stop()
     graph_identity = id(widget._graph)
     assert widget.renderer_status["nodes"] == 450
-    assert widget.renderer_status["connections"] == 800
+    assert widget.renderer_status["connections"] == 2_000
+    assert widget.renderer_status["filaments_by_layer"] == (28, 70, 160)
     assert widget.set_state("LISTENING")
     assert id(widget._graph) == graph_identity
     widget.set_input_audio_level(.2); widget.set_input_audio_spectrum(.1, .2, .3)

@@ -6,13 +6,59 @@ Baseline: `b759b3f`
 Visual checkpoint: `b93a0f5`  
 Status: implemented and automatically validated; final owner-operated HUD/audio validation pending.
 
+## Aggressive hierarchical neural tangle — 2026-10-25
+
+The `bbb7f2e` continuous-filament renderer is the rollback point for this
+iteration. Its independent radial routes were retained as cubic Bézier
+filaments, then reorganized into a denser parent/child field rather than
+replaced by a node graph. The production geometry now has three structural
+layers:
+
+- main trunks begin at the luminous nucleus;
+- secondary branches depart from intermediate positions on main trunks;
+- microfibres depart primarily from secondary branches, with a bounded
+  minority attached to main routes for irregularity.
+
+MEDIUM contains `42` main, `110` secondary and `280` micro filaments (`432`
+total). They are sampled into `739`, `698` and `1,763` segments respectively
+(`3,200` total / `6,400` line vertices). LOW uses `28/70/160` filaments and
+`2,000` segments; HIGH uses `52/150/380` and `5,500` segments. The graph is
+deterministic and asymmetric, but child routes inherit their real parent's
+position and departure direction. It therefore reads as branching tissue
+instead of many unrelated spokes or visible node-to-node edges.
+
+Depth is carried per vertex. Z drift, slow parallax, depth-dependent opacity,
+particle size and separate foreground/background route phases prevent the
+field from collapsing into one flat plane. Main trunks are primarily
+magenta/fuchsia, secondary routes violet/electric blue and microfibres deep
+blue/turquoise. Listening biases the inward flow toward cyan; processing adds
+sparse amber routing highlights; speaking drives pink/magenta energy outward
+from a white/lilac core.
+
+Each route evaluates three unsynchronised shader pulse trains. Standby keeps
+them sparse, listening reverses their predominant direction toward the core,
+processing circulates distributed impulses and speaking sends them outward.
+No pulse object is allocated per frame.
+
+Final native framebuffer evidence, including six-frame STANDBY, PROCESANDO and
+HABLANDO sequences:
+
+`C:\JARVIS_CHECKPOINTS\aurora-neural-tangle-final2-2026-10-25`
+
+Using adjacent-frame differences above 12 RGB levels, the sequences change
+`7.33%`, `8.62%` and `11.90%` of pixels respectively. Their mean silhouette
+IoU values are `0.3799`, `0.3690` and `0.3808`. These are deterministic
+renderer/synthetic-audio observations; real microphone and Gemini/TTS
+validation remains owner-operated.
+
 ## Organic filament renderer — 2026-10-25
 
 The visible representation has been changed after the owner rejected the
 remaining node-graph/telaraña appearance. Logical particles still provide
 depth, sparks and audio detail, but they no longer define visible links.
-Instead, the primary body is 56/100/150 independent cubic Bézier filaments in
-LOW/MEDIUM/HIGH. Each route begins near the nucleus, has its own control-point
+Instead, the primary body uses hierarchical cubic Bézier filaments. Main
+routes begin near the nucleus, while secondary and micro routes branch from
+sampled positions on parent curves. Each route has its own control-point
 curvature, handedness, depth, length, phase and speed, and is sampled once into
 a fixed segment buffer.
 
@@ -194,9 +240,9 @@ All normalized values are capped before reaching the shader.
 
 | Preset | Logical particles | Filaments | Curve segments | Line vertices | Timer |
 |---|---:|---:|---:|---:|---:|
-| LOW | 450 | 56 | 800 | 1,600 | 33 ms |
-| MEDIUM | 800 | 100 | 1,600 | 3,200 | 16 ms |
-| HIGH | 1,200 | 150 | 2,400 | 4,800 | 16 ms |
+| LOW | 450 | 258 (`28/70/160`) | 2,000 | 4,000 | 33 ms |
+| MEDIUM | 800 | 432 (`42/110/280`) | 3,200 | 6,400 | 16 ms |
+| HIGH | 1,200 | 582 (`52/150/380`) | 5,500 | 11,000 | 16 ms |
 
 MEDIUM remains the default. If a visible MEDIUM/HIGH widget remains below
 24 FPS for three accumulated seconds, runtime quality drops one level. Brief
@@ -215,33 +261,33 @@ are **not measured**.
 
 | Preset/scenario | Average FPS | 1% low FPS | Mean frame | Process CPU |
 |---|---:|---:|---:|---:|
-| LOW idle | 20.66 | 20.47 | 46.80 ms | 11.46% |
-| LOW state+audio | 20.77 | 12.34 | 47.33 ms | 2.40% |
-| MEDIUM idle | 60.90 | 58.23 | 16.38 ms | 15.52% |
-| MEDIUM state+audio | 59.64 | 56.41 | 16.66 ms | 9.56% |
-| HIGH idle | 60.83 | 58.65 | 16.40 ms | 11.36% |
-| HIGH state+audio | 59.64 | 53.06 | 16.66 ms | 14.34% |
+| LOW idle | 20.56 | 19.51 | 46.78 ms | 6.22% |
+| LOW state+audio | 20.75 | 14.00 | 47.01 ms | 3.60% |
+| MEDIUM idle | 59.39 | 33.39 | 16.80 ms | 8.25% |
+| MEDIUM state+audio | 59.63 | 32.54 | 16.66 ms | 9.62% |
+| HIGH idle | 58.23 | 29.92 | 16.88 ms | 12.41% |
+| HIGH state+audio | 58.87 | 31.04 | 16.88 ms | 13.14% |
 
 After 10 warm-up cycles, 100 accelerated
 `STANDBY→ESCUCHANDO→PROCESANDO→HABLANDO→STANDBY` cycles at HIGH changed RSS
-from 158.742 MiB to 155.820 MiB (`-2.922 MiB`). This is evidence against an
+from 161.312 MiB to 158.461 MiB (`-2.852 MiB`). This is evidence against an
 obvious short-window leak, not a long-soak or driver VRAM certification.
 
 ## Automated validation
 
-- Neural visual focused tests: `22 passed`.
+- Neural visual focused tests: `23 passed`.
 - Visual/HUD/audio/F4/F8/device/conversation regressions:
-  `204 passed, 83 skipped`.
-- Full safe suite: `1325 passed, 1 failed, 93 skipped, 49 subtests passed`.
+  `205 passed, 83 skipped`.
+- Full safe suite: `1326 passed, 1 failed, 93 skipped, 49 subtests passed`.
   The sole failure is the pre-existing dirty-worktree mismatch in
   `test_select_repeat_regressions.py`: its mock lacks the newer
   `target_id` field expected by the independently modified
   `actions/computer_control.py`. No visual file participates in that failure.
-- Native framebuffer evidence: nine state/transition PNG captures plus two
+- Native framebuffer evidence: nine state/transition PNG captures plus three
   six-frame temporal sequences, GPU renderer active, MEDIUM/800 logical
-  particles/100 filaments/1,600 curve segments, final state stable STANDBY.
+  particles/432 filaments/3,200 curve segments, final state stable STANDBY.
 
-Final captures:
+Original visual-integration captures:
 
 `C:\JARVIS_CHECKPOINTS\neural-voice-visual-final-2026-10-25`
 
@@ -254,9 +300,10 @@ remain the evidence that each audio band reaches its distinct shader behaviour.
 
 - Long cubic routes replaced the visible graph instead of increasing the point
   count: curvature and movement are now the visual identity.
-- Cubic curves are sampled into 10–25 contiguous segments depending on layer and
-  quality budget. Native wide anti-aliased GPU curves are not consistently
-  available in GLSL 1.20.
+- Cubic curves use a bounded, layer-aware sample allocation. Native wide
+  anti-aliased GPU curves are not consistently available in GLSL 1.20, so the
+  current output remains luminous `GL_LINES`, not true volumetric ribbons or
+  tubes.
 - Impulses are bright regions moving inside the line shader, avoiding a third
   draw call and per-frame object pooling.
 - The filament field is deterministic but intentionally asymmetric; it is not a brain
@@ -277,7 +324,8 @@ The following cannot be certified by automated framebuffer capture:
 
 ## Recovery
 
-- Git checkpoint before this redesign: `b93a0f5`.
+- Git rollback immediately before the hierarchical-tangle iteration: `bbb7f2e`.
+- Earlier visual checkpoint: `b93a0f5`.
 - Full external snapshot of the pre-redesign visual integration:
   `C:\JARVIS_CHECKPOINTS\neural-voice-visual-prework-2026-10-25-b759b3f`.
 

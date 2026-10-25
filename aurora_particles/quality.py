@@ -18,9 +18,9 @@ class QualityManager:
         # The Windows compositor quantizes 33/50 ms timers to lower-than-target
         # swap rates on the audited RX 5500 XT. 16 ms keeps medium/high vsynced;
         # low remains deliberately reduced for power-constrained systems.
-        "low": QualityPreset("low", 450, 800, 33, 2.55, 0.55),
-        "medium": QualityPreset("medium", 800, 1_600, 16, 2.85, 0.80),
-        "high": QualityPreset("high", 1_200, 2_400, 16, 3.05, 1.00),
+        "low": QualityPreset("low", 450, 2_000, 33, 2.45, 0.55),
+        "medium": QualityPreset("medium", 800, 3_200, 16, 2.70, 0.80),
+        "high": QualityPreset("high", 1_200, 5_500, 16, 2.90, 1.00),
     }
 
     def __init__(self, initial: str = "medium") -> None:
