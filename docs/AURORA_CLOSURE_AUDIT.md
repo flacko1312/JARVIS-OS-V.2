@@ -2,7 +2,7 @@
 
 **Date:** 2026-10-27
 **Branch:** `codex/neural-voice-visual`
-**Baseline commit:** `4e2d890` (feat: add safe deterministic calculator tool)
+**Baseline commit:** `db426c6` (docs: add particle morphing and preventive regression audits)
 **Auditor:** Automated (Claude Opus 4.6)
 
 ---
@@ -263,7 +263,7 @@ These require human testing on physical hardware and cannot be validated by auto
 | ID | Priority | Description | Status |
 |----|----------|-------------|--------|
 | TD-001 | P3 | Optional robustness checks after JL-A10 | Open |
-| TD-002 | P2 | Deprecated google.generativeai in desktop.py, computer_settings.py | Open — affects 2 modules |
+| TD-002 | P2 | Deprecated google.generativeai in computer_settings.py, agent/executor.py | PARCIAL — desktop.py fixed, 2 modules remain |
 | TD-003 | P2 | Broad except handlers | Open — grew from 492 to 662 |
 | TD-004 | P2 | Legacy JSON memory + LILITH coexistence | Open — routing guard mitigates |
 | TD-005 | P2 | Frontend dev toolchain audit | Open |
@@ -287,6 +287,25 @@ These require human testing on physical hardware and cannot be validated by auto
 **Fix:** Rewrote both test functions to mock `safe_select_all_text` at the `actions.computer_control` module level, matching the current code path. Verified all 5 tests in the file pass.
 
 **File:** `tests/test_select_repeat_regressions.py`
+
+### 8.2 desktop.py — Unhandled API key crash + deprecated google.generativeai (FIXED)
+
+**Problem:** `_get_api_key()` used bare `json.load(f)["gemini_api_key"]` — crashes with `FileNotFoundError` if config missing or `KeyError` if key absent. Also, `_ask_gemini_for_desktop_action()` used deprecated `google.generativeai` directly instead of the centralized model resolver.
+
+**Fix:**
+- Replaced `_get_api_key()` with import from `core.gemini_config.gemini_api_key()` (the centralized resolver handles env vars, config files, and tenant lookup with proper error messages)
+- Migrated `_ask_gemini_for_desktop_action()` from `google.generativeai` to `component_model_client("desktop")` using the `GeminiModelAdapter`
+- Removed dead `_get_api_key()` function and unused `json` import
+
+**File:** `actions/desktop.py`
+
+### 8.3 test_file_controller.py — Wrong function references (FIXED)
+
+**Problem:** Tests imported `_resolve_safe_path` which doesn't exist in the module. Used wrong parameter keys (`file_path` instead of `path`, `action: "create"` instead of `"create_file"`).
+
+**Fix:** Rewrote test suite to use actual API (`_resolve_path`, `_is_safe_path`, `_allowed_roots`). Added 11 well-structured tests covering alias normalization, safe path resolution, traversal rejection, file CRUD, and dispatch routing.
+
+**File:** `tests/test_file_controller.py`
 
 ---
 
