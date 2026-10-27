@@ -1,7 +1,6 @@
 #desktop.py
 import os
 import sys
-import json
 import shutil
 import subprocess
 import tempfile
@@ -25,11 +24,6 @@ def _get_base_dir() -> Path:
         return Path(sys.executable).parent
     return Path(__file__).resolve().parent.parent
 
-def _get_api_key() -> str:
-    path = _get_base_dir() / "config" / "api_keys.json"
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)["gemini_api_key"]
-    
 def _get_desktop() -> Path:
     if _OS == "Linux":
         xdg = os.environ.get("XDG_DESKTOP_DIR", "")
@@ -105,9 +99,8 @@ def _execute_generated_code(code: str, player=None) -> str:
 
 def _ask_gemini_for_desktop_action(task: str) -> str:
 
-    import google.generativeai as genai
-    genai.configure(api_key=_get_api_key())
-    model = genai.GenerativeModel("gemini-2.5-flash")
+    from core.gemini_config import component_model_client
+    model = component_model_client("desktop", default_model="gemini-2.5-flash")
 
     desktop = str(_get_desktop())
 
