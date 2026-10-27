@@ -5453,6 +5453,143 @@ class _OverlayBase(QWidget):
         super().mouseReleaseEvent(event)
 
 
+class AudioDeviceOverlay(_OverlayBase):
+    """Compact selector backed by the live engine's audio device manager."""
+
+    def __init__(self, parent=None, *, refresh_cb=None, input_cb=None, output_cb=None):
+        super().__init__(parent)
+        self._refresh_cb = refresh_cb
+        self._input_cb = input_cb
+        self._output_cb = output_cb
+        self._loading = False
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setStyleSheet(f"""
+            AudioDeviceOverlay {{
+                background: {C.BG}; border: 1px solid {C.BORDER_B}; border-radius: 8px;
+            }}
+            QLabel {{ color: {C.TEXT_MED}; background: transparent; }}
+            QComboBox {{
+                background: {C.DARK}; color: {C.WHITE}; border: 1px solid {C.BORDER};
+                border-radius: 4px; padding: 5px 8px;
+            }}
+            QComboBox:focus {{ border-color: {C.PRI}; }}
+            QComboBox QAbstractItemView {{
+                background: {C.DARK}; color: {C.WHITE}; selection-background-color: {C.PRI_GHO};
+                border: 1px solid {C.BORDER_B};
+            }}
+        """)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(24, 20, 24, 18)
+        layout.setSpacing(8)
+
+        title = QLabel("AUDIO")
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        title.setFont(QFont(UI_FONT, 12, QFont.Weight.Bold))
+        title.setStyleSheet(f"color: {C.PRI}; background: transparent;")
+        layout.addWidget(title)
+
+        self._input_label = QLabel("ENTRADA DE AUDIO")
+        self._input_label.setFont(QFont(UI_FONT, 8, QFont.Weight.DemiBold))
+        layout.addWidget(self._input_label)
+        self.input_combo = QComboBox()
+        self.input_combo.setAccessibleName("Entrada de audio")
+        self.input_combo.currentIndexChanged.connect(self._input_changed)
+        layout.addWidget(self.input_combo)
+
+        layout.addSpacing(5)
+        self._output_label = QLabel("SALIDA DE AUDIO")
+        self._output_label.setFont(QFont(UI_FONT, 8, QFont.Weight.DemiBold))
+        layout.addWidget(self._output_label)
+        self.output_combo = QComboBox()
+        self.output_combo.setAccessibleName("Salida de audio")
+        self.output_combo.currentIndexChanged.connect(self._output_changed)
+        layout.addWidget(self.output_combo)
+
+        self.status_label = QLabel("Consultando dispositivos…")
+        self.status_label.setWordWrap(True)
+        self.status_label.setFont(QFont(UI_FONT, 8))
+        self.status_label.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent;")
+        layout.addWidget(self.status_label)
+
+        refresh_btn = QPushButton("ACTUALIZAR DISPOSITIVOS")
+        refresh_btn.setFixedHeight(32)
+        refresh_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        refresh_btn.setStyleSheet(f"""
+            QPushButton {{ background: {C.PRI_GHO}; color: {C.PRI};
+                border: 1px solid {C.BORDER_B}; border-radius: 4px; }}
+            QPushButton:hover {{ background: {C.DARK2}; border-color: {C.PRI}; }}
+        """)
+        refresh_btn.clicked.connect(self.refresh_devices)
+        layout.addWidget(refresh_btn)
+        self._setup_overlay_base(close_callback=self.hide)
+        self.refresh_devices()
+
+    def refresh_devices(self):
+        if not callable(self._refresh_cb):
+            self.status_label.setText("El motor de audio todavía no está disponible.")
+            return
+        try:
+            snapshot = self._refresh_cb()
+            self._loading = True
+            self._fill_combo(
+                self.input_combo, snapshot.get("inputs", []),
+                snapshot.get("selected_input", "windows-default"),
+            )
+            self._fill_combo(
+                self.output_combo, snapshot.get("outputs", []),
+                snapshot.get("selected_output", "windows-default"),
+            )
+            input_missing = (
+                snapshot.get("selected_input") != "windows-default"
+                and self.input_combo.currentData() != snapshot.get("selected_input")
+            )
+            output_missing = (
+                snapshot.get("selected_output") != "windows-default"
+                and self.output_combo.currentData() != snapshot.get("selected_output")
+            )
+            if input_missing or output_missing:
+                self.status_label.setText(
+                    "Un dispositivo guardado no está disponible; AURORA usa la alternativa de Windows y lo recuperará al reaparecer."
+                )
+            else:
+                self.status_label.setText("Dispositivos actualizados. Los cambios se aplican al instante.")
+        except Exception as exc:
+            self.status_label.setText(f"No se pudieron consultar los dispositivos: {exc}")
+        finally:
+            self._loading = False
+
+    @staticmethod
+    def _fill_combo(combo: QComboBox, devices: list[dict], selected_id: str):
+        combo.blockSignals(True)
+        combo.clear()
+        selected_index = -1
+        for device in devices:
+            combo.addItem(str(device.get("display_name") or device.get("name") or "Audio"), device.get("device_id"))
+            if device.get("device_id") == selected_id:
+                selected_index = combo.count() - 1
+        combo.setCurrentIndex(selected_index if selected_index >= 0 else 0)
+        combo.blockSignals(False)
+
+    def _select(self, combo: QComboBox, callback, kind: str):
+        if self._loading or not callable(callback):
+            return
+        device_id = combo.currentData()
+        if not device_id:
+            return
+        try:
+            selected = callback(str(device_id))
+            self.status_label.setText(f"{kind} activa: {selected.get('name', combo.currentText())}")
+        except Exception as exc:
+            self.status_label.setText(f"No se pudo cambiar {kind.lower()}: {exc}")
+            self.refresh_devices()
+
+    def _input_changed(self, _index: int):
+        self._select(self.input_combo, self._input_cb, "Entrada")
+
+    def _output_changed(self, _index: int):
+        self._select(self.output_combo, self._output_cb, "Salida")
+
+
 # ---------------------------------------------------------------------------
 # ShortcutsOverlay — keyboard shortcuts help panel
 # ---------------------------------------------------------------------------
@@ -7141,9 +7278,13 @@ class MainWindow(QMainWindow):
         self.on_tts_provider_change = None
         self.on_quit_requested      = None
         self.on_conversation_toggle = None
+        self.on_audio_devices_request = None
+        self.on_audio_input_select = None
+        self.on_audio_output_select = None
         self._muted                 = False
         self._current_file: str | None = None
         self._tts_overlay: TTSProviderOverlay | None = None
+        self._audio_overlay: AudioDeviceOverlay | None = None
         self._compact_mode          = False
         self._compact_widget: CompactModeWidget | None = None
         self._shortcuts_overlay: ShortcutsOverlay | None = None
@@ -7321,6 +7462,7 @@ class MainWindow(QMainWindow):
         self._name_overlay: NameSignInOverlay | None = None
         self._voice_overlay: VoiceSelectOverlay | None = None
         self._tts_overlay: TTSProviderOverlay | None = None
+        self._audio_overlay: AudioDeviceOverlay | None = None
         self.on_voice_change = None
         self.on_tts_provider_change = None
         self._load_saved_voice()
@@ -7900,7 +8042,7 @@ class MainWindow(QMainWindow):
             super().keyPressEvent(event)
 
     def _dismiss_overlays(self):
-        for ov in (self._shortcuts_overlay, self._settings_overlay):
+        for ov in (self._audio_overlay, self._shortcuts_overlay, self._settings_overlay):
             if ov and ov.isVisible():
                 ov.hide()
                 return
@@ -7939,6 +8081,13 @@ class MainWindow(QMainWindow):
             ow, oh = 420, 380
             self._voice_overlay.setGeometry(
                 (cw.width()  - ow) // 2,
+                (cw.height() - oh) // 2,
+                ow, oh,
+            )
+        if hasattr(self, "_audio_overlay") and self._audio_overlay and self._audio_overlay.isVisible():
+            ow, oh = 500, 340
+            self._audio_overlay.setGeometry(
+                (cw.width() - ow) // 2,
                 (cw.height() - oh) // 2,
                 ow, oh,
             )
@@ -8214,6 +8363,8 @@ class MainWindow(QMainWindow):
             self._style_command_button(self._tts_btn, C.TEXT_MED, C.PRI)
         if hasattr(self, "_name_btn"):
             self._style_command_button(self._name_btn, C.TEXT_MED, C.PRI)
+        if hasattr(self, "_audio_btn"):
+            self._style_command_button(self._audio_btn, C.TEXT_MED, C.PRI)
         if hasattr(self, "_theme_btn"):
             self._style_command_button(self._theme_btn, C.TEXT_MED, C.PRI)
         if hasattr(self, "_quit_btn"):
@@ -8731,6 +8882,13 @@ class MainWindow(QMainWindow):
         self._name_btn.clicked.connect(self._show_name_signin)
         self._update_name_btn()
         track_lay.addWidget(self._name_btn)
+        track_lay.addWidget(_track_separator())
+
+        self._audio_btn = _ctrl_btn("AUDIO", 126)
+        self._audio_btn.setToolTip("Seleccionar entrada y salida de audio")
+        self._audio_btn.setAccessibleName("Seleccionar dispositivos de audio")
+        self._audio_btn.clicked.connect(self._show_audio_select)
+        track_lay.addWidget(self._audio_btn)
         track_lay.addWidget(_track_separator())
 
         # Theme cycle button
@@ -9463,6 +9621,32 @@ class MainWindow(QMainWindow):
             self._voice_overlay.deleteLater()
             self._voice_overlay = None
 
+    def _show_audio_select(self):
+        if self._audio_overlay and self._audio_overlay.isVisible():
+            self._audio_overlay.refresh_devices()
+            self._audio_overlay.raise_()
+            return
+        ov = AudioDeviceOverlay(
+            self.centralWidget(),
+            refresh_cb=self.on_audio_devices_request,
+            input_cb=self.on_audio_input_select,
+            output_cb=self.on_audio_output_select,
+        )
+        cw = self.centralWidget()
+        ow, oh = 500, 340
+        ov.setGeometry((cw.width() - ow) // 2, (cw.height() - oh) // 2, ow, oh)
+        ov._close_cb = self._close_audio_overlay
+        ov._close_btn.clicked.disconnect()
+        ov._close_btn.clicked.connect(self._close_audio_overlay)
+        ov.show()
+        self._audio_overlay = ov
+
+    def _close_audio_overlay(self):
+        if self._audio_overlay:
+            self._audio_overlay.hide()
+            self._audio_overlay.deleteLater()
+            self._audio_overlay = None
+
     def _on_voice_select_done(self, voice_value: str):
         if hasattr(self, "_voice_overlay") and self._voice_overlay:
             self._voice_overlay.hide()
@@ -9693,6 +9877,30 @@ class JarvisUI:
     @on_tts_provider_change.setter
     def on_tts_provider_change(self, cb):
         self._win.on_tts_provider_change = cb
+
+    @property
+    def on_audio_devices_request(self):
+        return self._win.on_audio_devices_request
+
+    @on_audio_devices_request.setter
+    def on_audio_devices_request(self, cb):
+        self._win.on_audio_devices_request = cb
+
+    @property
+    def on_audio_input_select(self):
+        return self._win.on_audio_input_select
+
+    @on_audio_input_select.setter
+    def on_audio_input_select(self, cb):
+        self._win.on_audio_input_select = cb
+
+    @property
+    def on_audio_output_select(self):
+        return self._win.on_audio_output_select
+
+    @on_audio_output_select.setter
+    def on_audio_output_select(self, cb):
+        self._win.on_audio_output_select = cb
 
     def set_state(self, state: str):
         self._win._state_sig.emit(state)

@@ -105,6 +105,53 @@ class CurrentUIContractTests(unittest.TestCase):
             self.window._muted = original
             self.window._style_mute_btn()
 
+    def test_audio_button_opens_compact_selector_with_real_callbacks(self):
+        snapshot = {
+            "inputs": [
+                {"device_id": "windows-default", "display_name": "Dispositivo predeterminado de Windows"},
+                {"device_id": "input-realtek", "display_name": "Microphone (Realtek Audio)"},
+            ],
+            "outputs": [
+                {"device_id": "windows-default", "display_name": "Dispositivo predeterminado de Windows"},
+                {"device_id": "output-m197wd", "display_name": "M197WD (AMD High Definition Audio)"},
+            ],
+            "selected_input": "input-realtek",
+            "selected_output": "output-m197wd",
+        }
+        self.window.on_audio_devices_request = Mock(return_value=snapshot)
+        self.window.on_audio_input_select = Mock(return_value={"name": "Microphone (Realtek Audio)"})
+        self.window.on_audio_output_select = Mock(return_value={"name": "M197WD"})
+        self.window._audio_btn.click()
+        self.app.processEvents()
+        overlay = self.window._audio_overlay
+        self.assertIsNotNone(overlay)
+        self.assertTrue(overlay.isVisible())
+        self.assertEqual(overlay.input_combo.currentData(), "input-realtek")
+        self.assertEqual(overlay.output_combo.currentData(), "output-m197wd")
+        self.assertNotIn("0", overlay.input_combo.currentText())
+        self.window._close_audio_overlay()
+
+    def test_audio_selector_applies_selection_immediately(self):
+        snapshot = {
+            "inputs": [
+                {"device_id": "windows-default", "display_name": "Predeterminado"},
+                {"device_id": "input-usb", "display_name": "USB Headset"},
+            ],
+            "outputs": [{"device_id": "windows-default", "display_name": "Predeterminado"}],
+            "selected_input": "windows-default",
+            "selected_output": "windows-default",
+        }
+        select_input = Mock(return_value={"name": "USB Headset"})
+        self.window.on_audio_devices_request = Mock(return_value=snapshot)
+        self.window.on_audio_input_select = select_input
+        self.window.on_audio_output_select = Mock(return_value={"name": "Predeterminado"})
+        self.window._show_audio_select()
+        self.window._audio_overlay.input_combo.setCurrentIndex(1)
+        self.app.processEvents()
+        select_input.assert_called_once_with("input-usb")
+        self.assertIn("USB Headset", self.window._audio_overlay.status_label.text())
+        self.window._close_audio_overlay()
+
     def test_quit_command_uses_shared_shutdown_path(self):
         with (
             patch.object(self.window, "_request_quit") as request_quit,

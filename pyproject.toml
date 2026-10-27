@@ -18,7 +18,7 @@ quality = ["ruff>=0.17,<0.18", "mypy>=2.4,<2.5"]
 py-modules = ["main", "ui", "ui_locale", "runtime"]
 
 [tool.setuptools.packages.find]
-include = ["actions*", "agent*", "api*", "awareness*", "config*", "core*", "lilith_client*", "memory*", "router*"]
+include = ["actions*", "agent*", "api*", "aurora_particles*", "awareness*", "config*", "core*", "lilith_client*", "memory*", "router*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

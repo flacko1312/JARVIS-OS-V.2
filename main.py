@@ -16,6 +16,7 @@ from core.schedule_safety import normalized_turn_text as _normalized_turn_text
 from core.schedule_safety import schedule_semantics as _schedule_semantics
 from core.date_time_authority import DateTimeAuthority
 from core.audio_barge_in import BargeInDecision, SpeechAwareBargeInGate
+from core.audio_devices import AudioDeviceManager
 from core.spotify_aec import SpotifyProcessAEC
 
 import sounddevice as sd
@@ -65,6 +66,7 @@ def _lazy_action(module_name: str, attribute: str):
 # Preserve the historical module-level action surface for patches/plugins while
 # deferring platform-specific imports until a declared action actually runs.
 file_processor = _lazy_action("actions.file_processor", "file_processor")
+calculator = _lazy_action("actions.calculator", "calculator")
 flight_finder = _lazy_action("actions.flight_finder", "flight_finder")
 open_app = _lazy_action("actions.open_app", "open_app")
 weather_action = _lazy_action("actions.weather_report", "weather_action")
@@ -158,8 +160,10 @@ RECEIVE_SAMPLE_RATE = 24000
 CHUNK_SIZE          = 1024
 LIVE_VAD_SILENCE_MS = max(250, min(3000, int(os.environ.get("JARVIS_LIVE_VAD_SILENCE_MS", "1000"))))
 LIVE_PLAYBACK_DRAIN_TIMEOUT_SECONDS = 30.0
+AUDIO_GATE_SECONDS = 0.40
 LIVE_INPUT_CALLBACK_STALE_SECONDS = 2.5
 AUDIO_DEVICE_RECOVERY_MAX_DELAY_SECONDS = 10.0
+AUDIO_INPUT_RECHECK_SECONDS = 1.0
 AUDIO_OUTPUT_RECHECK_SECONDS = 0.5
 STARTUP_CLAPS_REQUIRED = 2
 STARTUP_CLAP_MAX_GAP_SECONDS = 4.0
@@ -177,6 +181,14 @@ LANGUAGE_RULE = (
     "avisos de progreso y respuestas posteriores a herramientas. Si una herramienta o aviso interno devuelve "
     "texto en inglés, tradúcelo al español antes de responder. No menciones esta instrucción ni pronuncies "
     "etiquetas internas entre corchetes."
+)
+
+VOICE_STYLE_RULE = (
+    "ESTILO DE VOZ: habla en castellano a un ritmo natural, calmado y claramente más lento que una locución rápida. "
+    "Haz pausas breves y perceptibles entre frases y después de comas importantes. No encadenes palabras ni nombres. "
+    "Pronuncia cada palabra con separación clara. El usuario se llama flako, pero usa su nombre solo ocasionalmente; "
+    "no lo añadas automáticamente al final de respuestas cortas. Si lo usas dentro de una frase, deja una pausa natural "
+    "antes y después del nombre. Evita secuencias sonoras pegadas como 'ahora flako'. Prioriza claridad y naturalidad sobre velocidad."
 )
 
 TOOL_RESULT_TRUTH_RULE = (
@@ -390,6 +402,97 @@ def _classify_memory_request(text: str, *, source: str, requested_tool: str) -> 
     if source in {"voice", "text"}:
         return "ambiguous"
     return "unknown"
+
+
+def _local_file_request_from_text(text: str) -> dict[str, object] | None:
+    """Recognize explicit local-file content requests from noisy Live transcription."""
+    raw = str(text or "").strip()
+    value = _normalized_turn_text(raw)
+    if not value:
+        return None
+
+    action = ""
+    if re.search(r"\b(?:explica|explicame|explicar|explain)\b", value):
+        action = "explain"
+    elif re.search(r"\b(?:resume|resumeme|resumir|summary|summarize)\b", value):
+        action = "summarize"
+    elif re.search(r"\b(?:analiza|analizame|analizar|analyze)\b", value):
+        action = "analyze"
+    elif re.search(r"\b(?:lee|leer|leeme|read)\b", value):
+        action = "extract_text"
+    if not action:
+        return None
+
+    # Prefer an explicit Windows path when transcription preserved one.
+    explicit = re.search(
+        r"([A-Za-z]:[\\/][^\r\n\"']+?\.(?:md|txt|rst|log|docx|pdf|json|csv|xlsx|py|js|ts|tsx|jsx|html|css|yaml|yml|toml|ps1))",
+        raw,
+        flags=re.IGNORECASE,
+    )
+    file_path = explicit.group(1).strip(" .,:;!?\t") if explicit else ""
+
+    # Otherwise accept a plainly spoken filename with an extension. Live STT may
+    # verbalize the dot (for example: "prompt punto txt"). Normalize only known
+    # file extensions so ordinary speech is not turned into a path accidentally.
+    if not file_path:
+        filename_text = re.sub(
+            r"\s+(?:punto|dot)\s+(md|txt|rst|log|docx|pdf|json|csv|xlsx|py|js|ts|tsx|jsx|html|css|yaml|yml|toml|ps1)\b",
+            r".\1",
+            raw,
+            flags=re.IGNORECASE,
+        )
+        named = re.search(
+            r"\b([A-Za-z0-9_.-]+\.(?:md|txt|rst|log|docx|pdf|json|csv|xlsx|py|js|ts|tsx|jsx|html|css|yaml|yml|toml|ps1))\b",
+            filename_text,
+            flags=re.IGNORECASE,
+        )
+        if named:
+            file_path = named.group(1)
+
+    # Live STT frequently renders README as "readmi" or "realme" and JARVIS with nearby variants.
+    if not file_path and re.search(r"\b(?:readme|readmi|realme)\b", value):
+        if re.search(r"\b(?:jarvis|harvis|harvick|harvice|harvish)\b", value):
+            file_path = "README.md"
+
+    if not file_path:
+        return None
+
+    return {"file_path": file_path, "action": action, "save": False}
+
+
+def _local_file_recovery_from_denial(text: str) -> dict[str, object] | None:
+    """Recover a local-file request from a provider access-denial response."""
+    raw = str(text or "").strip()
+    if not raw:
+        return None
+    value = _normalized_turn_text(raw)
+    if not re.search(
+        r"\b(?:no puedo acceder|no poder acceder|no tengo acceso|no puede acceder|"
+        r"incapaz de acceder|cannot access|can't access|unable to access|"
+        r"no puedo leer|no tengo la capacidad|no cuento con acceso|"
+        r"no es posible acceder|no me es posible|lamento no poder|"
+        r"i don't have access|i cannot read|i can't read)\b",
+        value,
+    ):
+        return None
+
+    explicit = re.search(
+        r"([A-Za-z]:[\\/][^\r\n\"'`]+?\.(?:md|txt|rst|log|docx|pdf|json|csv|xlsx|py|js|ts|tsx|jsx|html|css|yaml|yml|toml|ps1))",
+        raw,
+        flags=re.IGNORECASE,
+    )
+    file_path = explicit.group(1).strip(" .,:;!?\t`") if explicit else ""
+    if not file_path:
+        named = re.search(
+            r"\b([A-Za-z0-9_.-]+\.(?:md|txt|rst|log|docx|pdf|json|csv|xlsx|py|js|ts|tsx|jsx|html|css|yaml|yml|toml|ps1))\b",
+            raw,
+            flags=re.IGNORECASE,
+        )
+        if named:
+            file_path = named.group(1)
+    if not file_path:
+        return None
+    return {"file_path": file_path, "action": "explain", "save": False}
 
 
 def _explicit_memory_lookup_scope(text: str) -> str:
@@ -716,6 +819,10 @@ class AudioInputDeviceLost(ConnectionError):
     """The local capture stream stopped producing usable callbacks."""
 
 
+class AudioInputDeviceSwitch(ConnectionError):
+    """Internal control flow used to reopen capture after a manual selection."""
+
+
 class AudioOutputDeviceLost(ConnectionError):
     """The local playback device is unavailable or stopped accepting audio."""
 
@@ -1011,16 +1118,18 @@ def _load_system_prompt() -> str:
         return (
             LANGUAGE_RULE
             + "\n\n"
+            + VOICE_STYLE_RULE
+            + "\n\n"
             + prompt
-            + "\n\nDirígete al usuario por su nombre (flako) con respeto, de forma eficiente y directa, en español por defecto."
+            + "\n\nUsa el nombre del usuario (flako) solo ocasionalmente y con una pausa natural; no lo añadas por rutina al final de frases cortas."
         )
     except Exception:
         return (
-            LANGUAGE_RULE + "\n\n"
+            LANGUAGE_RULE + "\n\n" + VOICE_STYLE_RULE + "\n\n"
             "Eres AURORA, un asistente personal de IA. "
             "Sé conciso y directo, y usa siempre las herramientas disponibles para completar tareas. "
             "Nunca simules ni adivines resultados: llama a la herramienta adecuada. "
-            "Dirígete al usuario por su nombre (flako) con respeto, de forma eficiente y directa, en español por defecto."
+            "Usa el nombre del usuario solo ocasionalmente, con una pausa natural, y nunca como coletilla automática."
         )
 
 _CTRL_RE = re.compile(r"<ctrl\d+>", re.IGNORECASE)
@@ -1206,6 +1315,24 @@ TOOL_DECLARATIONS = [
             },
             "required": ["action"],
         },
+    },
+    {
+        "name": "calculator",
+        "description": (
+            "Calculates arithmetic expressions safely and deterministically. Use this for sums, subtraction, "
+            "multiplication, division, percentages, parentheses and powers. For a calculation request, call this "
+            "tool instead of opening the Windows Calculator or typing into an application."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "expression": {
+                    "type": "STRING",
+                    "description": "Arithmetic expression, e.g. '88*2', '20% de 50', '(5+3)^2'."
+                }
+            },
+            "required": ["expression"]
+        }
     },
     {
         "name": "open_app",
@@ -1874,11 +2001,12 @@ TOOL_DECLARATIONS = [
     {
     "name": "file_processor",
     "description": (
-        "Processes any file that the user has uploaded or dropped onto the interface. "
-        "Use this when the user refers to an uploaded file and wants an action on it. "
+        "Processes local Windows files as well as files uploaded or dropped onto the interface. "
+        "Use this whenever the user asks to read, explain, summarize, analyze, extract, convert, transcribe, review, fix, or otherwise process a local file. "
+        "For local Windows paths or filenames such as C:\\JARVIS\\README.md, Desktop files, Downloads, Documents, or README.md, prefer this tool instead of lilith_docs_* or lilith_source_*. "
         "Supports: images (describe/ocr/resize/compress/convert), "
         "PDFs (summarize/extract_text/to_word), "
-        "Word docs & text files (summarize/fix/reformat/translate), "
+        "Word docs & text files (summarize/explain/fix/reformat/translate), "
         "CSV/Excel (analyze/stats/filter/sort/convert), "
         "JSON/XML (validate/format/analyze), "
         "code files (explain/review/fix/optimize/run/document/test), "
@@ -1894,7 +2022,7 @@ TOOL_DECLARATIONS = [
         "properties": {
             "file_path": {
                 "type": "STRING",
-                "description": "Full path to the uploaded file. Leave empty to use the currently uploaded file."
+                "description": "Local Windows file path or uploaded-file path. Relative filenames are resolved against JARVIS, Desktop, Downloads, and Documents. Leave empty to use the currently uploaded file."
             },
             "action": {
                 "type": "STRING",
@@ -1902,7 +2030,7 @@ TOOL_DECLARATIONS = [
                     "What to do with the file. Examples by type:\n"
                     "image: describe | ocr | resize | compress | convert | info\n"
                     "pdf: summarize | extract_text | to_word | info\n"
-                    "docx/txt: summarize | fix | reformat | translate_hint | word_count | to_bullet\n"
+                    "docx/txt: summarize | explain | fix | reformat | translate_hint | word_count | to_bullet\n"
                     "csv/excel: analyze | stats | filter | sort | convert | info\n"
                     "json: validate | format | analyze | to_csv\n"
                     "code: explain | review | fix | optimize | run | document | test\n"
@@ -2200,7 +2328,8 @@ TOOL_DECLARATIONS = [
     {
         "name": "lilith_docs_read",
         "description": (
-            "Read one real canonical LILITH documentation file by path. Read-only. "
+            "Read one real canonical LILITH documentation file on the LILITH/Ubuntu integration server by allowlisted path. Read-only. "
+            "Use only when the user explicitly refers to LILITH/Ubuntu canonical documentation; never use this for ordinary local Windows files such as C:\\JARVIS\\README.md, Desktop, Downloads, or Documents. "
             "Allowed examples: ARCHITECTURE.md, PROJECT_STATE.md, TASKS.md, ROADMAP.md, "
             "CHANGELOG.md, AI_MEMORY/CURRENT.md, docs/work_blocks/WB-08_motor_de_decision.md."
         ),
@@ -2465,6 +2594,16 @@ class JarvisLive:
         self._audio_input_worker_lock = threading.Lock()
         self._audio_input_device_id: int | None = None
         self._audio_output_device_id: int | None = None
+        self._audio_input_switch_requested = threading.Event()
+        self._audio_output_switch_requested = threading.Event()
+        self._audio_device_manager = AudioDeviceManager(
+            sd,
+            input_rate=SEND_SAMPLE_RATE,
+            output_rate=RECEIVE_SAMPLE_RATE,
+            channels=CHANNELS,
+        )
+        self._audio_input_device_resolver = self._audio_device_manager.resolve_input
+        self._audio_output_device_resolver = self._audio_device_manager.resolve_output
         self._preferred_output_device_name = (
             os.environ.get("JARVIS_PREFERRED_OUTPUT_DEVICE", "").strip() or None
         )
@@ -2552,6 +2691,9 @@ class JarvisLive:
         # JL-W003: optional LILITH bridge for typed input (None when not configured).
         self._lilith: LilithBridge | None = None
         self.ui.on_conversation_toggle = self.toggle_conversation
+        self.ui.on_audio_devices_request = self.audio_devices_snapshot
+        self.ui.on_audio_input_select = self.select_audio_input
+        self.ui.on_audio_output_select = self.select_audio_output
         self.ui.set_state(ConversationState.STANDBY.value)
 
     @property
@@ -2574,6 +2716,24 @@ class JarvisLive:
         if self._conversation_requested.is_set():
             return self.stop_conversation()
         return self.start_conversation()
+
+    def audio_devices_snapshot(self) -> dict:
+        """Return a fresh inventory without exposing volatile PortAudio indices."""
+        return self._audio_device_manager.refresh_devices()
+
+    def select_audio_input(self, device_id: str) -> dict:
+        selected = self._audio_device_manager.select_input(device_id)
+        if self._conversation_requested.is_set():
+            self._audio_input_switch_requested.set()
+        self.ui.write_log(f"SYS: Entrada de audio seleccionada: {selected.name}.")
+        return selected.to_ui_dict()
+
+    def select_audio_output(self, device_id: str) -> dict:
+        selected = self._audio_device_manager.select_output(device_id)
+        if self._conversation_requested.is_set():
+            self._audio_output_switch_requested.set()
+        self.ui.write_log(f"SYS: Salida de audio seleccionada: {selected.name}.")
+        return selected.to_ui_dict()
 
     def start_conversation(self) -> bool:
         """Resume the current logical conversation without blocking the UI."""
@@ -2935,6 +3095,34 @@ class JarvisLive:
         except Exception:
             return False
 
+    async def _execute_forced_local_file_request(
+        self, request: dict[str, object], *, live_turn_id: str
+    ) -> str:
+        """Execute a clearly identified local-file request without trusting model tool choice."""
+        call = SimpleNamespace(
+            id=f"forced-local-file-{live_turn_id}",
+            name="file_processor",
+            args=dict(request),
+        )
+        response = await self._execute_tool(call)
+        result = str(getattr(response, "response", {}).get("result", "") or "").strip()
+        logger.info(
+            "LOCAL_FILE_ROUTE decision=forced file=%s action=%s result=%s",
+            request.get("file_path"), request.get("action"), result[:120],
+        )
+        if self.session and result:
+            directive = (
+                "[INTERNAL LOCAL FILE RESULT] Responde al usuario en español usando exclusivamente el resultado real "
+                "del procesador local que sigue. No digas que no tienes acceso y no llames a ninguna herramienta. "
+                f"Resultado: {json.dumps(result, ensure_ascii=False)}"
+            )
+            await self.session.send_client_content(
+                turns={"parts": [{"text": directive}]},
+                turn_complete=True,
+            )
+        return result
+
+
     def _speak_vision_result(self, text: str) -> bool:
         """Send finished vision text through JARVIS's active voice session."""
         result = " ".join(str(text or "").split())
@@ -3201,6 +3389,7 @@ class JarvisLive:
 
         parts = [
             LANGUAGE_RULE,
+            VOICE_STYLE_RULE,
             DATE_TIME_AUTHORITY_RULE,
             ROUTINE_ROUTING_RULES,
             MEMORY_ROUTING_RULES,
@@ -3224,6 +3413,7 @@ class JarvisLive:
             # immediate history wins without disabling either memory tool.
             parts.append(local_continuity)
         parts.append(LANGUAGE_RULE)  # repeated near the end: recency keeps the rule in force
+        parts.append(VOICE_STYLE_RULE)  # keep pacing/prosody instruction close to generation
         parts.append(TOOL_RESULT_TRUTH_RULE)
         parts.append(CURRENT_CONVERSATION_PRECEDENCE)
 
@@ -3518,6 +3708,10 @@ class JarvisLive:
                     str(args.get("action", "")), str(args.get("query", "")),
                 ) or "No he podido determinar si necesitas la fecha o la hora actual."
 
+            elif name == "calculator":
+                r = await asyncio.to_thread(lambda: calculator(parameters=args, response=None, player=self.ui))
+                result = r or "No he podido calcular esa operación."
+
             elif name == "youtube_video":
                 r = await asyncio.to_thread(lambda: youtube_video(parameters=args, response=None, player=self.ui))
                 result = r or "Done."
@@ -3568,10 +3762,13 @@ class JarvisLive:
                 r = await asyncio.to_thread(lambda: web_search_action(parameters=args, player=self.ui))
                 result = r or "Done."
             elif name == "file_processor":
-                if not args.get("file_path") and self.ui.current_file:
-                    args["file_path"] = self.ui.current_file
+                file_args = dict(args)
+                if not file_args.get("file_path") and self.ui.current_file:
+                    file_args["file_path"] = self.ui.current_file
+                if self._api_key:
+                    file_args["_api_key"] = self._api_key
                 r = await asyncio.to_thread(
-                    lambda: file_processor(parameters=args, player=self.ui, speak=self.speak)
+                    lambda: file_processor(parameters=file_args, player=self.ui, speak=self.speak)
                 )
                 result = r or "Done."
 
@@ -5046,12 +5243,24 @@ class JarvisLive:
                 ) as stream:
                     print("[JARVIS] 🎤 Mic stream open")
                     recovered_logged = False
+                    last_device_check = time.monotonic()
                     while (
                         not self._shutdown_requested.is_set()
                         and self._conversation_requested.is_set()
                     ):
                         await asyncio.sleep(0.1)
+                        switch_requested = getattr(
+                            self, "_audio_input_switch_requested", None,
+                        )
+                        if switch_requested is not None and switch_requested.is_set():
+                            switch_requested.clear()
+                            raise AudioInputDeviceSwitch("manual input device selection")
                         now = time.monotonic()
+                        if now - last_device_check >= AUDIO_INPUT_RECHECK_SECONDS:
+                            resolved_id, _resolved_name = device_resolver()
+                            last_device_check = now
+                            if resolved_id != device_id:
+                                raise AudioInputDeviceSwitch("preferred input device availability changed")
                         active = getattr(stream, "active", True)
                         if active is False:
                             raise AudioInputDeviceLost("capture stream became inactive")
@@ -5081,6 +5290,11 @@ class JarvisLive:
                     return
             except asyncio.CancelledError:
                 raise
+            except AudioInputDeviceSwitch:
+                logger.info("AUDIO_INPUT reopening reason=manual_selection")
+                attempt = 0
+                recovering = False
+                continue
             except Exception as exc:
                 if (
                     self._shutdown_requested.is_set()
@@ -5213,7 +5427,13 @@ class JarvisLive:
                 turn_had_audio = False
                 duplicate_pending_input = False
                 assistant_response_started = False
+                forced_local_file_request: dict[str, object] | None = None
+                forced_local_file_executed = False
                 received_message = False
+                _audio_gate_buf: list[bytes] = []
+                _audio_gate_open_at: float | None = None
+                _audio_gate_released = False
+                _has_input_transcript = False
                 async for response in self.session.receive():
                     received_message = True
 
@@ -5248,7 +5468,28 @@ class JarvisLive:
                     if sc and sc.input_transcription and sc.input_transcription.text:
                         preview_raw = _clean_transcript_chunk(sc.input_transcription.text)
                         if preview_raw.strip():
+                            _has_input_transcript = True
                             preview_input = _merge_input_transcript_text(" ".join(in_buf), preview_raw)
+                            candidate_file_request = _local_file_request_from_text(preview_input)
+                            if candidate_file_request is not None:
+                                forced_local_file_request = candidate_file_request
+                                if _audio_gate_buf:
+                                    logger.info(
+                                        "LOCAL_FILE_ROUTE gate_discard turn=%s chunks=%d file=%s",
+                                        live_turn_id, len(_audio_gate_buf),
+                                        candidate_file_request.get("file_path"),
+                                    )
+                                _audio_gate_buf = []
+                                _audio_gate_released = True
+                            elif not _audio_gate_released and _audio_gate_buf:
+                                _audio_gate_released = True
+                                if not assistant_response_started:
+                                    self._mark_assistant_response_started()
+                                    assistant_response_started = True
+                                turn_had_audio = True
+                                for _gated in _audio_gate_buf:
+                                    self.audio_in_queue.put_nowait(_gated)
+                                _audio_gate_buf = []
                             was_duplicate = duplicate_pending_input
                             if assistant_response_started:
                                 duplicate_pending_input = False
@@ -5269,11 +5510,29 @@ class JarvisLive:
 
                     response_audio = _live_response_audio_bytes(response)
                     if response_audio:
-                        if duplicate_pending_input:
+                        if forced_local_file_request is not None and not forced_local_file_executed:
+                            logger.info(
+                                "LOCAL_FILE_ROUTE suppress_provider_audio turn=%s file=%s",
+                                live_turn_id, forced_local_file_request.get("file_path"),
+                            )
+                        elif duplicate_pending_input:
                             logger.info(
                                 "PENDING_REPEAT suppress_audio turn=%s bytes=%d",
                                 live_turn_id, len(response_audio),
                             )
+                        elif not _audio_gate_released:
+                            _audio_gate_buf.append(response_audio)
+                            if _audio_gate_open_at is None:
+                                _audio_gate_open_at = time.monotonic()
+                            elif (time.monotonic() - _audio_gate_open_at) >= AUDIO_GATE_SECONDS:
+                                _audio_gate_released = True
+                                if not assistant_response_started:
+                                    self._mark_assistant_response_started()
+                                    assistant_response_started = True
+                                turn_had_audio = True
+                                for _gated in _audio_gate_buf:
+                                    self.audio_in_queue.put_nowait(_gated)
+                                _audio_gate_buf = []
                         else:
                             if not assistant_response_started:
                                 self._mark_assistant_response_started()
@@ -5290,7 +5549,25 @@ class JarvisLive:
 
                         if sc.output_transcription and sc.output_transcription.text:
                             txt = _dedupe_repeated_output(_clean_transcript(sc.output_transcription.text))
-                            if txt and not duplicate_pending_input:
+                            if txt and forced_local_file_request is None and not forced_local_file_executed:
+                                recovered_file_request = _local_file_recovery_from_denial(txt)
+                                if recovered_file_request is not None:
+                                    forced_local_file_request = recovered_file_request
+                                    _audio_gate_buf = []
+                                    _audio_gate_released = True
+                                    self._interrupt_live_playback("provider_false_local_file_denial")
+                                    logger.info(
+                                        "LOCAL_FILE_ROUTE recovered_from_denial turn=%s file=%s text=%r",
+                                        live_turn_id,
+                                        recovered_file_request.get("file_path"),
+                                        txt[:120],
+                                    )
+                            if txt and forced_local_file_request is not None and not forced_local_file_executed:
+                                logger.info(
+                                    "LOCAL_FILE_ROUTE suppress_provider_text turn=%s text=%r",
+                                    live_turn_id, txt[:120],
+                                )
+                            elif txt and not duplicate_pending_input:
                                 if not assistant_response_started:
                                     self._mark_assistant_response_started()
                                     assistant_response_started = True
@@ -5350,6 +5627,28 @@ class JarvisLive:
                                 self._turn_done_event.set()
 
                             full_in = " ".join(in_buf).strip()
+                            if (
+                                full_in
+                                and forced_local_file_request is None
+                                and not forced_local_file_executed
+                            ):
+                                late_detect = _local_file_request_from_text(full_in)
+                                if late_detect is not None:
+                                    forced_local_file_request = late_detect
+                                    logger.info(
+                                        "LOCAL_FILE_ROUTE late_detect turn=%s file=%s",
+                                        live_turn_id, late_detect.get("file_path"),
+                                    )
+                            if _audio_gate_buf:
+                                if forced_local_file_request is not None:
+                                    _audio_gate_buf = []
+                                    self._interrupt_live_playback("forced_local_file_gate_discard")
+                                else:
+                                    for _gated in _audio_gate_buf:
+                                        self.audio_in_queue.put_nowait(_gated)
+                                    turn_had_audio = True
+                                _audio_gate_buf = []
+                            _audio_gate_released = True
                             if full_in:
                                 self._current_input_transcript = full_in
                                 if not duplicate_pending_input:
@@ -5396,6 +5695,17 @@ class JarvisLive:
                             if not response.tool_call:
                                 self._end_active_tool_turn()
 
+                            if (
+                                forced_local_file_request is not None
+                                and not forced_local_file_executed
+                                and not duplicate_pending_input
+                            ):
+                                self._interrupt_live_playback("forced_local_file_route")
+                                await self._execute_forced_local_file_request(
+                                    forced_local_file_request, live_turn_id=live_turn_id
+                                )
+                                forced_local_file_executed = True
+
                             if pending_goaway is not None:
                                 drained = await self._wait_for_playback_drain()
                                 raise RecoverableLiveDisconnect(
@@ -5423,6 +5733,15 @@ class JarvisLive:
                             ]
                         else:
                             fn_responses = await self._execute_tool_batch(function_calls)
+                            if forced_local_file_request is not None:
+                                for function_call, function_response in zip(function_calls, fn_responses):
+                                    if str(getattr(function_call, "name", "")) == "file_processor":
+                                        result_text = str(getattr(function_response, "response", {}).get("result", "") or "")
+                                        lowered = result_text.casefold()
+                                        if result_text and not any(marker in lowered for marker in (
+                                            "file not found", "not a file", "processing failed", "ai processing failed"
+                                        )):
+                                            forced_local_file_executed = True
                             for function_call, function_response in zip(function_calls, fn_responses):
                                 self._remember_conversation_tool_result(
                                     str(getattr(function_call, "name", "tool")),
@@ -5435,8 +5754,9 @@ class JarvisLive:
                     if self._shutdown_requested.is_set() or not self._conversation_requested.is_set():
                         return
                     if pending_goaway is not None and not response_audio and response.server_content is None:
+                        drained = await self._wait_for_playback_drain()
                         raise RecoverableLiveDisconnect(
-                            f"provider GoAway time_left={pending_goaway} idle=true",
+                            f"provider GoAway time_left={pending_goaway} idle=true playback_drained={drained}",
                             category="provider_goaway",
                         )
                 # AsyncSession.receive() covers one complete model turn. Normal
@@ -5597,12 +5917,19 @@ class JarvisLive:
                 if self._shutdown_requested.is_set() or not self._conversation_requested.is_set():
                     return
 
+                output_switch = getattr(self, "_audio_output_switch_requested", None)
                 if (
                     not self.external_audio
-                    and time.monotonic() - last_device_check >= AUDIO_OUTPUT_RECHECK_SECONDS
+                    and (
+                        (output_switch is not None and output_switch.is_set())
+                        or time.monotonic() - last_device_check >= AUDIO_OUTPUT_RECHECK_SECONDS
+                    )
                 ):
                     try:
-                        await open_resolved_output()
+                        force = bool(output_switch is not None and output_switch.is_set())
+                        if output_switch is not None:
+                            output_switch.clear()
+                        await open_resolved_output(force=force)
                     except Exception as exc:
                         await recover_output(exc)
                         continue
@@ -6032,6 +6359,15 @@ class JarvisLive:
 
 def main():
     import sys
+
+    # Windows launchers/consoles may still use cp1252. Logging must never crash
+    # the application just because a status line contains an emoji or Unicode glyph.
+    for _stream in (getattr(sys, "stdout", None), getattr(sys, "stderr", None)):
+        try:
+            if _stream is not None and hasattr(_stream, "reconfigure"):
+                _stream.reconfigure(errors="replace")
+        except Exception:
+            pass
 
     if "--self-test" in sys.argv[1:]:
         from scripts.self_test import main as self_test_main

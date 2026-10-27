@@ -105,6 +105,37 @@ async def test_provider_goaway_waits_for_turn_and_playback_before_reconnect():
 
 
 @async_test
+async def test_idle_goaway_waits_for_pending_playback_before_reconnect():
+    jarvis = make_jarvis()
+    jarvis._conversation_requested.set()
+    jarvis.audio_in_queue = asyncio.Queue()
+    jarvis.audio_in_queue.put_nowait(b"pending-audio")
+    jarvis._turn_done_event = asyncio.Event()
+    jarvis.set_speaking(True)
+    jarvis._wait_for_playback_drain = AsyncMock(return_value=True)
+
+    class Session:
+        async def receive(self):
+            yield SimpleNamespace(
+                session_resumption_update=SimpleNamespace(
+                    resumable=True, new_handle="goaway-handle"
+                ),
+                go_away=SimpleNamespace(time_left="50s"),
+                server_content=None,
+                tool_call=None,
+            )
+
+    jarvis.session = Session()
+    with pytest.raises(main.RecoverableLiveDisconnect) as caught:
+        await jarvis._receive_audio()
+
+    assert caught.value.category == "provider_goaway"
+    assert "idle=true" in str(caught.value)
+    assert "playback_drained=True" in str(caught.value)
+    jarvis._wait_for_playback_drain.assert_awaited_once()
+
+
+@async_test
 async def test_reconnect_uses_latest_resumption_handle():
     jarvis = make_jarvis()
     jarvis._conversation_requested.set()
@@ -201,6 +232,7 @@ async def test_microphone_audio_is_forwarded_while_model_is_speaking():
     jarvis = make_jarvis(external_audio=False)
     jarvis._conversation_requested.set()
     jarvis.out_queue = asyncio.Queue()
+    jarvis._audio_input_device_resolver = lambda: (0, "Test microphone")
     jarvis.set_speaking(True)
     samples = np.arange(main.CHUNK_SIZE) / main.SEND_SAMPLE_RATE
     voice = 0.08 * (
