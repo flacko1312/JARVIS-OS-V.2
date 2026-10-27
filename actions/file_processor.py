@@ -22,6 +22,7 @@ import json
 import shutil
 import subprocess
 import tempfile
+from contextvars import ContextVar
 from pathlib import Path
 from datetime import datetime
 
@@ -37,19 +38,20 @@ _LANGUAGE_RULE = (
     "El idioma de interacción del usuario es español. Responde en español salvo que la propia tarea "
     "solicite explícitamente otro idioma.\n\n"
 )
+_ACTIVE_GEMINI_API_KEY: ContextVar[str] = ContextVar("file_processor_gemini_api_key", default="")
 
 
 def _get_api_key() -> str:
-    env_key = os.environ.get("GEMINI_API_KEY", "").strip()
-    if env_key:
-        return env_key
+    active = _ACTIVE_GEMINI_API_KEY.get().strip()
+    if active:
+        return active
 
-    config_path = Path(__file__).resolve().parent.parent / "config" / "api_keys.json"
-    if config_path.exists():
-        with open(config_path, "r", encoding="utf-8") as f:
-            return json.load(f).get("gemini_api_key", "")
+    from memory.config_manager import get_gemini_key
 
-    raise RuntimeError("GEMINI_API_KEY not set (set GEMINI_API_KEY env var).")
+    key = str(get_gemini_key() or "").strip()
+    if key:
+        return key
+    raise RuntimeError("Gemini API key is not configured.")
 
 
 def _gemini_client():
@@ -66,7 +68,8 @@ def _generate_content(contents, model: str | None = None) -> str:
             contents[0] = _LANGUAGE_RULE + contents[0]
         else:
             contents.insert(0, _LANGUAGE_RULE)
-    response = _gemini_client().models.generate_content(
+    client = _gemini_client()
+    response = client.models.generate_content(
         model=selected_model,
         contents=contents,
         config=gtypes.GenerateContentConfig(
@@ -132,6 +135,21 @@ def _resolve_file_path(file_path: str, player=None) -> Path:
                     return child
         except OSError:
             continue
+
+    # For project-local filenames such as "prompt.txt", also inspect the
+    # immediate C:\JARVIS subdirectories without recursing into heavy trees.
+    project_root = Path(__file__).resolve().parent.parent
+    if not requested.is_absolute() and project_root.exists():
+        ignored = {".git", ".venv", "node_modules", "dist", "build", "__pycache__"}
+        try:
+            for directory in project_root.iterdir():
+                if not directory.is_dir() or directory.name in ignored:
+                    continue
+                candidate = directory / raw
+                if candidate.exists() and candidate.is_file():
+                    return candidate
+        except OSError:
+            pass
 
     return requested
 
@@ -1034,6 +1052,7 @@ def file_processor(parameters: dict, player=None, speak=None) -> str:
     }
 
     handler = dispatch.get(file_type, _process_unknown)
+    key_token = _ACTIVE_GEMINI_API_KEY.set(str(parameters.get("_api_key") or "").strip())
 
     try:
         result = handler(path, action, params, speak)
@@ -1042,3 +1061,5 @@ def file_processor(parameters: dict, player=None, speak=None) -> str:
         import traceback
         traceback.print_exc()
         return f"Processing failed: {e}"
+    finally:
+        _ACTIVE_GEMINI_API_KEY.reset(key_token)

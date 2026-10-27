@@ -2,6 +2,7 @@ import json
 import os
 import tempfile
 import unittest
+import weakref
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -97,6 +98,26 @@ class FileProcessorAiTests(unittest.TestCase):
         self.assertEqual(kwargs["model"], "resolved-supported-model")
         self.assertTrue(kwargs["config"].automatic_function_calling.disable)
         self.assertIn("Explain this document", kwargs["contents"][0])
+
+    def test_generate_content_keeps_client_alive_during_request(self):
+        class Models:
+            def __init__(self, owner):
+                self._owner = weakref.ref(owner)
+
+            def generate_content(self, **_kwargs):
+                if self._owner() is None:
+                    raise RuntimeError("client closed")
+                return SimpleNamespace(text="Client stayed alive.")
+
+        class Client:
+            @property
+            def models(self):
+                return Models(self)
+
+        with patch.object(file_processor, "_gemini_client", return_value=Client()):
+            result = file_processor._generate_content("Explain this.", model="test-model")
+
+        self.assertEqual(result, "Client stayed alive.")
 
     def test_provider_failure_is_explicit_and_does_not_fabricate(self):
         generate_content = MagicMock(side_effect=RuntimeError("provider offline"))
