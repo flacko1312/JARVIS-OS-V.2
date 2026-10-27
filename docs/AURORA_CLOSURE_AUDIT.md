@@ -11,14 +11,14 @@
 
 | Metric | Before Changes | After Audit |
 |--------|---------------|-------------|
-| Passed | 1258 | 1327 |
+| Passed | 1258 | 1360 |
 | Skipped | 93 | 93 |
 | Failed | 0 | 0 |
 | Subtests | — | 49 |
 | Duration | ~28s | ~29s |
 | Warning | 1 (Python 3.17 deprecation in google.genai) | Same |
 
-**+69 new tests** added by prior work on this branch (audio device selector, local file routing, audio gate, clipboard commands, file processor AI, UI contract, audio interruption, safe text entry).
+**+102 new tests** added by work on this branch (69 prior + 33 from this audit) (audio device selector, local file routing, audio gate, clipboard commands, file processor AI, UI contract, audio interruption, safe text entry).
 
 ### Regression Fixed
 
@@ -338,7 +338,7 @@ AURORA/JARVIS is a feature-complete Gemini Live desktop assistant with:
 - **28 action modules** covering computer control, files, browser, messaging, email, media, vision, search, presentations, and LILITH integration
 - **Comprehensive safety guards** for memory routing, schedule classification, tool turn binding, and mutation deduplication
 - **Full LILITH integration** for persistent memory, Home Assistant, routines, and document access
-- **1327 passing tests** with 0 failures
+- **1360 passing tests** with 0 failures
 
 ### Key Risks
 
