@@ -1,30 +1,22 @@
-from types import SimpleNamespace
 from unittest.mock import patch
 
 from actions import computer_control as cc
+from actions.safe_text_entry import SafeTextEntryResult
 import main
 
 
-def test_select_all_uses_resolved_safe_target_and_ctrl_a_once():
-    validation = SimpleNamespace(ok=True, message="ok")
-    with (
-        patch("actions.safe_text_entry._resolve_windows_target", return_value=(validation, {"process_id": 1})),
-        patch.object(cc, "_hotkey") as hotkey,
-    ):
+def test_select_all_delegates_to_safe_select_all_text():
+    ok_result = SafeTextEntryResult(ok=True, message="Texto seleccionado mediante Windows UI Automation.")
+    with patch("actions.computer_control.safe_select_all_text", return_value=ok_result):
         result = cc.computer_control({"action": "select_all"})
-    hotkey.assert_called_once_with("ctrl", "a")
     assert "seleccionado" in result.lower()
 
 
-def test_select_all_refuses_when_safe_target_cannot_be_resolved():
-    validation = SimpleNamespace(ok=False, message="sin destino")
-    with (
-        patch("actions.safe_text_entry._resolve_windows_target", return_value=(validation, {})),
-        patch.object(cc, "_hotkey") as hotkey,
-    ):
+def test_select_all_refuses_when_safe_select_all_fails():
+    fail_result = SafeTextEntryResult(ok=False, message="sin destino")
+    with patch("actions.computer_control.safe_select_all_text", return_value=fail_result):
         result = cc.computer_control({"action": "select_all"})
     assert result == "sin destino"
-    hotkey.assert_not_called()
 
 
 def test_duplicate_confirmation_inside_single_live_chunk_collapses():
