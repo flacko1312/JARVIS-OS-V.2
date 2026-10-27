@@ -1,6 +1,6 @@
 # JARVIS Test Matrix
 
-Updated: 2026-10-13.
+Updated: 2026-10-27.
 
 Status: canonical validation procedure after the 2026-10-08 recovery. The real Windows checkout is the complete supported automated environment. Linux remains a narrower platform-independent slice. This file does not replace `docs/QA.md`, which describes the side-effect-safe QA harness.
 
