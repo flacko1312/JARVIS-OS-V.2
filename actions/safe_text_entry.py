@@ -286,6 +286,80 @@ def _windows_focus_matches(target_id: tuple) -> bool:
     return bool(current and _windows_target_id(current) == target_id and _validate_windows_text_target(current).ok)
 
 
+def _windows_select_all_text(target_id: tuple) -> tuple[bool, str]:
+    """Select all text in the already-validated Windows editor without locale-specific shortcuts."""
+    current = _windows_focused_element_info()
+    if not current or _windows_target_id(current) != target_id:
+        return False, "El foco cambió antes de seleccionar el texto."
+    validation = _validate_windows_text_target(current)
+    if not validation.ok:
+        return False, validation.message
+
+    comtypes_module = None
+    com_initialized = False
+    try:
+        import comtypes
+        from comtypes.client import CreateObject
+        from comtypes.gen import UIAutomationClient as UIA
+
+        comtypes_module = comtypes
+        comtypes.CoInitialize()
+        com_initialized = True
+        automation = CreateObject(UIA.CUIAutomation)
+        element = automation.GetFocusedElement()
+        if element is not None:
+            try:
+                text_pattern = element.GetCurrentPattern(UIA.UIA_TextPatternId).QueryInterface(
+                    UIA.IUIAutomationTextPattern
+                )
+                text_pattern.DocumentRange.Select()
+                after = _windows_focused_element_info()
+                if after and _windows_target_id(after) == target_id:
+                    return True, "Texto seleccionado mediante Windows UI Automation."
+                return False, "El foco cambió durante la selección del texto."
+            except Exception:
+                pass
+    except Exception as exc:
+        print(f"[SafeTextEntry] Windows select-all UIA failed: {type(exc).__name__}")
+    finally:
+        if com_initialized and comtypes_module is not None:
+            try:
+                comtypes_module.CoUninitialize()
+            except Exception:
+                pass
+
+    hwnd = int(current.get("native_handle") or 0)
+    if hwnd and int(current.get("control_type") or 0) == WINDOWS_EDIT_CONTROL_TYPE:
+        try:
+            EM_SETSEL = 0x00B1
+            ctypes.windll.user32.SendMessageW(hwnd, EM_SETSEL, 0, -1)
+            after = _windows_focused_element_info()
+            if after and _windows_target_id(after) == target_id:
+                return True, "Texto seleccionado mediante control Win32."
+        except Exception:
+            pass
+
+    return False, "No puedo seleccionar todo el texto de este control sin usar un atajo dependiente del idioma."
+
+
+def safe_select_all_text(purpose: str = "generic") -> SafeTextEntryResult:
+    """Safely select all text in the current/reacquired Windows editor."""
+    if _actual_os() != "windows":
+        return SafeTextEntryResult(False, "La selección segura sin atajos solo está disponible en Windows.")
+    validation, _info = _resolve_windows_target(purpose)
+    if not validation.ok:
+        return validation
+    ok, message = _windows_select_all_text(validation.target_id)
+    return SafeTextEntryResult(
+        ok,
+        message,
+        validation.target,
+        safety_path="windows_uia_select_all" if ok else validation.safety_path,
+        target_id=validation.target_id,
+        readback_supported=validation.readback_supported,
+    )
+
+
 def _windows_last_input_tick() -> int:
     class LASTINPUTINFO(ctypes.Structure):
         _fields_ = [("cbSize", wintypes.UINT), ("dwTime", wintypes.DWORD)]
@@ -998,7 +1072,9 @@ def safe_type_text(
         before_text = before_info.get("text_value")
         with PyAutoGuiFastPause():
             if clear_first:
-                pyautogui.hotkey(*select_all)
+                selected, selection_error = _windows_select_all_text(validation.target_id)
+                if not selected:
+                    return SafeTextEntryResult(False, selection_error, validation.target, safety_path="windows_uia")
                 time.sleep(0.03)
                 pyautogui.press("delete")
                 time.sleep(0.03)

@@ -10,7 +10,7 @@ import random
 from pathlib import Path
 
 from actions.jarvis_file_stamp import mark_created_file
-from actions.safe_text_entry import safe_type_text
+from actions.safe_text_entry import safe_select_all_text, safe_type_text
 
 try:
     import pyautogui
@@ -233,16 +233,11 @@ def _drag(x1: int, y1: int, x2: int, y2: int, duration: float = 0.5) -> str:
 
 
 def _select_all_text() -> str:
-    """Select all text in the validated editor, reacquiring it after JARVIS self-focus."""
-    from actions.safe_text_entry import _resolve_windows_target
-    validation, _target_info = _resolve_windows_target("generic")
-    if not validation.ok:
-        return validation.message
-    # Ctrl+A is non-destructive. Once the target has been validated/reacquired,
-    # do not reject the operation merely because UIA regenerates editor identity
-    # after the selection changes.
-    _hotkey("ctrl", "a")
-    return "Todo el texto del campo enfocado ha sido seleccionado."
+    """Select all text in the validated editor without locale-specific Windows shortcuts."""
+    result = safe_select_all_text("generic")
+    if not result.ok:
+        return result.message
+    return "Todo el texto del campo enfocado ha sido seleccionado de forma segura."
 
 
 def _clipboard_copy() -> str:

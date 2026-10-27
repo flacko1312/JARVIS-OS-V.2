@@ -53,21 +53,22 @@ def test_empty_clipboard_is_refused_cleanly():
     assert "portapapeles de texto" in result.lower()
 
 
-def test_select_all_uses_only_ctrl_a_on_verified_text_target():
+def test_select_all_uses_safe_locale_independent_selection():
     resolved = MagicMock(ok=True, message="ok")
     with (
-        patch("actions.safe_text_entry._resolve_windows_target", return_value=(resolved, {"process_id": 1})),
+        patch.object(cc, "safe_select_all_text", return_value=resolved) as select_all,
         patch.object(cc, "_hotkey") as hotkey,
     ):
         result = cc.computer_control({"action": "select_all"})
-    hotkey.assert_called_once_with("ctrl", "a")
+    select_all.assert_called_once_with("generic")
+    hotkey.assert_not_called()
     assert "seleccionado" in result.lower()
 
 
 def test_select_all_refuses_unverified_target_without_hotkey():
     bad = MagicMock(ok=False, message="No hay campo de texto verificado.")
     with (
-        patch("actions.safe_text_entry._resolve_windows_target", return_value=(bad, {})),
+        patch.object(cc, "safe_select_all_text", return_value=bad),
         patch.object(cc, "_hotkey") as hotkey,
     ):
         result = cc.computer_control({"action": "select_all"})
