@@ -2,7 +2,7 @@
 
 **Date:** 2026-10-27
 **Branch:** `codex/neural-voice-visual`
-**Baseline commit:** `db426c6` (docs: add particle morphing and preventive regression audits)
+**Baseline commit:** `4e2d890` (feat: add safe deterministic calculator tool)
 **Auditor:** Automated (Claude Opus 4.6)
 
 ---
@@ -28,7 +28,7 @@
 
 ## 2. Capabilities Inventory
 
-### 2.1 Tool Declarations (46 total)
+### 2.1 Tool Declarations (49 total)
 
 | # | Tool | Action Module | Status |
 |---|------|--------------|--------|
@@ -163,7 +163,7 @@ LILITH client has proper error hierarchy (`LilithError` → `ConnectionError`, `
 | Claim | Reality | Verdict |
 |-------|---------|---------|
 | Windows is complete supported environment | Confirmed: Windows-specific APIs throughout | MATCHES |
-| Baseline JL-A10: 429 passed, 77 skipped | Outdated — current: 1327 passed, 93 skipped | OUTDATED |
+| Baseline JL-A10: 429 passed, 77 skipped | Outdated — current: 1360 passed, 93 skipped | OUTDATED |
 | Hardware gates require physical validation | Confirmed: 93 skipped tests gate on hardware | MATCHES |
 
 ### 3.5 docs/TECHNICAL_DEBT.md
@@ -198,7 +198,7 @@ All six integration points (JL-W001 through JL-W006) are fully implemented in `m
 
 | Finding | Location | Severity | Notes |
 |---------|----------|----------|-------|
-| `exec()` on LLM-generated code | `actions/desktop.py:99` | **HIGH** | Sandboxed with limited builtins, but LLM output is inherently unpredictable. Prompt instructs safe code only, but prompt injection is possible. |
+| `exec()` on LLM-generated code | `actions/desktop.py` | **MITIGATED** | Was HIGH. Now guarded by `validate_generated_code()` AST validator. See §4.4. |
 | `shell=True` (VS Code launch) | `actions/dev_agent.py:289` | LOW | Hardcoded candidate paths, no user input |
 | `shell=True` (Linux brightness) | `actions/computer_settings.py:138,167` | LOW | Hardcoded xrandr commands, Linux-only path |
 
@@ -213,10 +213,30 @@ All six integration points (JL-W001 through JL-W006) are fully implemented in `m
 | Broad `except Exception` | 662 across 65 files | Known debt (TD-003) |
 | `.env` / `load_dotenv` | 1 (main.py:100) | Correct: loads .env for local dev |
 
-### 4.4 Recommendations
+### 4.4 TD-012 Mitigation (exec() Hardening)
 
-1. **`desktop.py` exec() sandbox** — The LLM-generated code execution is the highest-risk pattern. Consider adding AST validation of generated code before exec, similar to how `calculator.py` safely validates expressions.
-2. **Broad exception handlers** — 662 is significant. Many are legitimate for resilience in an async voice app, but a focused pass to narrow the most critical ones (especially around data persistence) would reduce masked bugs.
+**Applied in this hardening pass.** The `exec()` in `desktop.py` is retained (needed for AI-powered desktop automation) but is now guarded by a multi-layer defense:
+
+**Layer 1 — AST validation (`validate_generated_code()`):**
+- Allowlist of safe AST node types (no ClassDef, AsyncFunctionDef, Global, Nonlocal, Delete, etc.)
+- All `import`/`from..import` statements rejected
+- All dunder/private attribute access rejected (anything starting with `_`)
+- Banned name set: `eval`, `exec`, `compile`, `__import__`, `open`, `input`, `globals`, `locals`, `vars`, `dir`, `type`, `super`, `getattr`, `setattr`, `delattr`, `breakpoint`
+- Destructive method blocklist: `write_text`, `write_bytes`, `unlink`, `rmdir`, `rename`, `replace`, `rmtree`, `remove`, `system`, `popen`
+
+**Layer 2 — Runtime sandbox hardening:**
+- `getattr` removed from builtins (was the primary escape vector to reach arbitrary attributes)
+- `ctypes` removed from sandbox (was providing raw OS-level access)
+- `os_path` module replaced with individual read-only functions (`os_path_join`, `os_path_exists`, etc.)
+- No `eval`, `exec`, `open`, `__import__` in sandbox builtins
+
+**Layer 3 — Prompt hardening:**
+- Updated LLM prompt explicitly lists banned constructs
+- Prompt specifies individual `os_path_*` functions instead of the `os.path` module
+
+**Residual risk:** MEDIUM. The exec() still executes code, but the attack surface is reduced from "arbitrary code execution" to "operations within the constrained sandbox with validated AST." The remaining risk is that Path operations (e.g., `iterdir`, `read_text`) are allowed by design. A future improvement could add a path allowlist restricting file access to the Desktop and user home directory.
+
+**Test coverage:** 74 security tests in `tests/test_desktop_exec_security.py` covering allowed operations, blocked imports, blocked builtins, blocked dunder access, adversarial escape vectors, filesystem restrictions, and runtime sandbox inspection.
 
 ---
 
@@ -273,8 +293,8 @@ These require human testing on physical hardware and cannot be validated by auto
 | TD-009 | P3 | Skipped tests: 93 (was 77) | Open — grew |
 | TD-010 | P3 | Test runs write to runtime log | Open |
 | TD-011 | P3 | Python 3.17 typing deprecation | Open — google.genai warning |
-| TD-012 | **P1** | `exec()` on LLM-generated code in desktop.py | **NEW** — highest security risk |
-| TD-013 | P3 | TESTING.md baseline numbers outdated | **NEW** — says 429, reality is 1327 |
+| TD-012 | **P1→P2** | `exec()` on LLM-generated code in desktop.py | **MITIGATED** — AST validator + sandbox hardening; residual risk MEDIUM (see §4.4) |
+| TD-013 | P3 | TESTING.md baseline numbers outdated | **NEW** — says 429, reality is 1360 |
 
 ---
 
@@ -353,21 +373,20 @@ All GREEN components are functional with their own test suite (`core/green/tests
 ## 10. Conclusion
 
 AURORA/JARVIS is a feature-complete Gemini Live desktop assistant with:
-- **46 tool declarations** all wired to implementations
+- **49 tool declarations** all wired to implementations
 - **28 action modules** covering computer control, files, browser, messaging, email, media, vision, search, presentations, and LILITH integration
 - **Comprehensive safety guards** for memory routing, schedule classification, tool turn binding, and mutation deduplication
 - **Full LILITH integration** for persistent memory, Home Assistant, routines, and document access
-- **1360 passing tests** with 0 failures
+- **1360+ passing tests** with 0 failures
 
-### Key Risks
+### Key Risks (Post-Hardening)
 
-1. **TD-012 (P1):** `exec()` on LLM-generated code in `desktop.py` — the single highest-risk security pattern
+1. **TD-012 (P2, mitigated):** `exec()` on LLM-generated code in `desktop.py` — now guarded by AST validator and hardened sandbox; residual risk MEDIUM
 2. **TD-003 (P2):** 662 broad exception handlers — risk of masked bugs
 3. **TD-006 (P2):** main.py (6.5k) and ui.py (8k+) — maintainability concern
 
 ### What Remains for Humans
 
-- All items in Section 6 (Physical Validation) require hands-on testing
-- TD-012 requires a design decision: AST validation, sandboxed subprocess, or removal
+- All 14 items in Section 6 (Physical Validation) require hands-on testing
 - TESTING.md baseline numbers should be updated (TD-013)
 - TECHNICAL_DEBT.md should be updated with corrected counts (TD-003, TD-008, TD-009)

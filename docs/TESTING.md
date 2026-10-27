@@ -142,6 +142,8 @@ git pull --ff-only origin main
 
 Owner-retained JL-A10 evidence: Windows regression `429 passed`, `77 skipped`, `0 failed`, `0 errors`, `1 warning`, `15 subtests passed`; startup interface ready, 87 LILITH context facts loaded, connected, microphone stream open, receive loop running, playback running; spoken create submitted `schedule.hour=22`, `minute=0`, `timezone=Europe/Madrid`; LILITH confirmed create, list, delete of `routine_id=14`, and final list.
 
+**Post-audit baseline (2026-10-27, branch `codex/neural-voice-visual`):** `1360 passed`, `93 skipped`, `0 failed`, `1 warning`, `49 subtests passed` in ~30s. The growth from 429→1360 reflects feature tests added across audio device management, local file routing, audio gate, calculator, safe text entry, UI contracts, file controller, answer cache, config manager, and desktop exec security.
+
 6. PASS criteria:
 
 - GUI opens.
