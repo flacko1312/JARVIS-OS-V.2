@@ -61,6 +61,7 @@ TOOL_DOMAIN_MAP: dict[str, ToolDomain] = {
     "lilith_command_submit": ToolDomain.LILITH,
     "lilith_routine": ToolDomain.LILITH,
     "open_capabilities_catalog": ToolDomain.SYSTEM,
+    "calculator": ToolDomain.SYSTEM,
 }
 
 TOOL_RISK_MAP: dict[str, RiskLevel] = {
@@ -112,6 +113,7 @@ TOOL_RISK_MAP: dict[str, RiskLevel] = {
     "lilith_command_submit": RiskLevel.HIGH,
     "lilith_routine": RiskLevel.HIGH,
     "open_capabilities_catalog": RiskLevel.READ_ONLY,
+    "calculator": RiskLevel.READ_ONLY,
 }
 
 TOOL_CAPABILITIES_MAP: dict[str, list[str]] = {
@@ -163,6 +165,7 @@ TOOL_CAPABILITIES_MAP: dict[str, list[str]] = {
     "lilith_command_submit": ["system.read"],
     "lilith_routine": ["home.control"],
     "open_capabilities_catalog": ["system.read"],
+    "calculator": ["system.read"],
 }
 
 TOOL_SIDE_EFFECTS: dict[str, bool] = {
@@ -214,6 +217,7 @@ TOOL_SIDE_EFFECTS: dict[str, bool] = {
     "lilith_command_submit": True,
     "lilith_routine": True,
     "open_capabilities_catalog": False,
+    "calculator": False,
 }
 
 
