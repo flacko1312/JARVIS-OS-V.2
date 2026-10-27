@@ -1,4 +1,5 @@
 #desktop.py
+import ast
 import os
 import sys
 import shutil
@@ -31,6 +32,64 @@ def _get_desktop() -> Path:
             return Path(xdg)
     return Path.home() / "Desktop"
 
+_BANNED_NAMES = frozenset({
+    "eval", "exec", "compile", "__import__", "open", "input",
+    "globals", "locals", "vars", "dir", "type", "super",
+    "breakpoint", "exit", "quit", "memoryview", "bytearray",
+    "delattr", "setattr", "getattr",
+})
+
+_SAFE_AST_NODES = frozenset({
+    ast.Module, ast.Expr, ast.Assign, ast.AugAssign,
+    ast.For, ast.While, ast.If, ast.With, ast.withitem,
+    ast.FunctionDef, ast.Return, ast.Pass, ast.Break, ast.Continue,
+    ast.BoolOp, ast.BinOp, ast.UnaryOp, ast.Compare,
+    ast.Call, ast.Constant, ast.FormattedValue, ast.JoinedStr,
+    ast.Attribute, ast.Subscript, ast.Starred, ast.Name, ast.Tuple,
+    ast.List, ast.Dict, ast.Set,
+    ast.Load, ast.Store, ast.Del,
+    ast.And, ast.Or, ast.Add, ast.Sub, ast.Mult, ast.Div, ast.FloorDiv,
+    ast.Mod, ast.Pow, ast.LShift, ast.RShift, ast.BitOr, ast.BitXor,
+    ast.BitAnd, ast.MatMult, ast.Invert, ast.Not, ast.UAdd, ast.USub,
+    ast.Eq, ast.NotEq, ast.Lt, ast.LtE, ast.Gt, ast.GtE, ast.Is, ast.IsNot,
+    ast.In, ast.NotIn,
+    ast.IfExp, ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp,
+    ast.comprehension,
+    ast.Try, ast.ExceptHandler,
+    ast.Slice,
+    ast.keyword, ast.arguments, ast.arg,
+})
+
+
+def validate_generated_code(code: str) -> tuple[bool, str]:
+    """AST-level validation of LLM-generated code. Returns (ok, reason)."""
+    try:
+        tree = ast.parse(code)
+    except SyntaxError as e:
+        return False, f"Syntax error: {e}"
+
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            return False, f"Import statements are not allowed"
+
+        if type(node) not in _SAFE_AST_NODES:
+            return False, f"Disallowed construct: {type(node).__name__}"
+
+        if isinstance(node, ast.Attribute) and node.attr.startswith("_"):
+            return False, f"Access to private/dunder attribute '{node.attr}' is not allowed"
+
+        if isinstance(node, ast.Name) and node.id in _BANNED_NAMES:
+            return False, f"Use of '{node.id}' is not allowed"
+
+        if isinstance(node, ast.Attribute) and node.attr in (
+            "write_text", "write_bytes", "unlink", "rmdir", "rename",
+            "replace", "rmtree", "remove", "system", "popen",
+        ):
+            return False, f"Disallowed method '{node.attr}'"
+
+    return True, "OK"
+
+
 def _build_sandbox() -> dict:
     import time
 
@@ -39,7 +98,7 @@ def _build_sandbox() -> dict:
         "len": len, "str": str, "int": int, "float": float,
         "bool": bool, "list": list, "dict": dict, "tuple": tuple,
         "range": range, "enumerate": enumerate, "sorted": sorted,
-        "isinstance": isinstance, "hasattr": hasattr, "getattr": getattr,
+        "isinstance": isinstance, "hasattr": hasattr,
         "max": max, "min": min, "sum": sum, "abs": abs,
         "zip": zip, "map": map, "filter": filter,
     }
@@ -53,7 +112,14 @@ def _build_sandbox() -> dict:
             "copytree":   shutil.copytree,
             "disk_usage": shutil.disk_usage,
         })(),
-        "os_path": os.path,  
+        "os_path_join":     os.path.join,
+        "os_path_exists":   os.path.exists,
+        "os_path_basename": os.path.basename,
+        "os_path_dirname":  os.path.dirname,
+        "os_path_splitext": os.path.splitext,
+        "os_path_getsize":  os.path.getsize,
+        "os_path_isfile":   os.path.isfile,
+        "os_path_isdir":    os.path.isdir,
     }
 
     if _PYAUTOGUI:
@@ -61,11 +127,8 @@ def _build_sandbox() -> dict:
 
     if _OS == "Windows":
         try:
-            import ctypes
             import winreg
-            sandbox["ctypes"] = ctypes
             sandbox["winreg"] = type("winreg", (), {
-                # Sadece okuma
                 "OpenKey":      winreg.OpenKey,
                 "QueryValueEx": winreg.QueryValueEx,
                 "HKEY_CURRENT_USER": winreg.HKEY_CURRENT_USER,
@@ -80,10 +143,14 @@ def _execute_generated_code(code: str, player=None) -> str:
     if not code or code.strip() == "UNSAFE":
         return "This action cannot be performed safely."
 
-    # Kod temizleme
     if code.startswith("```"):
         lines = code.split("\n")
         code  = "\n".join(lines[1:-1]).strip()
+
+    ok, reason = validate_generated_code(code)
+    if not ok:
+        print(f"[Desktop] Code rejected: {reason}\nCode:\n{code[:300]}")
+        return f"Code rejected by safety validator: {reason}"
 
     sandbox      = _build_sandbox()
     output_lines = []
@@ -106,7 +173,7 @@ def _ask_gemini_for_desktop_action(task: str) -> str:
 
     os_specific = ""
     if _OS == "Windows":
-        os_specific = "- ctypes (Windows API calls, read-only)\n- winreg (registry READ only)"
+        os_specific = "- winreg (registry READ only: OpenKey, QueryValueEx, HKEY_CURRENT_USER)"
     elif _OS == "Darwin":
         os_specific = "- subprocess is NOT available; use pyautogui or Path only"
     else:
@@ -121,7 +188,7 @@ Allowed modules ONLY:
 - pyautogui (mouse, keyboard — if needed)
 - pathlib.Path (file/folder inspection only, no deletion)
 - shutil.copy2, shutil.copytree, shutil.disk_usage (NO move, NO rmtree)
-- os_path (os.path equivalent, read-only)
+- os_path_join, os_path_exists, os_path_basename, os_path_dirname, os_path_splitext, os_path_getsize, os_path_isfile, os_path_isdir (individual functions, read-only)
 - time.sleep
 {os_specific}
 
@@ -130,6 +197,8 @@ Hard rules:
 - NO subprocess calls
 - NO exec() or eval() inside the code
 - NO import statements (modules are pre-injected)
+- NO access to private or dunder attributes (nothing starting with _)
+- NO getattr, setattr, delattr, globals, locals, type, super
 - NO file write operations except explicitly requested
 - If task cannot be done safely with these tools, output exactly: UNSAFE
 
