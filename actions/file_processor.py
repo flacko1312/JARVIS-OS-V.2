@@ -426,9 +426,9 @@ def _process_text_doc(path: Path, file_type: str, action: str,
     }
 
     if action not in prompt_map:
-
-        action  = "custom"
         instruction = action
+        action = "custom"
+        prompt_map["custom"] = f"{instruction}\n\n{content[:40000]}"
 
     try:
         result = _generate_content([prompt_map[action]])

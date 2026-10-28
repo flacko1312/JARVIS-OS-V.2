@@ -99,14 +99,21 @@ class TestToolDeclarations(unittest.TestCase):
 
     def test_lilith_tools_registered(self):
         names = {t["name"] for t in TOOL_DECLARATIONS}
-        for tool in ("lilith_memory_search", "lilith_memory_store",
-                     "lilith_memory_delete", "lilith_home_action", "lilith_health",
-                     "lilith_runtime_status", "lilith_request_approval",
-                     "lilith_resolve_approval", "lilith_docs_list",
-                     "lilith_docs_read", "lilith_docs_search",
-                     "lilith_source_list", "lilith_source_read",
-                     "lilith_source_search", "lilith_git_status",
-                     "lilith_command_submit"):
+        # Core LILITH tools present on all platforms
+        core_tools = (
+            "lilith_memory_search", "lilith_memory_store",
+            "lilith_memory_delete", "lilith_home_action", "lilith_health",
+            "lilith_runtime_status", "lilith_docs_list",
+            "lilith_docs_read", "lilith_docs_search",
+            "lilith_source_list", "lilith_source_read",
+            "lilith_source_search", "lilith_git_status",
+            "lilith_command_submit",
+        )
+        # Approval tools are Windows-only (AURORA desktop)
+        import platform
+        if platform.system() == "Windows":
+            core_tools += ("lilith_request_approval", "lilith_resolve_approval")
+        for tool in core_tools:
             self.assertIn(tool, names)
 
     def test_lilith_tools_excluded_from_cloud_safe(self):

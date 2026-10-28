@@ -34,3 +34,22 @@ def isolate_reminder_registry(tmp_path_factory: pytest.TempPathFactory):
             os.environ.pop("JARVIS_REMINDER_DIR", None)
         else:
             os.environ["JARVIS_REMINDER_DIR"] = original
+
+
+def _has_display() -> bool:
+    """Check if a working X11/Wayland display is available."""
+    import os
+    if not os.environ.get("DISPLAY") and not os.environ.get("WAYLAND_DISPLAY"):
+        return False
+    return True
+
+
+collect_ignore_glob = []
+if not _has_display():
+    collect_ignore_glob.extend([
+        "test_action_helpers.py",
+        "test_core_resilience.py",
+        "test_phy2_009_named_window_close.py",
+        "test_phy2_010_windows_focus_stability.py",
+        "test_phy2_010_windows_safe_text_entry.py",
+    ])

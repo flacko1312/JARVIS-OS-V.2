@@ -1,3 +1,4 @@
+import platform
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -17,6 +18,7 @@ def test_volume_percent_rejects_invalid(value):
         media_control._volume_percent(value)
 
 
+@pytest.mark.skipif(platform.system() != "Windows", reason="pycaw is Windows-only")
 def test_windows_set_volume_uses_endpoint_scalar():
     endpoint = MagicMock()
     speaker = SimpleNamespace(EndpointVolume=endpoint)
@@ -29,6 +31,7 @@ def test_windows_set_volume_uses_endpoint_scalar():
     "action,current,expected",
     [("mute", False, True), ("unmute", True, False), ("toggle_mute", False, True)],
 )
+@pytest.mark.skipif(platform.system() != "Windows", reason="pycaw is Windows-only")
 def test_windows_mute_actions(action, current, expected):
     endpoint = MagicMock()
     endpoint.GetMute.return_value = current

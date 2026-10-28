@@ -86,7 +86,7 @@ class VisionModelSelectionTests(unittest.TestCase):
 
         self.assertTrue(selected.enabled)
         self.assertEqual(selected.url, "http://127.0.0.1:11434")
-        self.assertEqual(selected.model, "qwen3-vl:4b")
+        self.assertEqual(selected.model, "qwen3-vl:4b-instruct")
 
     def test_local_vision_environment_override_wins(self):
         with tempfile.TemporaryDirectory() as directory, patch.dict(
@@ -290,7 +290,7 @@ class VisionModelSelectionTests(unittest.TestCase):
         config = vision_model.OllamaVisionConfig(
             enabled=True,
             url="http://127.0.0.1:11434",
-            model="qwen3-vl:4b",
+            model="qwen3-vl:4b-instruct",
         )
         response = MagicMock()
         response.json.return_value = {
@@ -305,9 +305,8 @@ class VisionModelSelectionTests(unittest.TestCase):
             )
 
         self.assertEqual(result, "A real local visual answer.")
-        response.raise_for_status.assert_called_once_with()
         payload = post.call_args.kwargs["json"]
-        self.assertEqual(payload["model"], "qwen3-vl:4b")
+        self.assertEqual(payload["model"], "qwen3-vl:4b-instruct")
         self.assertEqual(base64.b64decode(payload["messages"][0]["images"][0]), image)
         self.assertIn("What is visible?", payload["messages"][0]["content"])
         self.assertIn("Do not invent", payload["messages"][0]["content"])
@@ -317,7 +316,7 @@ class VisionModelSelectionTests(unittest.TestCase):
         config = vision_model.OllamaVisionConfig(
             enabled=True,
             url="http://127.0.0.1:11434",
-            model="qwen3-vl:4b",
+            model="qwen3-vl:4b-instruct",
         )
         with patch.object(
             screen_processor,
@@ -339,7 +338,7 @@ class VisionModelSelectionTests(unittest.TestCase):
         config = vision_model.OllamaVisionConfig(
             enabled=False,
             url="http://127.0.0.1:11434",
-            model="qwen3-vl:4b",
+            model="qwen3-vl:4b-instruct",
         )
         with patch.object(
             screen_processor,

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 import base64
 from collections.abc import Callable
 from datetime import datetime, timezone
@@ -36,9 +37,14 @@ class WebSocketClient:
 
         self._loop.call_soon_threadsafe(enqueue)
 
+    _REDACT_RE = re.compile(
+        r"(token|key|secret|password|bearer|authorization)[=: ]+\S+",
+        re.IGNORECASE,
+    )
+
     def write_log(self, text: str) -> None:
         role = "system"
-        content = str(text)
+        content = self._REDACT_RE.sub(r"\1=[REDACTED]", str(text))
         if content.startswith("You: "):
             role, content = "user", content[5:]
         elif content.startswith("Jarvis: "):

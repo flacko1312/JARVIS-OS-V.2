@@ -1,0 +1,23 @@
+[Unit]
+Description=JARVIS Headless voice assistant
+After=network-online.target pulseaudio.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/flako1312/jarvis-headless
+ExecStart=/home/flako1312/jarvis-headless/.venv/bin/python3 headless_main.py
+Restart=on-failure
+RestartSec=10
+StartLimitIntervalSec=120
+StartLimitBurst=4
+TimeoutStopSec=15
+KillSignal=SIGTERM
+Environment=PYTHONUNBUFFERED=1
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=jarvis-headless
+
+[Install]
+WantedBy=default.target
