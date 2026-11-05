@@ -2,6 +2,62 @@
 
 ---
 
+## 2026-11-05 (sesión 6) — Reorganización prioridades, home_routine P3, auditoría Ubuntu, entidades HA
+
+**Autor:** Claude Sonnet 4.6 (automatizado — AUTOPILOT CONTINUO)
+**Rama:** `codex/neural-voice-visual`
+
+### Trabajo completado
+
+#### P1 — Auditoría voz/conversación Ubuntu (HEADLESS_SYSTEM_RULES)
+- Descubierto: `HEADLESS_SYSTEM_RULES` en Ubuntu `main.py` no listaba 8+ tools nuevas añadidas en sesiones 3-5
+- Reescrito `HEADLESS_SYSTEM_RULES` vía SSH: ahora incluye todos los tools (alarm_control, timer, shopping_list, news_control, transport_schedules, broadcast_control, reminder, batch_home_action, weather_report, calculator, home_routine)
+- Añadida nota explícita de audio: "you CAN play audio on speakers" (Ubuntu headless_half_duplex + sounddevice)
+- Verificado que memory tools (lilith_memory_search, lilith_memory_store) están en perfil headless con reglas correctas
+
+#### P3 — home_routine tool (meta-rutinas domésticas)
+- Creado `C:\JARVIS\actions\home_routine.py` con 5 rutinas: buenos_dias, me_voy, llegue_a_casa, buenas_noches, modo_taller
+- Todas las acciones sobre dispositivos requieren `confirm=True` explícito — protección contra ejecución accidental
+- Integrado en AURORA: lazy import + schema TOOL_DECLARATIONS + dispatch en `main.py` + `qa_audit.py`
+- Desplegado en Ubuntu: SCP del módulo + lazy import + dispatch + `qa_audit.py` + `headless_permissions.py`
+- 30/30 tests nuevos pasando
+- Fix aplicado: parámetro `confirm_devices` en `_execute_buenos_dias` (typo de nombre)
+
+#### P4 — Auditoría entidades Home Assistant (en vivo)
+- Consultadas entidades reales vía LILITH `home/resolve` en producción
+- light.bombilla_mueble: registrada en HA, state=unavailable (dispositivo físico offline)
+- light.bombilla_tv: registrada en HA, state=unavailable (dispositivo físico offline)
+- switch.cargador_hub: registrada en HA, state=unavailable (dispositivo físico offline)
+- sensor.lilith_temperatura: registrada en HA, state=unavailable (dispositivo físico offline)
+- **media_player.hub: AVAILABLE (state=off, available=True)** ← único dispositivo funcional
+- media_player.mc_smart_tv_pro_cast: unavailable
+- Ninguna entidad cover.* ni climate.* registrada en HA
+- MASTER_PLAN.md actualizado: B11/B12 con nota estado físico real, G64 con tabla completa
+
+#### STATUS_SNAPSHOT.json v8
+- snapshot_version: 7→8
+- tool_count_aurora: 62→63, tool_count_ubuntu: 71→73
+- tools_new_this_session: añadido home_routine
+- home_assistant: actualizado con resultado auditoría real
+- tests: 79 passed (home_routine 30 + transport_schedules 32 + batch_home_action 17)
+- note: actualizado para v8
+
+### Estado actual
+45/68 OPERATIVO — sin cambio de recuento (home_routine es implementación de B19/B20/B21 ya OPERATIVO).
+Cambio clave: HEADLESS_SYSTEM_RULES Ubuntu corregido; home_routine deployado en ambos entornos.
+
+### Bloqueadores pendientes (usuario)
+- **GCAL_OAUTH**: E44/E45 → colocar archivo OAuth JSON en `C:\JARVIS\config\gcal_client.json`
+- **ORS_API_KEY**: E49 → openrouteservice.org (gratuita), luego "configura tráfico api_key=CLAVE"
+- **Altavoces**: C25-C30, D37-D38, E41-E42, G66-G67 → validación física audio
+- **Entidades HA**: B11-B12, B23-B24 → encender dispositivos físicos para probar domótica
+
+### Continuación P2 (pendiente próxima sesión)
+- Verificar que conversación Ubuntu usa realmente memoria LILITH (lilith_memory_search/store en flujo real)
+- Testear media_player.hub: ¿puede recibir TTS/audio vía LILITH commands/submit?
+
+---
+
 ## 2026-11-05 (sesión 5) — Auditoría verificación, disclaimer transport_schedules, STATUS_SNAPSHOT v7
 
 **Autor:** Claude Sonnet 4.6 (automatizado — AUTOPILOT CONTINUO)

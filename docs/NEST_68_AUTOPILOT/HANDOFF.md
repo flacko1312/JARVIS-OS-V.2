@@ -1,7 +1,7 @@
 # HANDOFF — Instrucciones para reanudar el trabajo
 
-Última actualización: 2026-11-05 (sesión 5 — auditoría verificación, transport_schedules disclaimer, STATUS_SNAPSHOT v7)
-Checkpoint: 45/68 OPERATIVO. AURORA 62 tools, Ubuntu 71 tools. Commit 8aa9f32.
+Última actualización: 2026-11-05 (sesión 6 — home_routine P3, auditoría Ubuntu HEADLESS_SYSTEM_RULES, entidades HA en vivo)
+Checkpoint: 45/68 OPERATIVO. AURORA 63 tools, Ubuntu 73 tools.
 
 ---
 
@@ -17,60 +17,76 @@ Checkpoint: 45/68 OPERATIVO. AURORA 62 tools, Ubuntu 71 tools. Commit 8aa9f32.
 
 ## Estado actual del ecosistema (2026-11-05)
 
-### AURORA/JARVIS Windows — 62 tools, branch codex/neural-voice-visual
+### AURORA/JARVIS Windows — 63 tools, branch codex/neural-voice-visual
 - 45/68 capacidades OPERATIVO
-- 373/373 tests pasan (transport_schedules 32 + batch_home_action 17)
+- 79/79 tests pasan (home_routine 30 + transport_schedules 32 + batch_home_action 17)
 - LILITH_API_URL=http://192.168.1.50:8000 — configurado y verificado
 - Todos los endpoints `/api/v1/integration/*` autenticados funcionando
 
-### JARVIS Ubuntu Headless — `/home/flako1312/jarvis-headless` — 71 tools
-- 373/373 tests pasan + 3/3 ToolContractTests
-- Puerto 7471: Android APK gateway — 85 reglas de permisos para 12 tools
-- transport_schedules + batch_home_action desplegados y registrados (lazy import + schema + dispatch + qa_audit)
+### JARVIS Ubuntu Headless — `/home/flako1312/jarvis-headless` — 73 tools
+- 79/79 tests pasan + 3/3 ToolContractTests
+- Puerto 7471: Android APK gateway — 87 reglas de permisos para 13 tools (añadido home_routine)
+- HEADLESS_SYSTEM_RULES reescrito sesión 6: lista completa de tools incluyendo todos los nuevos
+- home_routine desplegado: SCP + lazy import + dispatch + qa_audit + headless_permissions
 
 ### LILITH Core — Docker `lilith_core`, puerto 8000
 - Estado: RUNNING, healthy, database+mqtt+kernel+home_assistant=true
 - API de integración: `/api/v1/integration/*` — todos los endpoints respondiendo
 - Broadcast intent NO en allowlist del token JARVIS (HTTP 403)
 
-### Home Assistant — Docker `homeassistant/home-assistant:stable`
-- Accesible vía LILITH `/api/v1/integration/home/*`
-- Entidades físicas sin auditar desde JARVIS
+### Home Assistant — Auditado en vivo (sesión 6)
+- light.bombilla_mueble: registrada, state=unavailable (física offline)
+- light.bombilla_tv: registrada, state=unavailable (física offline)
+- switch.cargador_hub: registrada, state=unavailable (física offline)
+- sensor.lilith_temperatura: registrada, state=unavailable (física offline)
+- **media_player.hub: AVAILABLE (state=off, available=True)** ← único dispositivo funcional
+- media_player.mc_smart_tv_pro_cast: unavailable
+- Ninguna entidad cover.* ni climate.* registrada
 
 ---
 
-## Herramientas implementadas esta sesión
+## Herramientas implementadas (sesiones 1-6 acumulado)
 
-| Tool | Tests | Estado | Notas |
-|------|-------|--------|-------|
-| timer | 36 | OPERATIVO | countdown, registry JSON, TTS |
-| alarm_control | 31 | OPERATIVO | HH:MM, beep 880Hz, TTS |
-| shopping_list | 35 | OPERATIVO | JSON local, multi-lista, CRUD |
-| news_control | 28 | OPERATIVO | 9 feeds RSS, sin API key |
-| radio_control | 31 | OPERATIVO (código) | ffplay, 10 emisoras; pendiente altavoces |
-| podcast_control | 26 | OPERATIVO (código) | iTunes+RSS+ffplay; pendiente altavoces |
-| audiobook_control | 31 | OPERATIVO (código) | LibriVox+ffplay; pendiente altavoces |
-| broadcast_control | 20 | OPERATIVO (local) | TTS local OK; relay LILITH bloqueado |
-| calendar_control | 42 | PARCIAL | código OK; blocker GCAL_OAUTH |
-| traffic_info | 45 | PARCIAL | código OK; blocker ORS_API_KEY |
+| Tool | Tests | Estado | Sesión |
+|------|-------|--------|--------|
+| timer | 36 | OPERATIVO | 4 |
+| alarm_control | 31 | OPERATIVO | 4 |
+| shopping_list | 35 | OPERATIVO | 4 |
+| news_control | 28 | OPERATIVO | 4 |
+| radio_control | 31 | OPERATIVO (código) | 4 |
+| podcast_control | 26 | OPERATIVO (código) | 4 |
+| audiobook_control | 31 | OPERATIVO (código) | 4 |
+| broadcast_control | 20 | OPERATIVO (local) | 4 |
+| calendar_control | 42 | PARCIAL | 4 |
+| traffic_info | 45 | PARCIAL | 4 |
+| transport_schedules | 32 | OPERATIVO | 5 |
+| batch_home_action | 17 | OPERATIVO | 5 |
+| lilith_home_status | — | OPERATIVO | 5 |
+| home_routine | 30 | OPERATIVO | 6 |
 
 ---
 
 ## Tareas pendientes (en orden de prioridad)
 
-### 0. Verificación completada en sesión 5
-- transport_schedules: disclaimer DATOS ESTÁTICOS añadido a todos los outputs ✓
-- STATUS_SNAPSHOT v7: B11/B12/B20/B23/B24 movidos PARCIAL→OPERATIVO ✓
-- OPERATIVO_VERIFICATION.md: tabla completa auto-test/integration/physical para 45 caps ✓
-- Ubuntu DESCONOCIDO reducido: B19/B21/C25-C27 confirmados presentes en Ubuntu main.py ✓
-- G68 WebSocket: LILITH /ws → 404; feature-flag OFF correcto; permanece PARCIAL ✓
+### 0. Completado en sesiones 5-6
+- transport_schedules: disclaimer DATOS ESTÁTICOS ✓
+- STATUS_SNAPSHOT v7→v8: contadores corregidos ✓
+- OPERATIVO_VERIFICATION.md: tabla auto-test/integration/physical ✓
+- home_routine P3: 5 rutinas, 30 tests, AURORA+Ubuntu ✓
+- HEADLESS_SYSTEM_RULES: reescrito con todos los tools ✓
+- Auditoría HA en vivo: 6 entidades auditadas (1 AVAILABLE) ✓
 
-### 1. Validación física de audio (requiere altavoces)
+### 1. P2 — Integración memoria LILITH en conversación (PENDIENTE)
+- Verificar que Ubuntu conversation loop llama lilith_memory_search/store
+- Testear persistencia: guardar algo → reiniciar → recuperar
+- Verificar que `memory_authority` en HEADLESS_SYSTEM_RULES guía el comportamiento real
+
+### 2. Validación física de audio (requiere altavoces)
 - C28/C29/C30 (radio/podcast/audiobook): probar `ffplay` con altavoces conectados
 - E41 (alarmas): probar sonido beep 880Hz
 - D37/D38 (broadcast): probar TTS local
 
-### 2. Desbloqueadores del usuario
+### 3. Desbloqueadores del usuario
 - **GCAL_OAUTH**: Colocar archivo OAuth JSON en `C:\JARVIS\config\gcal_client.json` → E44/E45 pasan a OPERATIVO
 - **ORS_API_KEY**: Registrar en openrouteservice.org (gratis) → decir "configura tráfico api_key=TU_CLAVE" → E49 OPERATIVO
 - **LILITH broadcast allowlist**: Pedir al equipo LILITH añadir `broadcast` a allowed intents → D38 relay completo

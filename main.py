@@ -86,6 +86,7 @@ shopping_list = _lazy_action("actions.shopping_list", "shopping_list")
 news_control = _lazy_action("actions.news_control", "news_control")
 alarm_control = _lazy_action("actions.alarm_control", "alarm_control")
 transport_schedules = _lazy_action("actions.transport_schedules", "transport_schedules")
+home_routine = _lazy_action("actions.home_routine", "home_routine")
 _batch_home_action_mod = None  # loaded lazily in dispatch
 computer_settings = _lazy_action("actions.computer_settings", "computer_settings")
 screen_process = _lazy_action("actions.screen_processor", "screen_process")
@@ -1686,6 +1687,37 @@ TOOL_DECLARATIONS = [
                 "product":  {"type": "STRING", "description": "Alias for item."},
                 "quantity": {"type": "STRING", "description": "Amount (e.g. '2', '1kg', '500ml')."},
                 "list":     {"type": "STRING", "description": "List name (default: 'compra')."},
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "home_routine",
+        "description": (
+            "Execute or list smart home meta-routines for domestic life. "
+            "Routines: buenos_dias (morning greeting + weather), me_voy (leaving home + turn off devices), "
+            "llegue_a_casa (arrived home + turn on lights), buenas_noches (goodnight + turn off lights), "
+            "modo_taller (workshop mode + bright white light). "
+            "Device actions always require explicit confirmation (confirm=true). "
+            "Actions: list (show all routines), run (execute), or use routine name directly as action. "
+            "Params: action (routine name or 'list'), routine (name), confirm (bool, default false)."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "action": {
+                    "type": "STRING",
+                    "enum": ["list", "run", "buenos_dias", "me_voy", "llegue_a_casa", "buenas_noches", "modo_taller"],
+                    "description": "Routine to run, or 'list' to see all routines.",
+                },
+                "routine": {
+                    "type": "STRING",
+                    "description": "Routine name: buenos_dias, me_voy, llegue_a_casa, buenas_noches, modo_taller.",
+                },
+                "confirm": {
+                    "type": "BOOLEAN",
+                    "description": "Set true to confirm and execute device actions (lights/plugs). Default false = show preview only.",
+                },
             },
             "required": [],
         },
@@ -4078,6 +4110,10 @@ class JarvisLive:
             elif name == "transport_schedules":
                 r = await asyncio.to_thread(lambda: transport_schedules(parameters=args, response=None, player=self.ui))
                 result = r or "No he podido obtener información de transporte."
+
+            elif name == "home_routine":
+                r = await asyncio.to_thread(lambda: home_routine(parameters=args, response=None, player=self.ui))
+                result = r or "No he podido ejecutar la rutina doméstica."
 
             elif name == "date_time":
                 result = self._date_time_authority.answer_action(

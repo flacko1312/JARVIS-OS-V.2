@@ -38,8 +38,8 @@ Flujo canónico: Usuario → AURORA/JARVIS → LILITH (autorización/memoria/rut
 
 | # | Capacidad | Responsable | Estado AURORA | Estado Ubuntu | Estado LILITH/HA | Notas |
 |---|---|---|---|---|---|---|
-| 11 | Luces inteligentes | LILITH→HA | OPERATIVO | OPERATIVO | DESCONOCIDO | lilith_home_action + lilith_home_status + batch_home_action; entidades offline (físico pendiente) |
-| 12 | Enchufes | LILITH→HA | OPERATIVO | OPERATIVO | DESCONOCIDO | Misma vía; switch.cargador_hub conocido (offline) |
+| 11 | Luces inteligentes | LILITH→HA | OPERATIVO | OPERATIVO | PARCIAL | light.bombilla_mueble: registrada, state=unavailable (física offline). light.bombilla_tv: registrada, state=unavailable. HA path verificado vía home/resolve. |
+| 12 | Enchufes | LILITH→HA | OPERATIVO | OPERATIVO | PARCIAL | switch.cargador_hub: registrada, state=unavailable (física offline). HA path verificado. |
 | 13 | Persianas/cortinas | LILITH→HA | PARCIAL | PARCIAL | DESCONOCIDO | Requiere entidades cover.* en HA (sin registrar aún) |
 | 14 | Termostatos | LILITH→HA | PARCIAL | PARCIAL | DESCONOCIDO | Requiere entidades climate.* en HA (sin registrar aún) |
 | 15 | Climatización | LILITH→HA | PARCIAL | PARCIAL | DESCONOCIDO | Misma vía que termostatos |
@@ -116,7 +116,7 @@ Flujo canónico: Usuario → AURORA/JARVIS → LILITH (autorización/memoria/rut
 |---|---|---|---|---|
 | 62 | API Google Home oficial | — | BLOQUEADO | No hay API pública gratuita; requiere acceso propietario |
 | 63 | Google Script Editor / Automations | — | BLOQUEADO | Ecosistema propietario; sin alternativa directa |
-| 64 | Home Assistant | LILITH→HA | OPERATIVO | OPERATIVO | lilith_home_action en ambos; home.resolve funcional; entidades HA sin inventariar |
+| 64 | Home Assistant | LILITH→HA | OPERATIVO | OPERATIVO | home.resolve verificado en vivo. Entidades auditadas: light.bombilla_mueble (unavailable), light.bombilla_tv (unavailable), switch.cargador_hub (unavailable), sensor.lilith_temperatura (unavailable), **media_player.hub (available, state=off)**, media_player.mc_smart_tv_pro_cast (unavailable). |
 | 65 | API servicios externos | AURORA / Ubuntu | OPERATIVO | OPERATIVO | web_search, weather, flight_finder, email, Gemini en ambos |
 | 66 | TTS (síntesis de voz) | AURORA / Ubuntu | OPERATIVO | OPERATIVO | Gemini Live TTS en ambos; Ubuntu: pendiente validación física altavoces |
 | 67 | Audio local | AURORA / Ubuntu | OPERATIVO | PARCIAL | AURORA: sounddevice WASAPI auditada; Ubuntu: ffplay presente, hardware no verificado |

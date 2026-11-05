@@ -2,22 +2,22 @@
   "meta": {
     "project": "NEST 68",
     "snapshot_date": "2026-11-05",
-    "snapshot_version": 7,
+    "snapshot_version": 8,
     "audited_by": "Claude Sonnet 4.6 (AUTOPILOT CONTINUO)",
     "aurora_branch": "codex/neural-voice-visual",
     "note": "Versioned snapshot — STATUS.json is gitignored; this file is committed. Update when capabilities change.",
-    "tool_count_aurora": 62,
-    "tool_count_ubuntu": 71,
-    "tools_new_this_session": ["timer", "calendar_control", "traffic_info", "radio_control", "podcast_control", "broadcast_control", "audiobook_control", "shopping_list", "news_control", "alarm_control", "transport_schedules", "batch_home_action", "lilith_home_status"],
-    "total_new_tools": 13,
-    "tests_aurora": "373 passed (transport_schedules 32 + batch_home_action 17), 0 failures",
-    "tests_ubuntu": "373 passed (transport_schedules 32 + batch_home_action 17), 0 failures",
+    "tool_count_aurora": 63,
+    "tool_count_ubuntu": 73,
+    "tools_new_this_session": ["timer", "calendar_control", "traffic_info", "radio_control", "podcast_control", "broadcast_control", "audiobook_control", "shopping_list", "news_control", "alarm_control", "transport_schedules", "batch_home_action", "lilith_home_status", "home_routine"],
+    "total_new_tools": 14,
+    "tests_aurora": "79 passed (home_routine 30 + transport_schedules 32 + batch_home_action 17), 0 failures",
+    "tests_ubuntu": "79 passed (home_routine 30 + transport_schedules 32 + batch_home_action 17), 0 failures",
     "lilith_status": "RUNNING — Docker container lilith_core healthy, port 8000, database+mqtt+kernel+home_assistant online",
     "lilith_api_url_aurora": "CONFIGURED — http://192.168.1.50:8000, confirmed authenticated endpoints working",
     "lilith_authenticated_endpoints": ["health", "runtime/status", "memory/search", "memory/context", "notifications", "git/status", "source/list", "docs/list", "home/resolve", "commands/submit"],
     "lilith_broadcast_relay": "commands/submit with intent=broadcast returns 403 (command_intent_not_allowed) — broadcast not in allowed intents for this token. Local TTS announce works.",
-    "home_assistant": "Running in Docker (homeassistant/home-assistant:stable), accessible via LILITH",
-    "android_apk_gateway": "Port 7471, endpoint /api/tool/invoke — all 11 tools registered in headless_permissions.py (84 total rules)"
+    "home_assistant": "Running in Docker. Entities audited: light.bombilla_mueble (unavailable), light.bombilla_tv (unavailable), switch.cargador_hub (unavailable), sensor.lilith_temperatura (unavailable), media_player.hub (AVAILABLE, state=off), media_player.mc_smart_tv_pro_cast (unavailable). No cover.* or climate.* entities.",
+    "android_apk_gateway": "Port 7471, endpoint /api/tool/invoke — 13 tools registered in headless_permissions.py (87 total rules)"
   },
   "lilith_connection": {
     "aurora_to_lilith": "VERIFIED — all /api/v1/integration/* endpoints authenticated and responding",
@@ -53,7 +53,7 @@
     "AUSENTE": 1,
     "BLOQUEADO": 4,
     "REQUIERE_HARDWARE": 6,
-    "note": "45 OPERATIVO (B11/B12/B20/B23/B24 moved PARCIAL→OPERATIVO; transport_schedules static disclaimer added; v7)"
+    "note": "45 OPERATIVO (B11/B12/B20/B23/B24 PARCIAL→OPERATIVO; home_routine P3 tool added; HA entity audit; HEADLESS_SYSTEM_RULES fixed; v8)"
   },
   "blocking_items_for_user": {
     "GCAL_OAUTH": "E44/E45: Google Calendar OAuth client JSON needed. Set GCAL_OAUTH_CLIENT_FILE or place in C:\\JARVIS\\config\\gcal_client.json",
