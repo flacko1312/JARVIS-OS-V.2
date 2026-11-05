@@ -2,6 +2,53 @@
 
 ---
 
+## 2026-11-05 (sesión 5) — Auditoría verificación, disclaimer transport_schedules, STATUS_SNAPSHOT v7
+
+**Autor:** Claude Sonnet 4.6 (automatizado — AUTOPILOT CONTINUO)
+**Rama:** `codex/neural-voice-visual`
+**Commit:** 8aa9f32
+
+### Trabajo completado
+
+#### transport_schedules — disclaimer datos estáticos (prioridad #5)
+- Docstring del módulo actualizado: explica que los datos son ESTÁTICOS (no tiempo real)
+- Output de `_fmt_metro`, `_fmt_cercanias`, `_action_schedules`, `_action_status` incluye ahora
+  `⚠️ DATOS ESTÁTICOS (horario oficial CRTM/Renfe/EMT, no tiempo real)` con links a apps reales
+- TOOL_DECLARATIONS description en AURORA `main.py` actualizada: "STATIC schedule reference... NOT real-time"
+- Desplegado a Ubuntu via SCP + actualización de descripción en Ubuntu main.py via SSH
+- 32/32 tests siguen pasando
+
+#### STATUS_SNAPSHOT.json v7
+- `PARCIAL_aurora`: eliminados B11, B12, B20, B23, B24 (ya eran OPERATIVO en MASTER_PLAN)
+- `OPERATIVO_aurora`: añadidos B11, B12, B20, B23, B24; eliminado G67 (movido a PARCIAL)
+- `PARCIAL_aurora`: añadido G67 (audio local Ubuntu sin verificar hardware)
+- `DESCONOCIDO_ubuntu`: reducido de 14 entradas a 2 (B19/B21/C25-C27/etc verificados presentes en Ubuntu)
+- Contadores: OPERATIVO=45 ✓, PARCIAL=9 (corregido)
+
+#### OPERATIVO_VERIFICATION.md — nueva tabla de verificación
+- Documento nuevo: 45 capacidades OPERATIVO con estado AUTO-TEST / INTEGRATION / PHYSICAL
+- 45/45: tool contract auto-test (qa_audit)
+- 36/45: unit tests (transport_schedules 32, batch_home_action 17, timer 36, alarm 31, etc.)
+- 15/45: integración verificada (LILITH endpoints en vivo, RSS feeds, etc.)
+- 5/45: validación física completa (A1 STT, A4 Gemini Live, A5 conversación, A8 comandos, A10)
+- 18/45: validación física PENDIENTE (altavoces, entidades HA offline)
+
+#### Verificaciones en Ubuntu
+- lilith_routine, media_control, youtube_video: confirmados presentes (40 matches en main.py)
+- WebSocket LILITH: `/api/v1/integration/ws` → 404; G68 permanece PARCIAL (feature-flagged OFF correcto)
+- Ubuntu tests: 179 passed (sesión 4), módulos nuevos confirmados integrados
+
+### Estado actual
+45/68 OPERATIVO — sin cambios en el recuento. Session 5 fue de auditoría y corrección de calidad.
+
+### Bloqueadores pendientes (usuario)
+- **GCAL_OAUTH**: E44/E45 → colocar archivo OAuth JSON en `C:\JARVIS\config\gcal_client.json`
+- **ORS_API_KEY**: E49 → openrouteservice.org (gratuita), luego "configura tráfico api_key=CLAVE"
+- **Altavoces**: C25-C30, D37-D38, E41-E42, G66-G67 → validación física audio
+- **Entidades HA**: B11-B12, B23-B24 → encender dispositivos físicos para probar domótica
+
+---
+
 ## 2026-11-05 — AUTOPILOT: Integración real LILITH, auditoría 68 capacidades, Android gateway
 
 **Autor:** Claude Sonnet 4.6 (automatizado — AUTOPILOT CONTINUO)

@@ -1,7 +1,7 @@
 # HANDOFF — Instrucciones para reanudar el trabajo
 
-Última actualización: 2026-11-05 (sesión 4 — E51 + B23/B24 + lilith_home_status + auditoría Ubuntu)
-Checkpoint: 13 herramientas nuevas AURORA, 71 tools Ubuntu. 45/68 OPERATIVO.
+Última actualización: 2026-11-05 (sesión 5 — auditoría verificación, transport_schedules disclaimer, STATUS_SNAPSHOT v7)
+Checkpoint: 45/68 OPERATIVO. AURORA 62 tools, Ubuntu 71 tools. Commit 8aa9f32.
 
 ---
 
@@ -57,6 +57,13 @@ Checkpoint: 13 herramientas nuevas AURORA, 71 tools Ubuntu. 45/68 OPERATIVO.
 ---
 
 ## Tareas pendientes (en orden de prioridad)
+
+### 0. Verificación completada en sesión 5
+- transport_schedules: disclaimer DATOS ESTÁTICOS añadido a todos los outputs ✓
+- STATUS_SNAPSHOT v7: B11/B12/B20/B23/B24 movidos PARCIAL→OPERATIVO ✓
+- OPERATIVO_VERIFICATION.md: tabla completa auto-test/integration/physical para 45 caps ✓
+- Ubuntu DESCONOCIDO reducido: B19/B21/C25-C27 confirmados presentes en Ubuntu main.py ✓
+- G68 WebSocket: LILITH /ws → 404; feature-flag OFF correcto; permanece PARCIAL ✓
 
 ### 1. Validación física de audio (requiere altavoces)
 - C28/C29/C30 (radio/podcast/audiobook): probar `ffplay` con altavoces conectados

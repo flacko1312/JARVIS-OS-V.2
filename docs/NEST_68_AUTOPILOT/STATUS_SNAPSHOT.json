@@ -41,7 +41,7 @@
       "E44","E45","E49",
       "G67","G68"
     ],
-    "DESCONOCIDO_ubuntu": ["A1-A10 (voice/live)", "B19","B21","C25-C27","C34","D39","D40","E43","E47","E48","E51","E52-E54","G64-G67"],
+    "DESCONOCIDO_ubuntu": ["A1-A10 (voice/live — requires mic+screen)", "G67 (audio hardware unverified on Ubuntu)"],
     "AUSENTE": ["B22","C35"],
     "BLOQUEADO": ["D36","B18","G62","G63"],
     "REQUIERE_HARDWARE": ["B16","B17","C32","C33","F55","F56","F57","F58","F59","F60"]
