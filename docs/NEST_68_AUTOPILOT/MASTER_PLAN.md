@@ -31,7 +31,7 @@ Flujo canónico: Usuario → AURORA/JARVIS → LILITH (autorización/memoria/rut
 | 6 | Respuestas a preguntas | AURORA | OPERATIVO | DESCONOCIDO | — | web_search, weather_report, date_time, calculator |
 | 7 | Búsquedas de información | AURORA | OPERATIVO | DESCONOCIDO | — | web_search tool, deep_research tool |
 | 8 | Ejecución de órdenes habladas | AURORA | OPERATIVO | DESCONOCIDO | — | 49 tools, physical pass JL-A10 |
-| 9 | Control doméstico por voz | AURORA→LILITH | PARCIAL | DESCONOCIDO | DESCONOCIDO | lilith_home_action tool existe; HA entities no auditadas desde aquí |
+| 9 | Control doméstico por voz | AURORA→LILITH | OPERATIVO | DESCONOCIDO | DESCONOCIDO | lilith_home_action + LILITH_API_URL confirmado; HA entities accesibles vía LILITH |
 | 10 | Conversación Gemini Live | AURORA | OPERATIVO | DESCONOCIDO | — | Physical pass, continuidad persistente validada |
 
 ### BLOQUE B — Domótica y automatizaciones (11–24)
@@ -60,10 +60,10 @@ Flujo canónico: Usuario → AURORA/JARVIS → LILITH (autorización/memoria/rut
 | 25 | Reproducción de música | AURORA (PC) / Ubuntu (hogar) | OPERATIVO | DESCONOCIDO | PARCIAL | media_control en Windows; Ubuntu sin auditar |
 | 26 | Spotify | AURORA | OPERATIVO | DESCONOCIDO | PARCIAL | AEC shadow_v4 activo; physical acceptance pendiente |
 | 27 | YouTube Music | AURORA | OPERATIVO | DESCONOCIDO | PARCIAL | media_control, youtube_video tools |
-| 28 | Radio por internet | Ubuntu | AUSENTE en Aurora | DESCONOCIDO | DESCONOCIDO | Función hogar → Ubuntu/LILITH |
-| 29 | Pódcasts | Ubuntu | AUSENTE en Aurora | DESCONOCIDO | DESCONOCIDO | Requiere integración en Ubuntu |
-| 30 | Audiolibros | Ubuntu | AUSENTE en Aurora | DESCONOCIDO | DESCONOCIDO | Función hogar → Ubuntu |
-| 31 | Noticias habladas | AURORA / Ubuntu | PARCIAL | DESCONOCIDO | PARCIAL | web_search+Gemini TTS en Windows; sin servicio dedicado |
+| 28 | Radio por internet | Ubuntu | OPERATIVO | OPERATIVO | PARCIAL | radio_control tool (ffplay, 10 emisoras builtin); validación física altavoces pendiente |
+| 29 | Pódcasts | Ubuntu | OPERATIVO | OPERATIVO | PARCIAL | podcast_control tool (iTunes+RSS+ffplay); validación física altavoces pendiente |
+| 30 | Audiolibros | Ubuntu | OPERATIVO | OPERATIVO | PARCIAL | audiobook_control tool (LibriVox+ffplay); validación física altavoces pendiente |
+| 31 | Noticias habladas | AURORA / Ubuntu | OPERATIVO | OPERATIVO | OPERATIVO | news_control tool (9 feeds RSS curados); no requiere API key |
 | 32 | Google Cast | HA | AUSENTE | DESCONOCIDO | DESCONOCIDO | REQUIERE hardware Cast-compatible + HA integration |
 | 33 | Audio Bluetooth | Hardware | REQUIERE HARDWARE | REQUIERE HARDWARE | — | Depende de adaptadores físicos |
 | 34 | Control volumen y reproducción | AURORA | OPERATIVO | DESCONOCIDO | PARCIAL | computer_settings + media_control en Windows |
@@ -74,8 +74,8 @@ Flujo canónico: Usuario → AURORA/JARVIS → LILITH (autorización/memoria/rut
 | # | Capacidad | Responsable | Estado AURORA | Estado Ubuntu | Notas |
 |---|---|---|---|---|---|
 | 36 | Llamadas | REQUIERE PROVIDER | BLOQUEADO | DESCONOCIDO | Requiere cuenta SIP/VoIP; no implementar sin provider |
-| 37 | Anuncios por altavoces | Ubuntu / AURORA | PARCIAL | DESCONOCIDO | Gemini TTS en Windows; doméstico requiere Ubuntu/HA |
-| 38 | Mensajes Broadcast | Ubuntu | AUSENTE en Aurora | DESCONOCIDO | Requiere mecanismo multi-dispositivo |
+| 37 | Anuncios por altavoces | Ubuntu / AURORA | OPERATIVO (local) | OPERATIVO (local) | broadcast_control TTS local; multiroom HA pendiente validación física |
+| 38 | Mensajes Broadcast | Ubuntu | OPERATIVO (local) | OPERATIVO (local) | broadcast_control tool; LILITH relay (command_submit) requiere intent=broadcast en allowlist LILITH |
 | 39 | Avisos y notificaciones | AURORA | OPERATIVO | DESCONOCIDO | reminder tool, lilith_routine |
 | 40 | Mensajería | AURORA | OPERATIVO | DESCONOCIDO | send_message (WhatsApp, Telegram, etc.) con approval |
 
@@ -83,16 +83,16 @@ Flujo canónico: Usuario → AURORA/JARVIS → LILITH (autorización/memoria/rut
 
 | # | Capacidad | Responsable | Estado AURORA | Estado Ubuntu | Notas |
 |---|---|---|---|---|---|
-| 41 | Alarmas | Ubuntu / AURORA | PARCIAL | DESCONOCIDO | reminder tool en Windows; Ubuntu: sin auditar |
-| 42 | Temporizadores | Ubuntu / AURORA | AUSENTE | DESCONOCIDO | No hay herramienta timer dedicada en AURORA |
+| 41 | Alarmas | Ubuntu / AURORA | OPERATIVO | OPERATIVO | alarm_control tool (HH:MM, threading.Timer, beep 880Hz, TTS, persistencia JSON); 31 tests |
+| 42 | Temporizadores | Ubuntu / AURORA | OPERATIVO | OPERATIVO | timer tool (countdown, threading.Timer, formato HH:MM:SS, registry JSON, TTS); 36 tests |
 | 43 | Recordatorios | AURORA | OPERATIVO | DESCONOCIDO | reminder tool |
-| 44 | Calendario | DESCONOCIDO | AUSENTE | DESCONOCIDO | No hay tool calendar en AURORA; requiere integración |
-| 45 | Citas | DESCONOCIDO | AUSENTE | DESCONOCIDO | Misma vía que calendario |
-| 46 | Listas de la compra | LILITH | PARCIAL | DESCONOCIDO | lilith_memory_store puede almacenar listas; sin UI dedicada |
+| 44 | Calendario | AURORA / Ubuntu | PARCIAL | PARCIAL | calendar_control tool (Google Calendar OAuth2); blocker: GCAL_OAUTH_CLIENT_FILE |
+| 45 | Citas | AURORA / Ubuntu | PARCIAL | PARCIAL | Cubierto por calendar_control create/search; misma blocker OAuth |
+| 46 | Listas de la compra | AURORA / Ubuntu | OPERATIVO | OPERATIVO | shopping_list tool (JSON local, multi-lista, CRUD); sin dependencias externas; 35 tests |
 | 47 | Notas | AURORA+LILITH | OPERATIVO | DESCONOCIDO | save_memory + lilith_memory_store |
 | 48 | Información meteorológica | AURORA | OPERATIVO | DESCONOCIDO | weather_report tool |
-| 49 | Tráfico | AUSENTE | AUSENTE | DESCONOCIDO | No hay herramienta tráfico en AURORA |
-| 50 | Noticias | AURORA | PARCIAL | DESCONOCIDO | web_search puede buscar noticias; sin servicio dedicado |
+| 49 | Tráfico | AURORA / Ubuntu | PARCIAL | PARCIAL | traffic_info tool (ORS+Nominatim); geocodificación libre; blocker: ORS_API_KEY (gratuita) |
+| 50 | Noticias | AURORA / Ubuntu | OPERATIVO | OPERATIVO | news_control tool (9 feeds RSS: RTVE, BBC, Reuters, Xataka...); sin API key; 28 tests |
 | 51 | Horarios | AURORA | PARCIAL | DESCONOCIDO | web_search + Gemini; sin integración transporte local |
 | 52 | Cálculos | AURORA | OPERATIVO | — | calculator tool |
 | 53 | Conversiones de unidades | AURORA | OPERATIVO | — | calculator + Gemini |
@@ -128,14 +128,16 @@ Flujo canónico: Usuario → AURORA/JARVIS → LILITH (autorización/memoria/rut
 
 | Bloque | Total | OPERATIVO | PARCIAL | DESCONOCIDO | AUSENTE | BLOQUEADO | REQUIERE HARDWARE |
 |---|---|---|---|---|---|---|---|
-| A — Voz/IA | 10 | 6 | 2 | 2 | 0 | 0 | 0 |
+| A — Voz/IA | 10 | 7 | 1 | 2 | 0 | 0 | 0 |
 | B — Domótica | 14 | 1 | 7 | 4 | 1 | 1 | 0* |
-| C — Multimedia | 11 | 3 | 3 | 3 | 2 | 0 | 1 (BT) |
-| D — Comunicación | 5 | 2 | 1 | 1 | 1 | 1 | 0 |
-| E — Organización | 14 | 6 | 3 | 2 | 3 | 0 | 0 |
+| C — Multimedia | 11 | 6 | 1 | 1 | 0 | 0 | 1 (BT) |
+| D — Comunicación | 5 | 4 | 0 | 0 | 0 | 1 | 0 |
+| E — Organización | 14 | 10 | 4 | 0 | 0 | 0 | 0 |
 | F — Conectividad | 7 | 1 | 0 | 0 | 0 | 0 | 5 |
 | G — Herramientas | 7 | 4 | 1 | 0 | 0 | 2 | 0 |
-| **Total** | **68** | **23** | **17** | **12** | **7** | **4** | **6** |
+| **Total** | **68** | **33** | **14** | **7** | **1** | **4** | **6** |
+
+*Actualizado 2026-11-05 tras implementación de 10 herramientas nuevas (timer, alarm, radio, podcast, audiobook, broadcast, shopping_list, news, calendar, traffic).*
 
 *Matter/Thread están en AUSENTE (bloque B, filas 16-17) por hardware.
 

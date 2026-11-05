@@ -1,112 +1,99 @@
 # HANDOFF — Instrucciones para reanudar el trabajo
 
-Última actualización: 2026-11-05
-Checkpoint: Fase 0 (auditoría) completada en AURORA Windows. Resto del ecosistema pendiente de auditoría remota.
+Última actualización: 2026-11-05 (sesión 3 — integración real + auditoría 68)
+Checkpoint: Integración AURORA↔LILITH verificada. 10 herramientas desplegadas. 33/68 OPERATIVO.
 
 ---
-
-## Estado del repositorio al crear este checkpoint
-
-- Rama activa: `codex/neural-voice-visual`
-- Último commit: `37b3b35` — feat(adapter): add Phase 2 WebSocket connector client for AURORA Windows
-- Tests: 1463 passed, 93 skipped, 0 failures
-- Archivo sin seguimiento: `docs/ARQUITECTURA_ROLES_AURORA_JARVIS_UBUNTU_LILITH_2026-11-04.md`
 
 ## Para reanudar al escribir «CONTINÚA»
 
 1. Leer este archivo (HANDOFF.md).
-2. Leer MASTER_PLAN.md.
-3. Leer STATUS.json.
-4. Ejecutar `git -C C:\JARVIS status` y `git -C C:\JARVIS log --oneline -5`.
-5. Comparar con el estado registrado aquí.
-6. Identificar cambios realizados desde este checkpoint.
-7. Continuar por la siguiente tarea pendiente de la lista de trabajo inmediato (sección 4 abajo).
-8. No repetir la auditoría de AURORA — ya está completa.
+2. Leer MASTER_PLAN.md para ver el estado actual de las 68 capacidades.
+3. Leer STATUS_SNAPSHOT.json para el resumen ejecutivo.
+4. Ejecutar `git -C C:\JARVIS log --oneline -5` para ver últimos commits.
+5. Continuar con la siguiente tarea pendiente (sección abajo).
 
 ---
 
-## Resumen ejecutivo del estado actual
+## Estado actual del ecosistema (2026-11-05)
 
-### AURORA/JARVIS Windows — auditado
+### AURORA/JARVIS Windows — 59 tools, branch codex/neural-voice-visual
+- 33/68 capacidades OPERATIVO
+- 324/324 tests pasan en tools nuevos
+- LILITH_API_URL=http://192.168.1.50:8000 — configurado y verificado
+- Todos los endpoints `/api/v1/integration/*` autenticados funcionando
 
-**Capacidades OPERATIVAS confirmadas (con evidencia):**
-- Voz/conversación: Gemini Live STT/TTS, continuidad persistente, VAD 2500ms (physical pass)
-- 49 herramientas registradas, todas con dispatch path
-- LILITH HTTP client: JL-W001 a JL-W006 completos
-- Rutinas: `lilith_routine` JL-A10 physical pass
-- Multimedia PC: media_control, Spotify AEC shadow_v4
-- Visión: screen_process physical pass; cámara pendiente
-- Comunicación: send_message (WhatsApp/Telegram/Discord/iMessage), email_control (Gmail OAuth)
-- Recordatorios: reminder tool
-- Domótica: lilith_home_action tool (UI operativa; HA entities requieren verificación)
-- Organización: weather_report, calculator, web_search, deep_research, notas
+### JARVIS Ubuntu Headless — `/home/flako1312/jarvis-headless`
+- 324/324 tests pasan en tools nuevos + 3/3 ToolContractTests
+- Puerto 8000: API principal (Gemini Live headless)
+- Puerto 7471: Android APK gateway — ahora con 81 reglas de permisos para 10 tools nuevos
+- `core/headless_permissions.py` — actualizado con permisos para todos los tools nuevos
 
-**Capacidades AUSENTES en AURORA que deben implementarse:**
-- Temporizador (E42) — no hay tool timer dedicado
-- Calendario/Citas (E44, E45) — requiere integración Google Calendar o CalDAV
-- Tráfico (E49) — requiere API externa
+### LILITH Core — Docker `lilith_core`, puerto 8000
+- Estado: RUNNING, healthy, database+mqtt+kernel+home_assistant=true
+- API de integración: `/api/v1/integration/*` — todos los endpoints respondiendo
+- Broadcast intent NO en allowlist del token JARVIS (HTTP 403)
 
-**Capacidades PARCIALES en AURORA:**
-- WebSocket adapter Phase 2: implementado (`lilith_client/adapter_connector.py`) pero ADAPTER_CONNECTION_ENABLED=false. Listo para habilitar cuando LILITH lo soporte.
-
-### Resto del ecosistema — NO AUDITADO
-
-Ubuntu, LILITH y HA requieren acceso SSH para auditar. Los estados marcados como DESCONOCIDO en STATUS.json son reales desconocidos, no problemas conocidos.
+### Home Assistant — Docker `homeassistant/home-assistant:stable`
+- Accesible vía LILITH `/api/v1/integration/home/*`
+- Entidades físicas sin auditar desde JARVIS
 
 ---
 
-## Lista de trabajo inmediato (prioridad)
+## Herramientas implementadas esta sesión
 
-### Tarea inmediata 1: Implementar tool `timer` en AURORA
-- **Estado**: AUSENTE → por implementar
-- **Archivo**: crear `actions/timer.py`, registrar en `main.py`
-- **Especificación**: crear timer, listar timers activos, cancelar timer
-- **Sin dependencias de Ubuntu/LILITH**: puede implementarse ahora
-- **Tests**: crear `tests/test_timer.py`
-
-### Tarea inmediata 2: Preparar integración calendario
-- **Estado**: AUSENTE → preparar estructura
-- **Opciones**: Google Calendar API (OAuth) o CalDAV local
-- **Acción**: crear `actions/calendar_control.py` con OAuth flow, registrar tool
-- **Blocker**: requiere Google Calendar OAuth credentials del usuario
-
-### Tarea inmediata 3: Preparar integración tráfico
-- **Estado**: AUSENTE → preparar
-- **Opciones**: Google Maps API, HERE Maps, OpenRouteService (gratuito)
-- **Acción**: crear `actions/traffic_info.py`
-- **Blocker**: requiere API key
-
-### Tarea inmediata 4: Habilitar WebSocket adapter_connector
-- **Estado**: PARCIAL → Phase 2 implementado, feature-flagged
-- **Acción**: verificar que LILITH soporta el protocolo WebSocket, luego cambiar ADAPTER_CONNECTION_ENABLED=true en .env
-- **Blocker**: requiere acceso a LILITH para verificar servidor WS
-
-### Tarea inmediata 5: Auditoría SSH Ubuntu/LILITH
-- **Estado**: DESCONOCIDO → requiere conexión remota
-- **Acción**: SSH a Ubuntu, leer estructura jarvis-headless y lilith, verificar servicios
-- **Blocker**: requiere credenciales SSH / Tailscale activo
+| Tool | Tests | Estado | Notas |
+|------|-------|--------|-------|
+| timer | 36 | OPERATIVO | countdown, registry JSON, TTS |
+| alarm_control | 31 | OPERATIVO | HH:MM, beep 880Hz, TTS |
+| shopping_list | 35 | OPERATIVO | JSON local, multi-lista, CRUD |
+| news_control | 28 | OPERATIVO | 9 feeds RSS, sin API key |
+| radio_control | 31 | OPERATIVO (código) | ffplay, 10 emisoras; pendiente altavoces |
+| podcast_control | 26 | OPERATIVO (código) | iTunes+RSS+ffplay; pendiente altavoces |
+| audiobook_control | 31 | OPERATIVO (código) | LibriVox+ffplay; pendiente altavoces |
+| broadcast_control | 20 | OPERATIVO (local) | TTS local OK; relay LILITH bloqueado |
+| calendar_control | 42 | PARCIAL | código OK; blocker GCAL_OAUTH |
+| traffic_info | 45 | PARCIAL | código OK; blocker ORS_API_KEY |
 
 ---
 
-## Configuración de entorno conocida
+## Tareas pendientes (en orden de prioridad)
+
+### 1. Validación física de audio (requiere altavoces)
+- C28/C29/C30 (radio/podcast/audiobook): probar `ffplay` con altavoces conectados
+- E41 (alarmas): probar sonido beep 880Hz
+- D37/D38 (broadcast): probar TTS local
+
+### 2. Desbloqueadores del usuario
+- **GCAL_OAUTH**: Colocar archivo OAuth JSON en `C:\JARVIS\config\gcal_client.json` → E44/E45 pasan a OPERATIVO
+- **ORS_API_KEY**: Registrar en openrouteservice.org (gratis) → decir "configura tráfico api_key=TU_CLAVE" → E49 OPERATIVO
+- **LILITH broadcast allowlist**: Pedir al equipo LILITH añadir `broadcast` a allowed intents → D38 relay completo
+
+### 3. Capacidades DESCONOCIDO en Ubuntu a verificar
+- B19/B21 (rutinas LILITH): verificar si jarvis-headless tiene `lilith_routine` tool
+- C25-C27 (música/Spotify/YTMusic): media_control en Ubuntu headless
+- E43 (recordatorios): reminder tool en Ubuntu
+
+### 4. WebSocket adapter Phase 2 (G68)
+- Verificar si LILITH soporta WebSocket en `/api/v1/integration/ws`
+- Si sí: habilitar `ADAPTER_CONNECTION_ENABLED=true` en `.env`
+
+### 5. Próximas capacidades AUSENTE a implementar
+- **B22** (automatizaciones por eventos HA): triggers de sensores → requiere HA webhook o MQTT
+- **C35** (multiroom): Music Assistant en Ubuntu → requiere setup HA addon
+
+---
+
+## Configuración de entorno
 
 ```
-# Variables .env activas en C:\JARVIS:
-GEMINI_API_KEY=<set, never backup>
-LILITH_API_URL=<LAN address>
-LILITH_API_KEY=<token part only>
-ADAPTER_CONNECTION_ENABLED=false  # Phase 2 WebSocket, OFF por defecto
-JARVIS_LIVE_VAD_SILENCE_MS=2500   # Validado físicamente
-JARVIS_SPOTIFY_FILTER_MODE=shadow_v4  # AEC activo
+# C:\JARVIS\.env:
+LILITH_API_URL=http://192.168.1.50:8000  ✓ configurado
+LILITH_API_KEY=<token>                    ✓ configurado
+ADAPTER_CONNECTION_ENABLED=false          Phase 2 OFF por defecto
+GCAL_OAUTH_CLIENT_FILE=                   FALTA — usuario debe añadir
+ORS_API_KEY=                              FALTA — usuario debe registrar
 ```
-
-## Acceso a Ubuntu/LILITH
-
-- Servidor Ubuntu: `server-lilith` (hostname conocido; verificar IP actual con Tailscale)
-- Repositorios:
-  - JARVIS Ubuntu: `/home/flako1312/jarvis-headless`
-  - LILITH Core: `/home/flako1312/lilith`
-- Acceso: SSH con clave `~/.ssh/id_ed25519` o Tailscale
 
 ## Precauciones obligatorias
 
@@ -116,3 +103,4 @@ JARVIS_SPOTIFY_FILTER_MODE=shadow_v4  # AEC activo
 - NO eliminar entidades HA sin auditar primero su estado
 - Protección doble confirmación de Alexa: NO eliminar hasta tener alternativa probada
 - WebSocket adapter: NO habilitar en producción sin verificar soporte LILITH
+- LILITH token: solo integration-scoped Bearer (nunca admin token)

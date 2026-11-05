@@ -2,6 +2,60 @@
 
 ---
 
+## 2026-11-05 — AUTOPILOT: Integración real LILITH, auditoría 68 capacidades, Android gateway
+
+**Autor:** Claude Sonnet 4.6 (automatizado — AUTOPILOT CONTINUO)
+**Rama:** `codex/neural-voice-visual`
+
+### Hallazgos y correcciones
+
+#### AURORA↔LILITH comunicación autenticada — VERIFICADA
+- Ruta real de API: `/api/v1/integration/` (no `/api/`)
+- 10 endpoints autenticados confirmados: health, runtime/status, memory/search, memory/context, notifications, git/status, source/list, docs/list, home/resolve, commands/submit
+- LILITH devuelve: `{"status":"online","version":"1.0.0","services":{"database":true,"mqtt":true,"kernel":true,"home_assistant":true}}`
+- 324/324 tests pasan sin regresar
+
+#### broadcast_control — relay corregido
+- Error: usaba `/api/broadcast` (HTTP 404)
+- Fix: ahora usa `/api/v1/integration/commands/submit` con `intent=broadcast`
+- Resultado: HTTP 403 `command_intent_not_allowed` — el token de integración no tiene broadcast en la lista blanca de LILITH
+- **Acción pendiente usuario:** pedir al equipo LILITH añadir `broadcast` a los intents permitidos para el token JARVIS
+- El anuncio local TTS sigue funcionando; relay LILITH es best-effort
+
+#### Auditoría 68 capacidades — MASTER_PLAN.md actualizado
+- **A9** (Control doméstico por voz): PARCIAL → OPERATIVO (LILITH_API_URL confirmado y funcional)
+- **C28/C29/C30** (Radio/Podcast/Audiolibros): AUSENTE → OPERATIVO (herramientas dedicadas, blocker físico altavoces)
+- **C31** (Noticias habladas): PARCIAL → OPERATIVO (news_control RSS dedicado)
+- **D37** (Anuncios): PARCIAL → OPERATIVO local (broadcast_control TTS)
+- **D38** (Broadcast): AUSENTE → OPERATIVO local (broadcast_control TTS, relay pendiente allowlist)
+- **E41** (Alarmas): PARCIAL → OPERATIVO (alarm_control, 31 tests)
+- **E42** (Temporizadores): AUSENTE → OPERATIVO (timer, 36 tests)
+- **E44/E45** (Calendario/Citas): AUSENTE → PARCIAL (calendar_control implementado, blocker OAuth)
+- **E46** (Listas de la compra): PARCIAL → OPERATIVO (shopping_list, 35 tests)
+- **E49** (Tráfico): AUSENTE → PARCIAL (traffic_info implementado, blocker ORS_API_KEY)
+- **E50** (Noticias): PARCIAL → OPERATIVO (news_control, 28 tests)
+- **Resultado:** 33 OPERATIVO (antes 23), 14 PARCIAL, 7 DESCONOCIDO, 1 AUSENTE, 4 BLOQUEADO, 6 REQUIEREN HARDWARE
+
+#### Android APK — gateway permisos actualizados
+- Encontrado: `jarvis-headless` expone herramientas en puerto 7471 vía `api_server.py`
+- Permisos en `core/headless_permissions.py` — ninguna de las 10 herramientas nuevas estaba registrada
+- Parchado: añadidos 46 nuevas reglas de permisos para los 10 tools nuevos
+- Total: 35 → 81 reglas de permisos
+- Niveles: news_control/traffic_info/calendar_read → READ_ONLY; timer/alarm/shopping/radio/podcast/audiobook/broadcast → SAFE_WRITE; calendar_create/delete → CONFIRM_REQUIRED
+
+#### STATUS_SNAPSHOT.json — actualizado (versión 2)
+- Refleja: LILITH_API_URL configurado y funcionando
+- Refleja: broadcast relay fix (commands/submit, intent no allowlistado)
+- Refleja: 33/68 OPERATIVO (nuevo contador)
+- Refleja: Android gateway 81 reglas, 10 nuevos tools registrados
+
+### Tests ejecutados
+- AURORA: 324/324 passed (tool tests) + broadcast relay verificado
+- Ubuntu: 324/324 passed (mismos tests) — permisos gateway no requieren restart
+
+---
+
+
 ## 2026-11-05 — AUTOPILOT: Auditoría de integración, corrección tzdata, despliegue completo Ubuntu
 
 **Autor:** Claude Sonnet 4.6 (automatizado — AUTOPILOT CONTINUO)

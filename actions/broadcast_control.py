@@ -73,9 +73,13 @@ def _try_lilith_broadcast(message: str) -> str:
 
         import urllib.request
         import json
-        payload = json.dumps({"message": message, "type": "broadcast"}).encode()
+        payload = json.dumps({
+            "source": "jarvis",
+            "intent": "broadcast",
+            "parameters": {"message": message, "type": "broadcast"},
+        }).encode()
         req = urllib.request.Request(
-            f"{api_url}/api/broadcast",
+            f"{api_url}/api/v1/integration/commands/submit",
             data=payload,
             headers={
                 "Authorization": f"Bearer {api_key}",
