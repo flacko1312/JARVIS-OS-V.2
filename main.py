@@ -1693,9 +1693,10 @@ TOOL_DECLARATIONS = [
     {
         "name": "transport_schedules",
         "description": (
-            "Provides Spanish public transport schedule information without requiring an API key. "
-            "Covers Metro Madrid (lines 1-12), Cercanías Madrid (C1-C10), EMT buses, Búhos nocturnos, "
-            "and Renfe long-distance trains. For real-time info directs to official apps. "
+            "STATIC schedule reference for Spanish public transport (official CRTM/Renfe/EMT data, NOT real-time). "
+            "Returns first/last service times and typical frequency — good for planning, not live operations. "
+            "Covers Metro Madrid (L1-12), Cercanías Madrid (C1-C10), EMT buses, Búhos nocturnos, Renfe. "
+            "Always includes disclaimer and directs to real-time apps (metro.madrid.es, renfe.com, citymapper). "
             "Actions: query/schedule/horario (query schedules), status (capabilities). "
             "Params: query or line (e.g. 'metro línea 3', 'cercanías C1', 'autobús nocturno')."
         ),

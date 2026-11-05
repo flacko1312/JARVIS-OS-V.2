@@ -2,7 +2,7 @@
   "meta": {
     "project": "NEST 68",
     "snapshot_date": "2026-11-05",
-    "snapshot_version": 6,
+    "snapshot_version": 7,
     "audited_by": "Claude Sonnet 4.6 (AUTOPILOT CONTINUO)",
     "aurora_branch": "codex/neural-voice-visual",
     "note": "Versioned snapshot — STATUS.json is gitignored; this file is committed. Update when capabilities change.",
@@ -27,19 +27,19 @@
   "capabilities_summary": {
     "OPERATIVO_aurora": [
       "A1","A3","A4","A5","A6","A7","A8","A9","A10",
-      "B19","B21",
+      "B11","B12","B19","B20","B21","B23","B24",
       "C25","C26","C27","C28","C29","C30","C31","C34",
       "D37","D38","D39","D40",
       "E41","E42","E43","E46","E47","E48","E50","E51","E52","E53","E54",
       "F61",
-      "G64","G65","G66","G67"
+      "G64","G65","G66"
     ],
     "PARCIAL_aurora": [
       "A2","A9_physical",
-      "B11","B12","B13","B14","B15","B20","B23","B24",
+      "B13","B14","B15",
       "C35_AUSENTE",
       "E44","E45","E49",
-      "G68"
+      "G67","G68"
     ],
     "DESCONOCIDO_ubuntu": ["A1-A10 (voice/live)", "B19","B21","C25-C27","C34","D39","D40","E43","E47","E48","E51","E52-E54","G64-G67"],
     "AUSENTE": ["B22","C35"],
@@ -48,12 +48,12 @@
   },
   "capability_count": {
     "OPERATIVO": 45,
-    "PARCIAL": 7,
+    "PARCIAL": 9,
     "DESCONOCIDO": 7,
     "AUSENTE": 1,
     "BLOQUEADO": 4,
     "REQUIERE_HARDWARE": 6,
-    "note": "Up from 43 OPERATIVO last checkpoint (+2 lilith_home_status added AURORA, B11/B12 OPERATIVO)"
+    "note": "45 OPERATIVO (B11/B12/B20/B23/B24 moved PARCIAL→OPERATIVO; transport_schedules static disclaimer added; v7)"
   },
   "blocking_items_for_user": {
     "GCAL_OAUTH": "E44/E45: Google Calendar OAuth client JSON needed. Set GCAL_OAUTH_CLIENT_FILE or place in C:\\JARVIS\\config\\gcal_client.json",

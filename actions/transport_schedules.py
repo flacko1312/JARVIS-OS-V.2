@@ -1,10 +1,20 @@
 """Transport schedules tool — E51: horarios de transporte público.
 
-Covers Spanish public transport queries without requiring an API key:
-- Generic: web_search fallback with transport-specific formatting
-- Madrid Metro/EMT: structured metro line schedules (hardcoded, accurate)
-- Cercanías Madrid: main line info
-- Intercity buses: web_search
+IMPORTANT: All schedule data is STATIC (hardcoded from official CRTM/Renfe/EMT
+sources as of late 2026). This tool does NOT query live APIs and cannot report:
+- Real-time delays or service disruptions
+- Train/bus positions
+- Live arrival times
+
+For real-time information always direct users to:
+  - Metro Madrid: metro.madrid.es or citymapper.com/madrid
+  - Cercanías: renfe.com/viajeros/cercanias or app Cercanías Madrid
+  - EMT buses: ctb.madrid.es/app-emt or app 'EMT Madrid'
+  - Renfe larga distancia: renfe.com or app Renfe
+
+What this tool provides: static reference schedules (first/last service,
+typical frequency) based on regular operating hours. Good for planning;
+not suitable for real-time operational decisions.
 
 No external API key required for core functionality.
 """
@@ -62,7 +72,9 @@ def _fmt_metro(line_key: str) -> str:
         f"**Metro Madrid — {info['name']}**\n"
         f"  Primer servicio: {info['first']} · Último: {info['last']}\n"
         f"  Frecuencia diurna: {info['freq_day']} · Nocturna: {info['freq_night']}\n"
-        f"  Horario festivo similar al sábado. Consulta metro.madrid.es para tiempo real."
+        f"  Horario festivo similar al sábado.\n"
+        f"  ⚠️ DATOS ESTÁTICOS (horario oficial CRTM, no tiempo real). "
+        f"Tiempo real: metro.madrid.es o app Metro de Madrid."
     )
 
 
@@ -81,7 +93,8 @@ def _fmt_cercanias(line_key: str) -> str:
         f"**Cercanías Madrid — {info['name']}**\n"
         f"  Primer servicio: {info['first']} · Último: {info['last']}\n"
         f"  Frecuencia aprox: {info['freq']}\n"
-        f"  Horarios exactos: renfe.com/viajeros/cercanias"
+        f"  ⚠️ DATOS ESTÁTICOS (horario oficial Renfe, no tiempo real). "
+        f"Tiempo real: renfe.com/viajeros/cercanias o app Cercanías Madrid."
     )
 
 
@@ -130,7 +143,11 @@ def _action_schedules(query: str) -> str:
             f"  L{k}: {v['name'].split('(')[0].strip()} — {v['first']} a {v['last']}, cada {v['freq_day']}"
             for k, v in _METRO_LINES.items()
         )
-        return f"**Horarios Metro Madrid (resumen)**\n{lines_summary}\nConsulta línea específica: 'horario metro línea N'."
+        return (
+            f"**Horarios Metro Madrid (resumen)**\n{lines_summary}\n"
+            f"⚠️ DATOS ESTÁTICOS — no tiempo real. Tiempo real: metro.madrid.es\n"
+            f"Consulta línea específica: 'horario metro línea N'."
+        )
 
     if ttype == "cercanias":
         if key:
@@ -139,14 +156,18 @@ def _action_schedules(query: str) -> str:
             f"  {k.upper()}: {v['name'][:60]}... — {v['first']} a {v['last']}"
             for k, v in _CERCANIAS_LINES.items()
         )
-        return f"**Cercanías Madrid (resumen)**\n{lines_summary}\nConsulta línea específica: 'cercanías C1'."
+        return (
+            f"**Cercanías Madrid (resumen)**\n{lines_summary}\n"
+            f"⚠️ DATOS ESTÁTICOS — no tiempo real. Tiempo real: renfe.com/viajeros/cercanias\n"
+            f"Consulta línea específica: 'cercanías C1'."
+        )
 
     if ttype == "emt":
         return (
             "**Autobuses EMT Madrid**\n"
             "  Horario diurno: 6:00–23:30 (varía por línea)\n"
             "  " + _NOCHE_BUS_INFO + "\n"
-            "  Tiempo real: ctb.madrid.es/app-emt o app 'EMT Madrid'."
+            "  ⚠️ DATOS ESTÁTICOS — no tiempo real. Tiempo real: ctb.madrid.es/app-emt o app 'EMT Madrid'."
         )
 
     if ttype == "renfe":
@@ -171,9 +192,10 @@ def _action_schedules(query: str) -> str:
 
 def _action_status() -> str:
     return (
-        "transport_schedules: datos integrados de Metro Madrid (L1-L12), "
-        "Cercanías Madrid (C1-C10), autobuses EMT y Búhos nocturnos. "
-        "Sin API key requerida. Para tiempo real: citymapper.com/madrid."
+        "transport_schedules: DATOS ESTÁTICOS (horarios oficiales CRTM/Renfe/EMT, no tiempo real). "
+        "Cubre Metro Madrid (L1-L12), Cercanías (C1-C10), EMT, Búhos nocturnos y Renfe. "
+        "Sin API key requerida. "
+        "Para tiempo real: citymapper.com/madrid · metro.madrid.es · renfe.com/viajeros/cercanias"
     )
 
 
