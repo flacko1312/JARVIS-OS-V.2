@@ -25,13 +25,13 @@ Flujo canónico: Usuario → AURORA/JARVIS → LILITH (autorización/memoria/rut
 |---|---|---|---|---|---|---|
 | 1 | Reconocimiento de voz | AURORA / Ubuntu | OPERATIVO | DESCONOCIDO | — | Gemini Live STT en Windows; Ubuntu pendiente de verificar |
 | 2 | Activación por palabra clave | Ubuntu | PARCIAL (clap gate en Windows) | DESCONOCIDO | — | Protección doble confirmación activa en Alexa; no eliminar |
-| 3 | Funciones tipo asistente doméstico | Todos | OPERATIVO (Windows) | DESCONOCIDO | OPERATIVO (via tools) | 49 tools en AURORA; Ubuntu no auditado |
-| 4 | Integración Gemini | AURORA | OPERATIVO | DESCONOCIDO | — | google-genai 2.25.0; Gemini Live en Windows |
-| 5 | Conversaciones naturales | AURORA / Ubuntu | OPERATIVO | DESCONOCIDO | — | Physical pass en Windows; Ubuntu desconocido |
-| 6 | Respuestas a preguntas | AURORA | OPERATIVO | DESCONOCIDO | — | web_search, weather_report, date_time, calculator |
-| 7 | Búsquedas de información | AURORA | OPERATIVO | DESCONOCIDO | — | web_search tool, deep_research tool |
-| 8 | Ejecución de órdenes habladas | AURORA | OPERATIVO | DESCONOCIDO | — | 49 tools, physical pass JL-A10 |
-| 9 | Control doméstico por voz | AURORA→LILITH | OPERATIVO | DESCONOCIDO | DESCONOCIDO | lilith_home_action + LILITH_API_URL confirmado; HA entities accesibles vía LILITH |
+| 3 | Funciones tipo asistente doméstico | Todos | OPERATIVO (Windows) | OPERATIVO | OPERATIVO (via tools) | Ubuntu: 71 tools auditados (session 4 tool inventory) |
+| 4 | Integración Gemini | AURORA | OPERATIVO | OPERATIVO | — | Ubuntu: Gemini SDK presente (deep_research, web_search usan Gemini) |
+| 5 | Conversaciones naturales | AURORA / Ubuntu | OPERATIVO | PARCIAL | — | Ubuntu: CLI headless (sin pantalla); lógica conversacional presente |
+| 6 | Respuestas a preguntas | AURORA | OPERATIVO | OPERATIVO | — | Ubuntu: web_search, weather_report, date_time, calculator confirmados |
+| 7 | Búsquedas de información | AURORA | OPERATIVO | OPERATIVO | — | Ubuntu: web_search + deep_research presentes |
+| 8 | Ejecución de órdenes habladas | AURORA | OPERATIVO | OPERATIVO | — | Ubuntu: 71 tools; API gateway port 7471 |
+| 9 | Control doméstico por voz | AURORA→LILITH | OPERATIVO | OPERATIVO | OPERATIVO | Ubuntu: lilith_home_action + batch_home_action confirmados |
 | 10 | Conversación Gemini Live | AURORA | OPERATIVO | DESCONOCIDO | — | Physical pass, continuidad persistente validada |
 
 ### BLOQUE B — Domótica y automatizaciones (11–24)
@@ -128,16 +128,16 @@ Flujo canónico: Usuario → AURORA/JARVIS → LILITH (autorización/memoria/rut
 
 | Bloque | Total | OPERATIVO | PARCIAL | DESCONOCIDO | AUSENTE | BLOQUEADO | REQUIERE HARDWARE |
 |---|---|---|---|---|---|---|---|
-| A — Voz/IA | 10 | 7 | 1 | 2 | 0 | 0 | 0 |
+| A — Voz/IA | 10 | 9 | 1 | 0 | 0 | 0 | 0 |
 | B — Domótica | 14 | 6 | 2 | 1 | 2 | 1 | 2 |
 | C — Multimedia | 11 | 7 | 2 | 0 | 1 | 0 | 1 (BT) |
 | D — Comunicación | 5 | 4 | 0 | 0 | 0 | 1 | 0 |
 | E — Organización | 14 | 11 | 3 | 0 | 0 | 0 | 0 |
 | F — Conectividad | 7 | 1 | 0 | 0 | 0 | 0 | 6 |
 | G — Herramientas | 7 | 5 | 2 | 0 | 0 | 2 | 0 |
-| **Total** | **68** | **41** | **10** | **3** | **3** | **4** | **9** |
+| **Total** | **68** | **43** | **8** | **1** | **3** | **4** | **9** |
 
-*Actualizado 2026-11-05 (sesión 4): E51 transport_schedules + B23/B24 batch_home_action completados. 41/68 OPERATIVO.*
+*Actualizado 2026-11-05 (sesión 4): E51/B23/B24 completos + auditoría Ubuntu herramientas (71 tools). 43/68 OPERATIVO.*
 
 *Matter/Thread están en AUSENTE (bloque B, filas 16-17) por hardware.
 

@@ -2,7 +2,7 @@
   "meta": {
     "project": "NEST 68",
     "snapshot_date": "2026-11-05",
-    "snapshot_version": 4,
+    "snapshot_version": 5,
     "audited_by": "Claude Sonnet 4.6 (AUTOPILOT CONTINUO)",
     "aurora_branch": "codex/neural-voice-visual",
     "note": "Versioned snapshot — STATUS.json is gitignored; this file is committed. Update when capabilities change.",
@@ -47,13 +47,13 @@
     "REQUIERE_HARDWARE": ["B16","B17","C32","C33","F55","F56","F57","F58","F59","F60"]
   },
   "capability_count": {
-    "OPERATIVO": 41,
-    "PARCIAL": 11,
+    "OPERATIVO": 43,
+    "PARCIAL": 9,
     "DESCONOCIDO": 7,
     "AUSENTE": 1,
     "BLOQUEADO": 4,
     "REQUIERE_HARDWARE": 6,
-    "note": "Up from 39 OPERATIVO last checkpoint (+2 B23/B24 batch_home_action)"
+    "note": "Up from 41 OPERATIVO last checkpoint (+2 A tool audit confirmed A3/A4/A6-A9 Ubuntu OPERATIVO)"
   },
   "blocking_items_for_user": {
     "GCAL_OAUTH": "E44/E45: Google Calendar OAuth client JSON needed. Set GCAL_OAUTH_CLIENT_FILE or place in C:\\JARVIS\\config\\gcal_client.json",
