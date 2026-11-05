@@ -56,6 +56,40 @@
 ---
 
 
+## 2026-11-05 — AUTOPILOT: B23/B24 batch_home_action (control simultáneo dispositivos)
+
+**Autor:** Claude Sonnet 4.6 (automatizado — AUTOPILOT CONTINUO)
+**Rama:** `codex/neural-voice-visual`
+
+### batch_home_action (B23/B24)
+
+#### Implementación (AURORA)
+- Nuevo fichero `actions/batch_home_action.py`
+  - `batch_home_action_async(targets, action, client, ha_params)` — asyncio.gather concurrente
+  - `_resolve_and_act()` — resolve + action por dispositivo; fallo aislado (no para al resto)
+  - Acepta list[str] o string CSV como targets
+  - Resumen: "N/M dispositivos encendidos/apagados"
+  - Dispatch en main.py usa importlib lazy (no _lazy_action porque es async con cliente inyectado)
+- 17 tests en `tests/test_batch_home_action.py` — 17/17 PASS
+  - Mocks AsyncMock para home_resolve y home_action
+  - Cubre: resolved, ambiguous, unknown, not_allowed, mixed, exception isolation, CSV targets, summary format
+- Registrado en AURORA `main.py`: schema TOOL_DECLARATIONS + dispatch (`await batch_home_action_async(...)`)
+- Añadido a AURORA `core/qa_audit.py` EXPECTED_TOOLS
+
+#### Despliegue (Ubuntu headless)
+- SCP: `actions/batch_home_action.py` + `tests/test_batch_home_action.py`
+- Parchado `main.py` Ubuntu: schema + dispatch
+- Parchado `core/headless_permissions.py` Ubuntu: SAFE_WRITE
+- Tests Ubuntu: 17/17 PASS
+
+#### Estado
+- **B23** (Agrupación por habitaciones): PARCIAL → OPERATIVO
+- **B24** (Control simultáneo dispositivos): PARCIAL → OPERATIVO
+- **41/68 OPERATIVO** (antes 39)
+- tool_count AURORA: 60 → 61 | Ubuntu: 70 → 71
+
+---
+
 ## 2026-11-05 — AUTOPILOT: E51 transport_schedules completo, despliegue AURORA+Ubuntu
 
 **Autor:** Claude Sonnet 4.6 (automatizado — AUTOPILOT CONTINUO)
