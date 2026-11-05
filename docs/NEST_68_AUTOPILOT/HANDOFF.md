@@ -151,3 +151,9 @@ ORS_API_KEY=                              FALTA — usuario debe registrar
 - Protección doble confirmación de Alexa: NO eliminar hasta tener alternativa probada
 - WebSocket adapter: NO habilitar en producción sin verificar soporte LILITH
 - LILITH token: solo integration-scoped Bearer (nunca admin token)
+
+## Auditoria nocturna 2026-11-05 22:00
+- JARVIS Ubuntu y LILITH: health OK; SOAK y servicios sin cambios.
+- Inconsistencia STATUS_SNAPSHOT v11: OPERATIVO=44 declarado, lista OPERATIVO_aurora=43, tiers=45 (extras home_routine_voice y G67). Contadores de estados suman 72, no 68. Ver WORKLOG.
+- Proxima tarea: reconciliar MASTER_PLAN 68 IDs con STATUS_SNAPSHOT sin inventar resultados ni tocar hardware.
+- Preservar todos los cambios sin seguimiento y modificados de Ubuntu y LILITH.

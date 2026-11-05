@@ -623,3 +623,19 @@ Cambio clave: HEADLESS_SYSTEM_RULES Ubuntu corregido; home_routine deployado en 
 ### Cambios
 - ...
 ```
+
+## 2026-11-05 22:00 — Auditoria nocturna de coherencia del snapshot (solo lectura)
+
+**Autor:** ChatGPT / automatizacion NEST 68
+**Rama:** codex/neural-voice-visual
+
+### Comprobaciones
+- Git Windows HEAD eae30ec, arbol limpio al comenzar. Git Ubuntu HEAD c5c0516 con numerosos cambios modificados y sin seguimiento anteriores; no se han tocado.
+- JARVIS Ubuntu /health: status=ok, state=STANDBY. LILITH /health: status=online, database=true, mqtt=true.
+- STATUS_SNAPSHOT.json v11: OPERATIVO declarado=44, pero OPERATIVO_aurora enumera 43 IDs.
+- operativo_differentiation enumera 45 entradas sin duplicados: 27 auto_integration + 16 code_only_no_physical + 2 physical_validated. Dos entradas adicionales respecto a OPERATIVO_aurora: home_routine_voice (alias/prueba, no capacidad del plan) y G67 (audio local sin validacion fisica, fuera de OPERATIVO_aurora).
+- Los contadores de capability_count suman 72 (44+10+7+1+4+6), por lo que NO representan una particion exclusiva de las 68 capacidades. Hay etiquetas mixtas/solapadas. No se modifican cifras sin revisar el MASTER_PLAN.
+
+### Resultado y siguiente paso
+**HALLAZGO DE CONSISTENCIA:** el recuento 44/68 no queda respaldado por la lista de IDs de la version 11. No elevar ni reducir el numero por inferencia. Proximo bloque: cotejar los 68 IDs del MASTER_PLAN y definir estados mutuamente excluyentes, conservando subestados por plataforma. Sin cambios en servicios, dispositivos, secretos ni SOAK.
+
