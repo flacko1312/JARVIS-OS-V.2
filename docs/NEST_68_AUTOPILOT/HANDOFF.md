@@ -1,7 +1,7 @@
 # HANDOFF — Instrucciones para reanudar el trabajo
 
-Última actualización: 2026-11-05 (sesión 8 — P1-P5 completos, routine health injection, STATUS_SNAPSHOT v10)
-Checkpoint: 44/68 OPERATIVO (corregido de 45). AURORA 63 tools, Ubuntu 73 tools.
+Última actualización: 2026-11-05 (sesión 9 — P1-P5 bugs fijados, P3 health injection verificado, STATUS_SNAPSHOT v11)
+Checkpoint: 44/68 OPERATIVO. AURORA 63 tools, Ubuntu 74 tools (headless: 36 herramientas activas).
 
 ---
 
@@ -23,11 +23,14 @@ Checkpoint: 44/68 OPERATIVO (corregido de 45). AURORA 63 tools, Ubuntu 73 tools.
 - LILITH_API_URL=http://192.168.1.50:8000 — configurado y verificado
 - Todos los endpoints `/api/v1/integration/*` autenticados funcionando
 
-### JARVIS Ubuntu Headless — `/home/flako1312/jarvis-headless` — 73 tools
+### JARVIS Ubuntu Headless — `/home/flako1312/jarvis-headless` — 74 tools (headless: 36)
 - 79/79 tests pasan + 3/3 ToolContractTests
-- Puerto 7471: Android APK gateway — 87 reglas de permisos para 13 tools (añadido home_routine)
-- HEADLESS_SYSTEM_RULES reescrito sesión 6: lista completa de tools incluyendo todos los nuevos
-- home_routine desplegado: SCP + lazy import + dispatch + qa_audit + headless_permissions
+- Puerto 7471: Android APK gateway — 87 reglas de permisos, /api/chat con 74 tools disponibles
+- **SESIÓN 9 — CAMBIOS NO TRACKEADOS EN GIT (Ubuntu):**
+  - main.py línea 4292: `resp.get("data",{}).get("response",{})...` → `resp.get("response",{})...` (bug P3)
+  - main.py HEADLESS_ACTIONS: 21→36 tools (añadidos home_routine + 14 domésticos)
+  - main.py TOOL_DECLARATIONS: home_routine declaration añadida (bug P1 — Gemini no podía llamarlo)
+  - Verificado: journal confirma `tools=36` y `Routine health: failures detected, injecting alert`
 
 ### LILITH Core — Docker `lilith_core`, puerto 8000
 - Estado: RUNNING, healthy, database+mqtt+kernel+home_assistant=true
@@ -86,10 +89,15 @@ Checkpoint: 44/68 OPERATIVO (corregido de 45). AURORA 63 tools, Ubuntu 73 tools.
 - **Sesión 8**: P3 APK dispatch — /api/chat NL (73 tools), /api/tool/invoke (16 directo) ✓
 - **Sesión 8**: P4 conteo corregido — G67 → code_only_no_physical, OPERATIVO=44 (no 45) ✓
 - **Sesión 8**: P5 routine health — 4 rutinas fallan por light.bombilla_mueble offline; inyectado en system prompt Gemini ✓
+- **Sesión 9**: P1 BUG FIX — home_routine no estaba en TOOL_DECLARATIONS ni HEADLESS_ACTIONS (Gemini nunca podía llamarlo). HEADLESS_ACTIONS: 21→36. Voice routing: 5/5 PASS ✓
+- **Sesión 9**: P2 BUG FIX — _entity_is_available() pre-check en home_routine.py. Dispositivos offline omitidos sin error. P2 test PASS ✓
+- **Sesión 9**: P3 BUG FIX — _fetch_routine_health_summary usaba ruta incorrecta `data.response.routines` → `response.routines`. Ahora journal confirma inyección al conectar ✓
+- **Sesión 9**: P4 — memoria 93 facts (LILITH get_context), local long_term.json 10 ítems, semantic search funcional ✓
+- **Sesión 9**: P5 — Android /api/chat 6/7 PASS (timer, alarm, shopping, reminder, lilith_query, routine_check) ✓
 
 ### 1. P2 — Integración memoria LILITH en conversación (VERIFICADO ✓)
-- 92 hechos en 16 categorías en LILITH (get_context() total_facts=92), cargados en cada sesión
-- 518 entradas semánticas totales en BD (runtime_status memory.semantic=518)
+- 93 hechos en LILITH (get_context() total_facts=93), cargados en cada sesión (confirmado en journal)
+- 518+ entradas semánticas en BD (API limita a 20 por búsqueda — total no accesible via API)
 - memory.store y memory.search confirmados operativos, persistencia cross-session verificada
 - Reglas en HEADLESS_SYSTEM_RULES: solo en solicitud explícita (correcto)
 

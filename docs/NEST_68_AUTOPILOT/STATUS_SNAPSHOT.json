@@ -2,26 +2,27 @@
   "meta": {
     "project": "NEST 68",
     "snapshot_date": "2026-11-05",
-    "snapshot_version": 10,
+    "snapshot_version": 11,
     "audited_by": "Claude Sonnet 4.6 (AUTOPILOT CONTINUO)",
     "aurora_branch": "codex/neural-voice-visual",
     "note": "Versioned snapshot — STATUS.json is gitignored; this file is committed. Update when capabilities change.",
     "tool_count_aurora": 63,
-    "tool_count_ubuntu": 73,
+    "tool_count_ubuntu": 74,
+    "headless_actions_ubuntu": 36,
     "tools_new_this_session": ["timer", "calendar_control", "traffic_info", "radio_control", "podcast_control", "broadcast_control", "audiobook_control", "shopping_list", "news_control", "alarm_control", "transport_schedules", "batch_home_action", "lilith_home_status", "home_routine"],
     "total_new_tools": 14,
     "tests_aurora": "79 passed (home_routine 30 + transport_schedules 32 + batch_home_action 17), 0 failures",
     "tests_ubuntu": "79 passed (home_routine 30 + transport_schedules 32 + batch_home_action 17), 0 failures",
     "lilith_status": "RUNNING — Docker container lilith_core healthy, port 8000, database+mqtt+kernel+home_assistant online",
-    "lilith_memory_audit": "92 facts across 16 categories confirmed (get_context() returns total_facts:92; semantic DB has 518 entries). memory.store + memory.search tested successfully. Cross-session persistence verified.",
-    "lilith_routine_audit": "4 enabled routines, all targeting light.bombilla_mueble (physically offline). Routines failing with entity_unavailable (32-33 failures each). Root cause: physical bulb disconnected, not a code bug. Routine health summary now injected into Gemini system prompt at session start.",
+    "lilith_memory_audit": "93 facts confirmed (get_context() returns total_facts:93; semantic DB has 518+ entries, limit=20 per search query). memory.store + memory.search tested successfully. Session start log confirms injection: '[JARVIS] LILITH context loaded: 93 facts'. Local long_term.json (Windows) has 10 personal items (name, age, birthday, etc.). Ubuntu local memory intentionally empty — LILITH is canonical store.",
+    "lilith_routine_audit": "4 enabled routines, all targeting light.bombilla_mueble (physically offline since 2026-10-29). 29-33 failures each. Root cause: physical bulb disconnected, not a code bug. FIXED (session 9): _fetch_routine_health_summary had wrong path 'data.response.routines' — corrected to 'response.routines'. Now confirmed: '[JARVIS] Routine health: failures detected, injecting alert' logged at every session connect. Gemini correctly reports failures when user asks about routines (P5 routine_check: PASS 27s).",
     "new_ha_entities_discovered": ["media_player.tv_de_comedor (MQTT state=playing)", "binary_sensor.bombilla_mueble_* (Tuya diagnostic sensors)", "binary_sensor.bombilla_tv_* (Tuya diagnostic sensors)"],
     "lilith_api_url_aurora": "CONFIGURED — http://192.168.1.50:8000, confirmed authenticated endpoints working",
     "lilith_authenticated_endpoints": ["health", "runtime/status", "memory/search", "memory/context", "notifications", "git/status", "source/list", "docs/list", "home/resolve", "home/action", "home/entity", "commands/submit"],
     "lilith_broadcast_relay": "broadcast NOT in LILITH integration protocol. No endpoint exists (not a permissions issue). Local TTS via broadcast_control works. LILITH relay would need new protocol-level endpoint.",
     "home_assistant": "Running in Docker. Entities audited: light.bombilla_mueble (unavailable), light.bombilla_tv (unavailable), switch.cargador_hub (unavailable), sensor.lilith_temperatura (unavailable), media_player.hub (AVAILABLE, state=off), media_player.mc_smart_tv_pro_cast (unavailable). No cover.* or climate.* entities. NOTE: media_player domain not allowed for JARVIS token (domain_not_allowed); only light.* domain permitted per HOME_ACTION_ALLOWLIST.",
     "routine_routing_rules": "AURORA ROUTINE_ROUTING_RULES updated session 7: home_routine added as rule #1 with explicit Spanish/English phrase mappings for all 5 routines. Ubuntu HEADLESS_SYSTEM_RULES updated with same routing phrases. Gemini will now auto-invoke home_routine without user giving technical instructions.",
-    "android_apk_gateway": "Port 7471 (api_server.py). Two interfaces: (1) POST /api/chat → full JARVIS NL pipeline with ALL 73 tools; (2) POST /api/tool/invoke → direct dispatch for ~16 system/LILITH tools only."
+    "android_apk_gateway": "Port 7471 (api_server.py). Two interfaces: (1) POST /api/chat → full JARVIS NL pipeline with ALL 74 tools; (2) POST /api/tool/invoke → direct dispatch for ~16 system/LILITH tools only. P5 session 9 E2E: timer PASS, alarm PASS, shopping PASS, reminder PASS, lilith_query PASS, routine_check PASS (27s, Gemini used health injection), weather PARTIAL (needs city)."
   },
   "lilith_connection": {
     "aurora_to_lilith": "VERIFIED — all /api/v1/integration/* endpoints authenticated and responding",
@@ -58,11 +59,11 @@
     "AUSENTE": 1,
     "BLOQUEADO": 4,
     "REQUIERE_HARDWARE": 6,
-    "note": "44 OPERATIVO (corrected from 45: G67 moved to code_only_no_physical tier, was overcounted). Session 8: P1 E2E routines verified, P2 memory 92/518 clarified, P3 APK dispatch confirmed, P4 count corrected, P5 routine health injection implemented."
+    "note": "44 OPERATIVO. Session 9 fixes: P1 home_routine added to TOOL_DECLARATIONS+HEADLESS_ACTIONS (tools=21→36), voice routing 5/5 PASS confirmed; P2 _entity_is_available() pre-check added to home_routine.py for offline devices; P3 _fetch_routine_health_summary bug fixed (wrong response path), health injection verified in journal; P4 memory 93 facts confirmed; P5 Android /api/chat 6/7 PASS."
   },
   "operativo_differentiation": {
     "note": "Three tiers within OPERATIVO: code_only (implemented+tested, no physical validation), auto_integration (Gemini routes automatically without user instructions), physical_validated (real hardware tested).",
-    "auto_integration": ["A1","A3","A4","A5","A8","A9","A10","B11","B12","B19","B20","B21","B23","B24","D37","D38","D39","D40","E42","E43","E46","E47","E48","G64","G65","G66"],
+    "auto_integration": ["A1","A3","A4","A5","A8","A9","A10","B11","B12","B19","B20","B21","B23","B24","D37","D38","D39","D40","E42","E43","E46","E47","E48","G64","G65","G66","home_routine_voice"],
     "code_only_no_physical": ["C25","C26","C27","C28","C29","C30","C31","C34","E41","E50","E51","E52","E53","E54","F61","G67"],
     "physical_validated": ["A6","A7"],
     "note_auto_integration": "Tools in auto_integration have explicit routing phrases or non-ambiguous tool descriptions that Gemini triggers without user giving technical tool names.",

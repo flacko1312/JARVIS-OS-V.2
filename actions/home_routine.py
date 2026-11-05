@@ -100,6 +100,29 @@ _ROUTINES: dict[str, dict] = {
 # LILITH HTTP helpers (no dependency on main.py classes)
 # ---------------------------------------------------------------------------
 
+def _entity_is_available(entity_id: str) -> bool:
+    """Return True if the entity is reachable in Home Assistant, False if unavailable/unknown."""
+    import json
+    import urllib.request
+
+    api_url = os.environ.get("LILITH_API_URL", "").rstrip("/")
+    api_key = os.environ.get("LILITH_API_KEY", "")
+    if not api_url or not api_key:
+        return True  # assume available if LILITH not configured (let action fail naturally)
+    try:
+        req = urllib.request.Request(
+            f"{api_url}/api/v1/integration/home/entity/{entity_id}",
+            headers={"Authorization": f"Bearer {api_key}"},
+            method="GET",
+        )
+        with urllib.request.urlopen(req, timeout=4) as resp:
+            data = json.loads(resp.read().decode())
+            state = data.get("data", {}).get("state", "unknown")
+            return state not in ("unavailable", "unknown")
+    except Exception:
+        return True  # on error, let the action attempt and fail naturally
+
+
 def _lilith_home_action(entity_id: str, action: str,
                         extra_params: dict | None = None) -> dict:
     """Call LILITH home/action endpoint directly."""
@@ -217,9 +240,12 @@ def _execute_me_voy(confirm_devices: bool = False) -> str:
     else:
         results = []
         for entity_id in targets:
-            r = _lilith_home_action(entity_id, "turn_off")
-            ok = r.get("ok", False) or (isinstance(r.get("data"), dict) and r["data"].get("status") != "error")
-            results.append(f"  {entity_id}: {'✓ apagado' if ok else '✗ no disponible'}")
+            if not _entity_is_available(entity_id):
+                results.append(f"  {entity_id}: ⚠️ dispositivo offline (omitido)")
+            else:
+                r = _lilith_home_action(entity_id, "turn_off")
+                ok = r.get("ok", False) or (isinstance(r.get("data"), dict) and r["data"].get("status") != "error")
+                results.append(f"  {entity_id}: {'✓ apagado' if ok else '✗ error al apagar'}")
         lines.append("  Dispositivos:\n" + "\n".join(results))
 
     lines.append("  ¡Hasta pronto!")
@@ -241,9 +267,12 @@ def _execute_llegue_a_casa(confirm_devices: bool = False) -> str:
     else:
         results = []
         for entity_id in targets:
-            r = _lilith_home_action(entity_id, "turn_on")
-            ok = r.get("ok", False) or (isinstance(r.get("data"), dict) and r["data"].get("status") != "error")
-            results.append(f"  {entity_id}: {'✓ encendido' if ok else '✗ no disponible'}")
+            if not _entity_is_available(entity_id):
+                results.append(f"  {entity_id}: ⚠️ dispositivo offline (omitido)")
+            else:
+                r = _lilith_home_action(entity_id, "turn_on")
+                ok = r.get("ok", False) or (isinstance(r.get("data"), dict) and r["data"].get("status") != "error")
+                results.append(f"  {entity_id}: {'✓ encendido' if ok else '✗ error al encender'}")
         lines.append("  Dispositivos:\n" + "\n".join(results))
 
     return "\n".join(lines)
@@ -264,9 +293,12 @@ def _execute_buenas_noches(confirm_devices: bool = False) -> str:
     else:
         results = []
         for entity_id in targets:
-            r = _lilith_home_action(entity_id, "turn_off")
-            ok = r.get("ok", False) or (isinstance(r.get("data"), dict) and r["data"].get("status") != "error")
-            results.append(f"  {entity_id}: {'✓ apagado' if ok else '✗ no disponible'}")
+            if not _entity_is_available(entity_id):
+                results.append(f"  {entity_id}: ⚠️ dispositivo offline (omitido)")
+            else:
+                r = _lilith_home_action(entity_id, "turn_off")
+                ok = r.get("ok", False) or (isinstance(r.get("data"), dict) and r["data"].get("status") != "error")
+                results.append(f"  {entity_id}: {'✓ apagado' if ok else '✗ error al apagar'}")
         lines.append("  Dispositivos:\n" + "\n".join(results))
         lines.append("  ¡Buenas noches! Que descanses.")
 
@@ -288,9 +320,12 @@ def _execute_modo_taller(confirm_devices: bool = False) -> str:
     else:
         results = []
         for entity_id in targets:
-            r = _lilith_home_action(entity_id, "turn_on", extra)
-            ok = r.get("ok", False) or (isinstance(r.get("data"), dict) and r["data"].get("status") != "error")
-            results.append(f"  {entity_id}: {'✓ configurado' if ok else '✗ no disponible'}")
+            if not _entity_is_available(entity_id):
+                results.append(f"  {entity_id}: ⚠️ dispositivo offline (omitido)")
+            else:
+                r = _lilith_home_action(entity_id, "turn_on", extra)
+                ok = r.get("ok", False) or (isinstance(r.get("data"), dict) and r["data"].get("status") != "error")
+                results.append(f"  {entity_id}: {'✓ configurado' if ok else '✗ error al configurar'}")
         lines.append("  Dispositivos:\n" + "\n".join(results))
         lines.append("  Modo taller activo. Brillo al máximo, luz blanca fría.")
 

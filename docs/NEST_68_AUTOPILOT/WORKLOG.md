@@ -2,6 +2,64 @@
 
 ---
 
+## 2026-11-05 (sesión 9) — Cierre funcional: P1-P5 bugs fijados, P3 health injection verificado
+
+**Autor:** Claude Sonnet 4.6 (AUTOPILOT CONTINUO)
+**Rama:** `codex/neural-voice-visual`
+
+### Trabajo realizado
+
+#### P1 — RUTINAS POR VOZ: Bug crítico fijado (home_routine nunca llegaba a Gemini)
+- **BUG**: home_routine no estaba en `TOOL_DECLARATIONS` → Gemini Live nunca la veía
+- **BUG**: `HEADLESS_ACTIONS` solo tenía 21 tools → home_routine filtrada incluso si fuera declarada
+- **FIX en Ubuntu** (SSH, untracked): p1_fix.py aplicado a main.py
+  - home_routine declaration añadida a `TOOL_DECLARATIONS` (con frases ES/EN obligatorias)
+  - `HEADLESS_ACTIONS` expandida de 21 → 36 tools (añadidos todos los domésticos: home_routine, timer, alarm_control, shopping_list, etc.)
+- **Verificación**: journal `tools=36` confirmado, Layer 3 E2E 5/5 PASS
+
+#### P2 — DISPOSITIVOS DESCONECTADOS: Pre-check de disponibilidad
+- **FIX en home_routine.py**: nueva función `_entity_is_available()` que consulta `GET /api/v1/integration/home/entity/{entity_id}`
+- Rutinas me_voy, llegue_a_casa, buenas_noches, modo_taller ahora verifican disponibilidad antes de llamar LILITH
+- Dispositivo offline → `"⚠️ dispositivo offline (omitido)"` en resultado (no error)
+- Verificado en voz real: journal de sesión 21:03 muestra "Dispositivos no disponibles: light.bombilla_mueble, light.bombilla_tv..."
+- Test `/tmp/test_p2_precheck.py`: PASS (light.bombilla_mueble available=False detectado correctamente)
+
+#### P3 — AUTONOMÍA REAL: Bug en _fetch_routine_health_summary
+- **BUG**: función buscaba `resp.get("data",{}).get("response",{}).get("routines",[])` → 0 routines siempre
+- **FIX**: comando_submit devuelve `resp.get("response",{}).get("routines",[])` sin wrapper `data`
+- **Fix en Ubuntu** (SSH, untracked): `sed -i` corrección en main.py línea 4292
+- **Verificación**: `journalctl` confirma `[JARVIS] Routine health: failures detected, injecting alert` en siguiente conexión
+- P5 test routine_check PASS en 27s: Gemini reportó los 4 fallos usando el health summary inyectado
+
+#### P4 — MEMORIA: Mecanismos verificados
+- LILITH `get_context()`: 93 hechos cargados en cada sesión (journal: `LILITH context loaded: 93 facts`)
+- Semantic memory search: funcional, API limita a 20 resultados/búsqueda (total ~518 no consultable via API)
+- Local `long_term.json` (Windows): 10 ítems personales (nombre, edad, cumpleaños, mascota, notas)
+- Ubuntu local memory: vacía (correcto — LILITH es el almacén canónico)
+
+#### P5 — ANDROID /api/chat E2E
+- Test `/tmp/test_p5_android.py`: 6/7 PASS
+  - timer: PASS ✓, alarm: PASS ✓, shopping: PASS ✓, reminder: PASS ✓
+  - lilith_query: PASS ✓ (luces detectadas)
+  - routine_check: PASS 27s ✓ (Gemini usó health injection correctamente)
+  - weather: PARTIAL (pide ciudad — comportamiento correcto, no bug)
+
+### Archivos modificados
+- `actions/home_routine.py`: `_entity_is_available()` + 4 rutinas con pre-check
+- `docs/NEST_68_AUTOPILOT/STATUS_SNAPSHOT.json`: v10→v11
+- `docs/NEST_68_AUTOPILOT/WORKLOG.md`: esta entrada
+- `docs/NEST_68_AUTOPILOT/HANDOFF.md`: actualizado
+- **Ubuntu (SSH, untracked)**: `main.py` — P1 + P3 fixes (HEADLESS_ACTIONS 36, home_routine decl, response path)
+
+### Estado al final
+- 44/68 OPERATIVO (sin cambio en número — corrección de bugs internos, no nuevas capacidades)
+- Todos los bugs críticos de sesión 8 resueltos
+- home_routine confirmada en voz real (5/5) y vía Android (PASS)
+- Routine health injection confirmada funcional
+- Ubuntu main.py tiene 3 cambios untracked — no en git (SSH-only)
+
+---
+
 ## 2026-11-05 (sesión 7) — Verificación rutinas, auditoría broadcast/memoria/APK, corrección routing
 
 **Autor:** Claude Sonnet 4.6 (AUTOPILOT CONTINUO)
