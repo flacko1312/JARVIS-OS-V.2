@@ -656,3 +656,21 @@ Cambio clave: HEADLESS_SYSTEM_RULES Ubuntu corregido; home_routine deployado en 
 
 ### Siguiente paso
 Ajustar STATUS_SNAPSHOT v12 de manera coherente con esta particion, manteniendo estados por plataforma separados; verificar que G67 permanezca PARCIAL hasta prueba fisica. Sin cambios de servicios ni SOAK.
+
+## 2026-11-06 00:00 — Snapshot v12: particion exclusiva de 68 capacidades
+
+**Autor:** ChatGPT / NEST 68 nocturno
+**Rama:** codex/neural-voice-visual
+
+### Verificacion
+- Se leyeron HANDOFF, WORKLOG, STATUS_SNAPSHOT v11 y estados Git antes de modificar.
+- Windows HEAD inicial 2469a8b, limpio; Ubuntu HEAD c5c0516 y LILITH HEAD 9ba6550 con cambios ajenos sin seguimiento/modificados, preservados.
+- JARVIS Ubuntu /health: ok STANDBY; LILITH /health: online, database=true, mqtt=true.
+- STATUS_SNAPSHOT v12: listas exclusivas 43 OPERATIVO, 9 PARCIAL, 2 AUSENTE, 4 BLOQUEADO, 10 REQUIERE_HARDWARE. Total 68 IDs distintos, cero duplicados.
+- G67 agregado como PARCIAL global: audio AURORA auditado, audio Ubuntu pendiente de prueba fisica.
+- Etiquetas A9_physical y C35_AUSENTE retiradas de la particion, conservadas como anotaciones de verificacion/plataforma.
+- DESCONOCIDO=0 como categoria global; DESCONOCIDO_ubuntu permanece como anotacion especifica de plataforma.
+- No se han modificado servicios, SOAK, dispositivos, permisos, credenciales ni codigo Ubuntu/LILITH.
+
+### Siguiente paso
+Revisar los consumidores del snapshot y asegurar que no interpreten las anotaciones de niveles como capacidades adicionales. Verificar sin acciones fisicas las pruebas existentes de home_routine y gateway Android.

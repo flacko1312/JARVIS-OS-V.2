@@ -164,3 +164,9 @@ ORS_API_KEY=                              FALTA — usuario debe registrar
 - A9_physical, C35_AUSENTE, home_routine_voice y DESCONOCIDO_ubuntu son etiquetas de subestado, no capacidades adicionales.
 - Proximo bloque: corregir STATUS_SNAPSHOT v12 sin inflar operatividad y conservar estados de cada plataforma.
 - JARVIS y LILITH health OK. Ningun servicio ni archivo Ubuntu/LILITH modificado.
+
+## Cierre nocturno 2026-11-06 00:00 — STATUS_SNAPSHOT v12
+- Aplicada particion exclusiva global: 43 OPERATIVO + 9 PARCIAL + 2 AUSENTE + 4 BLOQUEADO + 10 REQUIERE_HARDWARE = 68, sin IDs duplicados.
+- G67 es PARCIAL global por audio Ubuntu no validado fisicamente. Estados por plataforma y tiers son anotaciones separadas.
+- JARVIS Ubuntu y LILITH /health OK. Sin tocar servicios, SOAK ni arboles Ubuntu/LILITH.
+- Proximo bloque: auditar consumidores del snapshot y pruebas no destructivas de home_routine/Android.
