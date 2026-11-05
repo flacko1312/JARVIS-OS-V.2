@@ -2,7 +2,7 @@
   "meta": {
     "project": "NEST 68",
     "snapshot_date": "2026-11-05",
-    "snapshot_version": 9,
+    "snapshot_version": 10,
     "audited_by": "Claude Sonnet 4.6 (AUTOPILOT CONTINUO)",
     "aurora_branch": "codex/neural-voice-visual",
     "note": "Versioned snapshot — STATUS.json is gitignored; this file is committed. Update when capabilities change.",
@@ -13,7 +13,9 @@
     "tests_aurora": "79 passed (home_routine 30 + transport_schedules 32 + batch_home_action 17), 0 failures",
     "tests_ubuntu": "79 passed (home_routine 30 + transport_schedules 32 + batch_home_action 17), 0 failures",
     "lilith_status": "RUNNING — Docker container lilith_core healthy, port 8000, database+mqtt+kernel+home_assistant online",
-    "lilith_memory_audit": "91 facts across 16 categories confirmed. memory.store + memory.search tested successfully. get_context() loads all facts at every Gemini Live session start.",
+    "lilith_memory_audit": "92 facts across 16 categories confirmed (get_context() returns total_facts:92; semantic DB has 518 entries). memory.store + memory.search tested successfully. Cross-session persistence verified.",
+    "lilith_routine_audit": "4 enabled routines, all targeting light.bombilla_mueble (physically offline). Routines failing with entity_unavailable (32-33 failures each). Root cause: physical bulb disconnected, not a code bug. Routine health summary now injected into Gemini system prompt at session start.",
+    "new_ha_entities_discovered": ["media_player.tv_de_comedor (MQTT state=playing)", "binary_sensor.bombilla_mueble_* (Tuya diagnostic sensors)", "binary_sensor.bombilla_tv_* (Tuya diagnostic sensors)"],
     "lilith_api_url_aurora": "CONFIGURED — http://192.168.1.50:8000, confirmed authenticated endpoints working",
     "lilith_authenticated_endpoints": ["health", "runtime/status", "memory/search", "memory/context", "notifications", "git/status", "source/list", "docs/list", "home/resolve", "home/action", "home/entity", "commands/submit"],
     "lilith_broadcast_relay": "broadcast NOT in LILITH integration protocol. No endpoint exists (not a permissions issue). Local TTS via broadcast_control works. LILITH relay would need new protocol-level endpoint.",
@@ -42,7 +44,7 @@
       "B13","B14","B15",
       "C35_AUSENTE",
       "E44","E45","E49",
-      "G67","G68"
+      "G68"
     ],
     "DESCONOCIDO_ubuntu": ["A1-A10 (voice/live — requires mic+screen)", "G67 (audio hardware unverified on Ubuntu)"],
     "AUSENTE": ["B22","C35"],
@@ -50,18 +52,18 @@
     "REQUIERE_HARDWARE": ["B16","B17","C32","C33","F55","F56","F57","F58","F59","F60"]
   },
   "capability_count": {
-    "OPERATIVO": 45,
-    "PARCIAL": 9,
+    "OPERATIVO": 44,
+    "PARCIAL": 10,
     "DESCONOCIDO": 7,
     "AUSENTE": 1,
     "BLOQUEADO": 4,
     "REQUIERE_HARDWARE": 6,
-    "note": "45 OPERATIVO (unchanged from v8). Session 7 focus: verification, routing rules, broadcast audit, memory audit, APK gateway audit."
+    "note": "44 OPERATIVO (corrected from 45: G67 moved to code_only_no_physical tier, was overcounted). Session 8: P1 E2E routines verified, P2 memory 92/518 clarified, P3 APK dispatch confirmed, P4 count corrected, P5 routine health injection implemented."
   },
   "operativo_differentiation": {
     "note": "Three tiers within OPERATIVO: code_only (implemented+tested, no physical validation), auto_integration (Gemini routes automatically without user instructions), physical_validated (real hardware tested).",
     "auto_integration": ["A1","A3","A4","A5","A8","A9","A10","B11","B12","B19","B20","B21","B23","B24","D37","D38","D39","D40","E42","E43","E46","E47","E48","G64","G65","G66"],
-    "code_only_no_physical": ["C25","C26","C27","C28","C29","C30","C31","C34","E41","E50","E51","E52","E53","E54","F61"],
+    "code_only_no_physical": ["C25","C26","C27","C28","C29","C30","C31","C34","E41","E50","E51","E52","E53","E54","F61","G67"],
     "physical_validated": ["A6","A7"],
     "note_auto_integration": "Tools in auto_integration have explicit routing phrases or non-ambiguous tool descriptions that Gemini triggers without user giving technical tool names.",
     "note_code_only": "Audio tools (radio, podcast, audiobook, alarm, broadcast) are implemented and tested but require speakers physically connected for real validation."

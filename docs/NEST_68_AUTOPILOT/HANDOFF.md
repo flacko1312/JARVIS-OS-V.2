@@ -1,7 +1,7 @@
 # HANDOFF — Instrucciones para reanudar el trabajo
 
-Última actualización: 2026-11-05 (sesión 7 — corrección ROUTINE_ROUTING_RULES, auditoría broadcast/memoria/APK, re-auditoría capacidades)
-Checkpoint: 45/68 OPERATIVO. AURORA 63 tools, Ubuntu 73 tools.
+Última actualización: 2026-11-05 (sesión 8 — P1-P5 completos, routine health injection, STATUS_SNAPSHOT v10)
+Checkpoint: 44/68 OPERATIVO (corregido de 45). AURORA 63 tools, Ubuntu 73 tools.
 
 ---
 
@@ -68,7 +68,7 @@ Checkpoint: 45/68 OPERATIVO. AURORA 63 tools, Ubuntu 73 tools.
 
 ## Tareas pendientes (en orden de prioridad)
 
-### 0. Completado en sesiones 5-7
+### 0. Completado en sesiones 5-8
 - transport_schedules: disclaimer DATOS ESTÁTICOS ✓
 - STATUS_SNAPSHOT v7→v9: correcciones y auditorías ✓
 - OPERATIVO_VERIFICATION.md: tabla auto-test/integration/physical ✓
@@ -81,10 +81,16 @@ Checkpoint: 45/68 OPERATIVO. AURORA 63 tools, Ubuntu 73 tools.
 - **Sesión 7**: Auditoría memoria → 91 hechos, 16 categorías, funcional ✓
 - **Sesión 7**: Auditoría APK gateway → api_server.py (puerto 7471), /api/chat NL path completo ✓
 - **Sesión 7**: Re-auditoría 45 OPERATIVO → 3 niveles diferenciados (auto/code/physical) ✓
+- **Sesión 8**: P1 E2E verificado (3 capas: system prompt 7/7, direct calls 6/6, live 1/5 pendiente reconnect) ✓
+- **Sesión 8**: P2 memoria — 92 hechos perfil usuario vs 518 semánticos en BD, cross-session confirmado ✓
+- **Sesión 8**: P3 APK dispatch — /api/chat NL (73 tools), /api/tool/invoke (16 directo) ✓
+- **Sesión 8**: P4 conteo corregido — G67 → code_only_no_physical, OPERATIVO=44 (no 45) ✓
+- **Sesión 8**: P5 routine health — 4 rutinas fallan por light.bombilla_mueble offline; inyectado en system prompt Gemini ✓
 
 ### 1. P2 — Integración memoria LILITH en conversación (VERIFICADO ✓)
-- 91 hechos en 16 categorías en LILITH, cargados en cada sesión via get_context()
-- memory.store y memory.search confirmados operativos
+- 92 hechos en 16 categorías en LILITH (get_context() total_facts=92), cargados en cada sesión
+- 518 entradas semánticas totales en BD (runtime_status memory.semantic=518)
+- memory.store y memory.search confirmados operativos, persistencia cross-session verificada
 - Reglas en HEADLESS_SYSTEM_RULES: solo en solicitud explícita (correcto)
 
 ### 2. Validación física de audio (requiere altavoces)
