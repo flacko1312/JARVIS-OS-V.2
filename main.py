@@ -76,6 +76,7 @@ email_control = _lazy_action("actions.email_control", "email_control")
 check_messages = _lazy_action("actions.message_monitor", "check_messages")
 reminder = _lazy_action("actions.reminder", "reminder")
 timer = _lazy_action("actions.timer", "timer")
+calendar_control = _lazy_action("actions.calendar_control", "calendar_control")
 computer_settings = _lazy_action("actions.computer_settings", "computer_settings")
 screen_process = _lazy_action("actions.screen_processor", "screen_process")
 youtube_video = _lazy_action("actions.youtube_video", "youtube_video")
@@ -273,7 +274,7 @@ _MEMORY_LOOKUP_TOOL_NAMES = frozenset({"local_memory_search", "lilith_memory_sea
 # Tools that must execute serially because they can change external/user-visible state.
 # This is also the scope for the per-turn exact-effect deduplicator below.
 _MUTATING_TOOL_NAMES = frozenset({
-    "open_app", "send_message", "prepare_message_reply", "email_control", "reminder", "timer",
+    "open_app", "send_message", "prepare_message_reply", "email_control", "reminder", "timer", "calendar_control",
     "youtube_video", "media_control", "browser_control", "agent_task",
     "computer_settings", "computer_control", "desktop_control", "file_controller",
     "file_processor", "code_helper", "dev_agent", "game_updater", "flight_finder",
@@ -1515,6 +1516,34 @@ TOOL_DECLARATIONS = [
                 "duration": {"type": "STRING", "description": "Duration string, e.g. '5 minutos', '30 segundos', '1 hora 30 minutos'"},
                 "label":    {"type": "STRING", "description": "Optional name for this timer, e.g. 'pizza', 'huevos'"},
                 "id":       {"type": "STRING", "description": "Timer ID returned by create/list; required for cancel"},
+            },
+            "required": []
+        }
+    },
+    {
+        "name": "calendar_control",
+        "description": (
+            "Read and manage Google Calendar events. Use for: listing upcoming events, checking today's "
+            "agenda, searching events, creating appointments, deleting events, or connecting Google Calendar. "
+            "Actions: list (next N days), today (today's events), search (by keyword), create (new event), "
+            "delete (by event_id), connect (OAuth setup), disconnect, status."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "action":           {"type": "STRING", "description": "list | today | search | create | delete | connect | disconnect | status (default: list)"},
+                "days":             {"type": "STRING", "description": "Number of days ahead for list/search (default: 7 for list, 30 for search)"},
+                "query":            {"type": "STRING", "description": "Search query string; required for search action"},
+                "title":            {"type": "STRING", "description": "Event title; required for create"},
+                "date":             {"type": "STRING", "description": "Event date in YYYY-MM-DD; for create (default: today)"},
+                "start_time":       {"type": "STRING", "description": "Start time in HH:MM 24h; for create"},
+                "end_time":         {"type": "STRING", "description": "End time in HH:MM 24h; for create"},
+                "duration_minutes": {"type": "STRING", "description": "Duration in minutes when no end_time given (default: 60)"},
+                "location":         {"type": "STRING", "description": "Location string; for create"},
+                "description":      {"type": "STRING", "description": "Event description/notes; for create"},
+                "event_id":         {"type": "STRING", "description": "Event ID returned by list/search; required for delete"},
+                "calendar_id":      {"type": "STRING", "description": "Calendar ID (default: 'primary')"},
+                "credentials_path": {"type": "STRING", "description": "Path to Google OAuth client JSON; for connect"},
             },
             "required": []
         }
@@ -3726,6 +3755,14 @@ class JarvisLive:
             elif name == "timer":
                 r = await asyncio.to_thread(lambda: timer(parameters=args, response=None, player=self.ui))
                 result = r or "Timer set."
+
+            elif name == "calendar_control":
+                if args.get("action", "").lower() == "connect" and not args.get("credentials_path"):
+                    current_file = getattr(self.ui, "current_file", None)
+                    if current_file and Path(str(current_file)).suffix.lower() == ".json":
+                        args["credentials_path"] = current_file
+                r = await asyncio.to_thread(lambda: calendar_control(parameters=args, response=None, player=self.ui, session_memory=None))
+                result = r or "Calendar action completed."
 
             elif name == "date_time":
                 result = self._date_time_authority.answer_action(

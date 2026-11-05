@@ -50,6 +50,40 @@
 
 ---
 
+## 2026-11-05 — Integración Google Calendar (E44/E45)
+
+**Autor:** Claude Sonnet 4.6 (automatizado)
+**Rama:** `codex/neural-voice-visual`
+
+### Trabajo realizado
+
+#### Implementación: calendar_control tool (E44, E45)
+- Creado: `actions/calendar_control.py` — integración Google Calendar API v3 con OAuth2
+  - Acciones: connect, disconnect, status, list, today, search, create, delete
+  - Patrón OAuth idéntico a `email_control.py`: credenciales en OS keychain via `core.secret_store`
+  - Búsqueda de archivo de credenciales en env GCAL_OAUTH_CLIENT_FILE, keychain, config/, Downloads/
+  - Fallback gracioso si OAuth no configurado (mensaje instructivo, no excepción)
+  - Formato de eventos en español con hora local (Europe/Madrid por defecto)
+  - Acciones create con validación de fecha/hora, duration_minutes, location, description
+- Modificado: `main.py` — añadido _lazy_action, schema (13 parámetros), dispatch para "calendar_control"
+- Modificado: `main.py` — añadido "calendar_control" a _MUTATING_TOOL_NAMES
+- Modificado: `core/qa_audit.py` — añadido "calendar_control" a EXPECTED_TOOLS
+- Creado: `tests/test_calendar_control.py` — 42 tests (5 clases: ValidClientFile, FmtEvent, Status, List, Today, Search, Create, Delete, EntryPoint)
+
+### Tests ejecutados
+- `test_calendar_control.py`: **42/42 passed**
+- Regresiones: ninguna en módulos que cargan sin google-api (pre-existing failures sin cambio)
+
+### Estado al final
+- E44 (calendario): **PARCIAL** — código funcional, blocker OAuth credenciales del usuario
+- E45 (citas): **PARCIAL** — cubierto por calendar_control create/search
+
+### Cambios
+- Nuevos archivos: `actions/calendar_control.py`, `tests/test_calendar_control.py`
+- Modificados: `main.py`, `core/qa_audit.py`, `docs/NEST_68_AUTOPILOT/STATUS.json`, `docs/NEST_68_AUTOPILOT/WORKLOG.md`
+
+---
+
 ## Plantilla para próximas entradas
 
 ```
