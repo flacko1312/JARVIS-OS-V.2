@@ -45,9 +45,17 @@
 - No está en `.gitignore` (que solo excluye `status.json` minúsculas)
 - Contiene: conteo de tools, estados de capacidades, bloqueadores pendientes del usuario
 
+#### Correcciones de sintaxis en Ubuntu headless main.py
+- Dos errores de sintaxis detectados (pre-existentes, nunca visible por fallos previos en conftest.py):
+  1. `open_capabilities_catalog` sin cierre externo `    },` antes del schema `timer` → añadido
+  2. `    },` extra al final de `TOOL_DECLARATIONS` (residuo del patch de sesión anterior) → eliminado
+- Verificación AST: `ast.parse()` limpio sin errores
+- `calculator` también faltaba en Ubuntu: copiado `actions/calculator.py`, añadido schema + dispatch + lazy import
+- Tests de contrato: `test_declared_tool_inventory_is_complete_and_unique`, `test_every_declared_tool_has_a_dispatch_path`, `test_repository_audit_returns_structured_findings` → **3/3 PASS** Ubuntu
+
 ### Tests finales
 - AURORA: **324 passed** (10 módulos de herramientas nuevas)
-- Ubuntu headless: **324 passed** (10 módulos de herramientas nuevas)
+- Ubuntu headless: **324 passed** (10 módulos de herramientas nuevas) + 3/3 ToolContractTests
 
 ---
 
