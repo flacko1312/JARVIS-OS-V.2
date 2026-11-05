@@ -1,7 +1,7 @@
 # HANDOFF — Instrucciones para reanudar el trabajo
 
-Última actualización: 2026-11-05 (sesión 3 — integración real + auditoría 68)
-Checkpoint: Integración AURORA↔LILITH verificada. 10 herramientas desplegadas. 33/68 OPERATIVO.
+Última actualización: 2026-11-05 (sesión 4 — E51 transport_schedules completo)
+Checkpoint: 11 herramientas desplegadas en AURORA+Ubuntu. 39/68 OPERATIVO.
 
 ---
 
@@ -17,17 +17,17 @@ Checkpoint: Integración AURORA↔LILITH verificada. 10 herramientas desplegadas
 
 ## Estado actual del ecosistema (2026-11-05)
 
-### AURORA/JARVIS Windows — 59 tools, branch codex/neural-voice-visual
-- 33/68 capacidades OPERATIVO
-- 324/324 tests pasan en tools nuevos
+### AURORA/JARVIS Windows — 60 tools, branch codex/neural-voice-visual
+- 39/68 capacidades OPERATIVO
+- 356/356 tests pasan (incluye transport_schedules 32/32)
 - LILITH_API_URL=http://192.168.1.50:8000 — configurado y verificado
 - Todos los endpoints `/api/v1/integration/*` autenticados funcionando
 
-### JARVIS Ubuntu Headless — `/home/flako1312/jarvis-headless`
-- 324/324 tests pasan en tools nuevos + 3/3 ToolContractTests
+### JARVIS Ubuntu Headless — `/home/flako1312/jarvis-headless` — 70 tools
+- 356/356 tests pasan + 3/3 ToolContractTests
 - Puerto 8000: API principal (Gemini Live headless)
-- Puerto 7471: Android APK gateway — ahora con 81 reglas de permisos para 10 tools nuevos
-- `core/headless_permissions.py` — actualizado con permisos para todos los tools nuevos
+- Puerto 7471: Android APK gateway — 84 reglas de permisos para 11 tools (incluye transport_schedules)
+- transport_schedules desplegado y registrado (lazy import + schema + dispatch + qa_audit)
 
 ### LILITH Core — Docker `lilith_core`, puerto 8000
 - Estado: RUNNING, healthy, database+mqtt+kernel+home_assistant=true

@@ -2,21 +2,22 @@
   "meta": {
     "project": "NEST 68",
     "snapshot_date": "2026-11-05",
-    "snapshot_version": 2,
+    "snapshot_version": 3,
     "audited_by": "Claude Sonnet 4.6 (AUTOPILOT CONTINUO)",
     "aurora_branch": "codex/neural-voice-visual",
     "note": "Versioned snapshot — STATUS.json is gitignored; this file is committed. Update when capabilities change.",
-    "tool_count_aurora": 59,
-    "tools_new_this_session": ["timer", "calendar_control", "traffic_info", "radio_control", "podcast_control", "broadcast_control", "audiobook_control", "shopping_list", "news_control", "alarm_control"],
-    "total_new_tools": 10,
-    "tests_aurora": "324 passed (all new tool tests), 0 failures",
-    "tests_ubuntu": "324 passed (all new tool tests), 0 failures + 3/3 ToolContractTests",
+    "tool_count_aurora": 60,
+    "tool_count_ubuntu": 70,
+    "tools_new_this_session": ["timer", "calendar_control", "traffic_info", "radio_control", "podcast_control", "broadcast_control", "audiobook_control", "shopping_list", "news_control", "alarm_control", "transport_schedules"],
+    "total_new_tools": 11,
+    "tests_aurora": "356 passed (all new tool tests including transport_schedules 32), 0 failures",
+    "tests_ubuntu": "356 passed (all new tool tests including transport_schedules 32), 0 failures",
     "lilith_status": "RUNNING — Docker container lilith_core healthy, port 8000, database+mqtt+kernel+home_assistant online",
     "lilith_api_url_aurora": "CONFIGURED — http://192.168.1.50:8000, confirmed authenticated endpoints working",
     "lilith_authenticated_endpoints": ["health", "runtime/status", "memory/search", "memory/context", "notifications", "git/status", "source/list", "docs/list", "home/resolve", "commands/submit"],
     "lilith_broadcast_relay": "commands/submit with intent=broadcast returns 403 (command_intent_not_allowed) — broadcast not in allowed intents for this token. Local TTS announce works.",
     "home_assistant": "Running in Docker (homeassistant/home-assistant:stable), accessible via LILITH",
-    "android_apk_gateway": "Port 7471, endpoint /api/tool/invoke — all 10 new tools now registered in headless_permissions.py (81 total rules)"
+    "android_apk_gateway": "Port 7471, endpoint /api/tool/invoke — all 11 tools registered in headless_permissions.py (84 total rules)"
   },
   "lilith_connection": {
     "aurora_to_lilith": "VERIFIED — all /api/v1/integration/* endpoints authenticated and responding",
@@ -29,7 +30,7 @@
       "B19","B21",
       "C25","C26","C27","C28","C29","C30","C31","C34",
       "D37","D38","D39","D40",
-      "E41","E42","E43","E46","E47","E48","E50","E52","E53","E54",
+      "E41","E42","E43","E46","E47","E48","E50","E51","E52","E53","E54",
       "F61",
       "G64","G65","G66","G67"
     ],
@@ -37,7 +38,7 @@
       "A2","A9_physical",
       "B11","B12","B13","B14","B15","B20","B23","B24",
       "C35_AUSENTE",
-      "E44","E45","E49","E51",
+      "E44","E45","E49",
       "G68"
     ],
     "DESCONOCIDO_ubuntu": ["A1-A10 (voice/live)", "B19","B21","C25-C27","C34","D39","D40","E43","E47","E48","E51","E52-E54","G64-G67"],
@@ -46,13 +47,13 @@
     "REQUIERE_HARDWARE": ["B16","B17","C32","C33","F55","F56","F57","F58","F59","F60"]
   },
   "capability_count": {
-    "OPERATIVO": 33,
-    "PARCIAL": 14,
+    "OPERATIVO": 39,
+    "PARCIAL": 13,
     "DESCONOCIDO": 7,
     "AUSENTE": 1,
     "BLOQUEADO": 4,
     "REQUIERE_HARDWARE": 6,
-    "note": "Up from 23 OPERATIVO at session start (+10 from new tools)"
+    "note": "Up from 38 OPERATIVO last checkpoint (+1 E51 transport_schedules fully registered)"
   },
   "blocking_items_for_user": {
     "GCAL_OAUTH": "E44/E45: Google Calendar OAuth client JSON needed. Set GCAL_OAUTH_CLIENT_FILE or place in C:\\JARVIS\\config\\gcal_client.json",
@@ -63,8 +64,8 @@
   "android_apk_tools": {
     "gateway_port": 7471,
     "invoke_endpoint": "POST /api/tool/invoke",
-    "new_tools_registered": ["timer","alarm_control","shopping_list","news_control","radio_control","podcast_control","audiobook_control","broadcast_control","calendar_control","traffic_info"],
-    "total_permission_rules": 81,
+    "new_tools_registered": ["timer","alarm_control","shopping_list","news_control","radio_control","podcast_control","audiobook_control","broadcast_control","calendar_control","traffic_info","transport_schedules"],
+    "total_permission_rules": 84,
     "permission_levels": {
       "timer": "SAFE_WRITE",
       "alarm_control": "SAFE_WRITE",
@@ -75,7 +76,8 @@
       "audiobook_control": "SAFE_WRITE",
       "broadcast_control": "SAFE_WRITE",
       "calendar_control": "READ_ONLY (create/delete=CONFIRM_REQUIRED)",
-      "traffic_info": "READ_ONLY"
+      "traffic_info": "READ_ONLY",
+      "transport_schedules": "READ_ONLY"
     }
   }
 }

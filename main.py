@@ -85,6 +85,7 @@ audiobook_control = _lazy_action("actions.audiobook_control", "audiobook_control
 shopping_list = _lazy_action("actions.shopping_list", "shopping_list")
 news_control = _lazy_action("actions.news_control", "news_control")
 alarm_control = _lazy_action("actions.alarm_control", "alarm_control")
+transport_schedules = _lazy_action("actions.transport_schedules", "transport_schedules")
 computer_settings = _lazy_action("actions.computer_settings", "computer_settings")
 screen_process = _lazy_action("actions.screen_processor", "screen_process")
 youtube_video = _lazy_action("actions.youtube_video", "youtube_video")
@@ -1684,6 +1685,35 @@ TOOL_DECLARATIONS = [
                 "product":  {"type": "STRING", "description": "Alias for item."},
                 "quantity": {"type": "STRING", "description": "Amount (e.g. '2', '1kg', '500ml')."},
                 "list":     {"type": "STRING", "description": "List name (default: 'compra')."},
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "transport_schedules",
+        "description": (
+            "Provides Spanish public transport schedule information without requiring an API key. "
+            "Covers Metro Madrid (lines 1-12), Cercanías Madrid (C1-C10), EMT buses, Búhos nocturnos, "
+            "and Renfe long-distance trains. For real-time info directs to official apps. "
+            "Actions: query/schedule/horario (query schedules), status (capabilities). "
+            "Params: query or line (e.g. 'metro línea 3', 'cercanías C1', 'autobús nocturno')."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "action": {
+                    "type": "STRING",
+                    "enum": ["query", "schedule", "horario", "linea", "status"],
+                    "description": "query: get schedule. status: show capabilities.",
+                },
+                "query": {
+                    "type": "STRING",
+                    "description": "Transport query, e.g. 'metro línea 3', 'cercanías C1', 'renfe AVE'.",
+                },
+                "line": {
+                    "type": "STRING",
+                    "description": "Line identifier, e.g. '3' for metro line 3, 'C1' for cercanías.",
+                },
             },
             "required": [],
         },
@@ -3985,6 +4015,10 @@ class JarvisLive:
             elif name == "alarm_control":
                 r = await asyncio.to_thread(lambda: alarm_control(parameters=args, response=None, player=self.ui, session_memory=None))
                 result = r or "Alarm action completed."
+
+            elif name == "transport_schedules":
+                r = await asyncio.to_thread(lambda: transport_schedules(parameters=args, response=None, player=self.ui))
+                result = r or "No he podido obtener información de transporte."
 
             elif name == "date_time":
                 result = self._date_time_authority.answer_action(

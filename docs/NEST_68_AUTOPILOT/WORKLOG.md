@@ -56,6 +56,38 @@
 ---
 
 
+## 2026-11-05 — AUTOPILOT: E51 transport_schedules completo, despliegue AURORA+Ubuntu
+
+**Autor:** Claude Sonnet 4.6 (automatizado — AUTOPILOT CONTINUO)
+**Rama:** `codex/neural-voice-visual`
+
+### transport_schedules (E51) — implementación completa
+
+#### Implementación (AURORA)
+- Nuevo fichero `actions/transport_schedules.py` — sin API key requerida
+  - Metro Madrid L1-12 (horarios oficiales CRTM hardcoded)
+  - Cercanías Madrid C1-C10
+  - EMT Madrid (diurno + Búhos nocturnos N1-N27)
+  - Renfe larga distancia (referencia a renfe.com)
+  - `_detect_transport_type(query)` → clasificador regex (metro/cercanias/emt/renfe/generic)
+  - Fix clave: Cercanías normaliza "1" → "c1" en `_fmt_cercanias`
+- 32 tests en `tests/test_transport_schedules.py` — 32/32 PASS
+- Registrado en AURORA `main.py`: lazy import + TOOL_DECLARATIONS schema + dispatch branch
+- Añadido a AURORA `core/qa_audit.py` EXPECTED_TOOLS
+
+#### Despliegue (Ubuntu headless)
+- SCP: `actions/transport_schedules.py` + `tests/test_transport_schedules.py`
+- Parchado `main.py` Ubuntu: lazy import + TOOL_DECLARATIONS schema + dispatch branch
+- Parchado `core/qa_audit.py` Ubuntu: añadido transport_schedules a EXPECTED_TOOLS
+- Tests Ubuntu: 32/32 PASS
+
+#### Estado
+- **E51** actualizado: PARCIAL → OPERATIVO (AURORA y Ubuntu)
+- **39/68 OPERATIVO** (antes 38)
+- tool_count AURORA: 59 → 60 | Ubuntu: 69 → 70
+
+---
+
 ## 2026-11-05 — AUTOPILOT: Auditoría de integración, corrección tzdata, despliegue completo Ubuntu
 
 **Autor:** Claude Sonnet 4.6 (automatizado — AUTOPILOT CONTINUO)
