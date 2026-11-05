@@ -82,6 +82,7 @@ radio_control = _lazy_action("actions.radio_control", "radio_control")
 podcast_control = _lazy_action("actions.podcast_control", "podcast_control")
 broadcast_control = _lazy_action("actions.broadcast_control", "broadcast_control")
 audiobook_control = _lazy_action("actions.audiobook_control", "audiobook_control")
+shopping_list = _lazy_action("actions.shopping_list", "shopping_list")
 computer_settings = _lazy_action("actions.computer_settings", "computer_settings")
 screen_process = _lazy_action("actions.screen_processor", "screen_process")
 youtube_video = _lazy_action("actions.youtube_video", "youtube_video")
@@ -280,7 +281,7 @@ _MEMORY_LOOKUP_TOOL_NAMES = frozenset({"local_memory_search", "lilith_memory_sea
 # This is also the scope for the per-turn exact-effect deduplicator below.
 _MUTATING_TOOL_NAMES = frozenset({
     "open_app", "send_message", "prepare_message_reply", "email_control", "reminder", "timer",
-    "calendar_control", "traffic_info", "radio_control", "podcast_control", "broadcast_control", "audiobook_control",
+    "calendar_control", "traffic_info", "radio_control", "podcast_control", "broadcast_control", "audiobook_control", "shopping_list",
     "youtube_video", "media_control", "browser_control", "agent_task",
     "computer_settings", "computer_control", "desktop_control", "file_controller",
     "file_processor", "code_helper", "dev_agent", "game_updater", "flight_finder",
@@ -1656,6 +1657,31 @@ TOOL_DECLARATIONS = [
                 "book_id":     {"type": "STRING", "description": "LibriVox book ID to skip search."},
                 "chapter":     {"type": "INTEGER", "description": "Chapter number to play (1-indexed, default 1)."},
                 "chapter_url": {"type": "STRING", "description": "Direct chapter audio URL to play immediately."},
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "shopping_list",
+        "description": (
+            "Manages personal shopping lists stored locally. "
+            "Add or remove items, mark as purchased, view the list, and clear it. "
+            "Supports multiple named lists (default: 'compra'). "
+            "Actions: add, remove, check (mark purchased), uncheck (mark pending), "
+            "list (show), clear (empty), lists (all named lists)."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "action": {
+                    "type": "STRING",
+                    "enum": ["add", "remove", "check", "uncheck", "list", "clear", "lists"],
+                    "description": "add: add item. remove: delete. check: mark bought. uncheck: mark pending. list: show. clear: empty. lists: all lists.",
+                },
+                "item":     {"type": "STRING", "description": "Item name to add/remove/check."},
+                "product":  {"type": "STRING", "description": "Alias for item."},
+                "quantity": {"type": "STRING", "description": "Amount (e.g. '2', '1kg', '500ml')."},
+                "list":     {"type": "STRING", "description": "List name (default: 'compra')."},
             },
             "required": [],
         },
@@ -3895,6 +3921,10 @@ class JarvisLive:
             elif name == "audiobook_control":
                 r = await asyncio.to_thread(lambda: audiobook_control(parameters=args, response=None, player=self.ui, session_memory=None))
                 result = r or "Audiobook action completed."
+
+            elif name == "shopping_list":
+                r = await asyncio.to_thread(lambda: shopping_list(parameters=args, response=None, player=self.ui, session_memory=None))
+                result = r or "Shopping list updated."
 
             elif name == "date_time":
                 result = self._date_time_authority.answer_action(

@@ -2,6 +2,19 @@
 
 ---
 
+## 2026-11-05 — AUTOPILOT: E46 listas de la compra
+
+**Autor:** Claude Sonnet 4.6 (automatizado — AUTOPILOT CONTINUO)
+**Rama:** `codex/neural-voice-visual`
+
+### E46 — shopping_list (Listas de la compra)
+- `actions/shopping_list.py`: JSON persistence local (`~/.jarvis/lists/`), multi-lista, CRUD completo (add/remove/check/uncheck/list/clear/lists), sin dependencias externas
+- Upgrade de PARCIAL (lilith_memory_store) a OPERATIVO con herramienta dedicada
+- `tests/test_shopping_list.py`: 35 tests → **35/35 PASS** (AURORA + Ubuntu headless)
+- Desplegado en ambos entornos
+
+---
+
 ## 2026-11-05 — AUTOPILOT: C30 audiolibros
 
 **Autor:** Claude Sonnet 4.6 (automatizado — AUTOPILOT CONTINUO)
