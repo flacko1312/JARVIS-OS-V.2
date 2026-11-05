@@ -84,6 +84,7 @@ broadcast_control = _lazy_action("actions.broadcast_control", "broadcast_control
 audiobook_control = _lazy_action("actions.audiobook_control", "audiobook_control")
 shopping_list = _lazy_action("actions.shopping_list", "shopping_list")
 news_control = _lazy_action("actions.news_control", "news_control")
+alarm_control = _lazy_action("actions.alarm_control", "alarm_control")
 computer_settings = _lazy_action("actions.computer_settings", "computer_settings")
 screen_process = _lazy_action("actions.screen_processor", "screen_process")
 youtube_video = _lazy_action("actions.youtube_video", "youtube_video")
@@ -282,7 +283,7 @@ _MEMORY_LOOKUP_TOOL_NAMES = frozenset({"local_memory_search", "lilith_memory_sea
 # This is also the scope for the per-turn exact-effect deduplicator below.
 _MUTATING_TOOL_NAMES = frozenset({
     "open_app", "send_message", "prepare_message_reply", "email_control", "reminder", "timer",
-    "calendar_control", "traffic_info", "radio_control", "podcast_control", "broadcast_control", "audiobook_control", "shopping_list", "news_control",
+    "calendar_control", "traffic_info", "radio_control", "podcast_control", "broadcast_control", "audiobook_control", "shopping_list", "news_control", "alarm_control",
     "youtube_video", "media_control", "browser_control", "agent_task",
     "computer_settings", "computer_control", "desktop_control", "file_controller",
     "file_processor", "code_helper", "dev_agent", "game_updater", "flight_finder",
@@ -1709,6 +1710,30 @@ TOOL_DECLARATIONS = [
                     "description": "Feed key (rtve, elpais, elmundo, bbc, reuters, xataka, marca, hackernews) or direct RSS URL.",
                 },
                 "count": {"type": "INTEGER", "description": "Max headlines to return (default 7)."},
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "alarm_control",
+        "description": (
+            "Schedules and manages clock alarms (wall-clock time, NOT countdown timers). "
+            "Plays a beep sound and speaks the label when the alarm fires. "
+            "Actions: set (schedule alarm at a specific time), list (show alarms), "
+            "cancel (remove alarm by id or all), status (active count). "
+            "Example times: '7:30', 'mañana 8:00', '9 AM', '20h00'."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "action": {
+                    "type": "STRING",
+                    "enum": ["set", "list", "cancel", "status"],
+                    "description": "set: create alarm. list: show all. cancel: remove. status: count.",
+                },
+                "time":  {"type": "STRING", "description": "Alarm time (e.g. '7:30', 'mañana 8:00', '9 AM')."},
+                "label": {"type": "STRING", "description": "Alarm label/name (e.g. 'Despertador')."},
+                "id":    {"type": "STRING", "description": "Alarm ID to cancel (from list)."},
             },
             "required": [],
         },
@@ -3956,6 +3981,10 @@ class JarvisLive:
             elif name == "news_control":
                 r = await asyncio.to_thread(lambda: news_control(parameters=args, response=None, player=self.ui, session_memory=None))
                 result = r or "News retrieved."
+
+            elif name == "alarm_control":
+                r = await asyncio.to_thread(lambda: alarm_control(parameters=args, response=None, player=self.ui, session_memory=None))
+                result = r or "Alarm action completed."
 
             elif name == "date_time":
                 result = self._date_time_authority.answer_action(

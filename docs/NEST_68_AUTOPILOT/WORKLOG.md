@@ -2,6 +2,19 @@
 
 ---
 
+## 2026-11-05 — AUTOPILOT: E41 alarmas de reloj
+
+**Autor:** Claude Sonnet 4.6 (automatizado — AUTOPILOT CONTINUO)
+**Rama:** `codex/neural-voice-visual`
+
+### E41 — alarm_control (Alarmas de reloj)
+- `actions/alarm_control.py`: scheduling por hora de reloj (HH:MM, mañana, AM/PM), threading.Timer, beep via ffplay (3 pitidos 880Hz), TTS al disparar, persistencia JSON, cancelación por ID
+- Upgrade de PARCIAL (reminder) + añade herramienta dedicada con sonido
+- `tests/test_alarm_control.py`: 31 tests → **31/31 PASS** (AURORA + Ubuntu headless)
+- Desplegado en ambos entornos
+
+---
+
 ## 2026-11-05 — AUTOPILOT: E50 noticias
 
 **Autor:** Claude Sonnet 4.6 (automatizado — AUTOPILOT CONTINUO)
