@@ -2,6 +2,76 @@
 
 ---
 
+## 2026-11-05 (sesión 7) — Verificación rutinas, auditoría broadcast/memoria/APK, corrección routing
+
+**Autor:** Claude Sonnet 4.6 (AUTOPILOT CONTINUO)
+**Rama:** `codex/neural-voice-visual`
+
+### Trabajo realizado
+
+#### Bloque 1: Verificación de las 5 rutinas domésticas
+- Auditado `home_routine.py`: 5 rutinas implementadas (buenos_dias/me_voy/llegue_a_casa/buenas_noches/modo_taller)
+- Verificado endpoint fijo en `/api/v1/integration/home/action` (commit 5a298af)
+- **Hallazgo crítico**: ROUTINE_ROUTING_RULES en AURORA no contenía ninguna referencia a home_routine → Gemini respondía a "buenos días" con texto, nunca llamaba la herramienta
+- **Fix**: Reescrito ROUTINE_ROUTING_RULES en `main.py` → home_routine como regla #1 con frases explícitas ES/EN para las 5 rutinas
+- **Fix**: HEADLESS_SYSTEM_RULES en Ubuntu `main.py` actualizado con las mismas frases de routing
+
+#### Bloque 2: Investigación broadcast en LILITH
+- Auditado `core/routers/integration.py` en LILITH: `COMMAND_READ_INTENTS` y `COMMAND_MUTATING_INTENTS` confirmados
+- **Hallazgo**: `broadcast` AUSENTE del protocolo de integración LILITH — no es problema de permisos, es que el intent no existe
+- `broadcast_control.py` retorna 403 `command_intent_not_allowed` correctamente
+- Solución definitiva: local TTS via sounddevice (ya implementado y funcional)
+- Para relay remoto: requeriría nuevo endpoint en LILITH (no en scope actual)
+
+#### Bloque 3: Auditoría memoria LILITH
+- Verificado: 91 hechos en 16 categorías en LILITH
+- `get_context()` carga todo el contexto en cada sesión Gemini Live al inicio
+- `memory.store` y `memory.search` probados correctamente
+- Reglas de memoria en HEADLESS_SYSTEM_RULES: solo en solicitud explícita (correcto, evita falsos positivos)
+
+#### Bloque 4: Verificación consultas de estado
+- AURORA y Ubuntu pueden consultar estado de JARVIS, LILITH, HA via herramientas existentes
+- `lilith_home_status`, `lilith_health`, `system_status`, `infrastructure_status` operativos
+- `HOME_ACTION_ALLOWLIST` confirmado: solo dominio `light.*` permitido (no switch.*, no media_player.*)
+
+#### Bloque 5: Auditoría gateway APK Android
+- **Hallazgo**: Puerto 7471 sirve `api_server.py` (NO `api/server.py` que es la cloud API multi-usuario)
+- Dos interfaces en `api_server.py`:
+  - `POST /api/chat` → pipeline NL completo con TODOS los 73 tools via `ask_text()`
+  - `POST /api/tool/invoke` → dispatch directo (~16 tools: system/LILITH/memoria)
+- **Hallazgo**: timer, alarm_control, shopping_list, radio_control, etc. están en `headless_permissions.py` (permitidos) pero NO en `_dispatch_tool` → no invocables directamente via API, solo via `/api/chat` NL
+- STATUS_SNAPSHOT v8 `android_apk_tools.new_tools_registered` era engañoso → corregido en v9
+- Endpoints adicionales: `/api/status`, `/api/metrics`, `/api/conversation`, `/api/tools`, `/api/tailscale`, `/api/voice`
+- Auth: Bearer token, constant-time, binding Tailscale IP
+
+#### Bloque 6: Análisis brechas conversación natural
+- Enumeradas 5 brechas principales: dispositivos físicos offline, media_player bloqueado, sin comportamiento proactivo, calendar/traffic sin credenciales, broadcast relay ausente en protocolo
+- Cobertura actual: routing phrases (home_routine), contexto LILITH (91 hechos), web_search/weather/date/calculator auto-routing
+
+#### Bloque 7: Re-auditoría 45 capacidades OPERATIVO
+- Diferenciados tres niveles dentro de OPERATIVO:
+  - **auto_integration** (26): Gemini invoca sin instrucción técnica del usuario
+  - **code_only** (15): implementado y probado, sin validación física
+  - **physical_validated** (2): A6/A7 — probados con hardware real (teclado/pantalla)
+- Documentado en STATUS_SNAPSHOT v9 `operativo_differentiation`
+
+### Tests ejecutados
+- No se añadieron nuevas herramientas → no se corrieron tests nuevos
+- main.py modificado (ROUTINE_ROUTING_RULES) — sin tests unitarios para system prompt
+
+### Estado al final
+- 45/68 OPERATIVO (sin cambio)
+- ROUTINE_ROUTING_RULES corregido: home_routine ahora se invoca automáticamente ✓
+- HEADLESS_SYSTEM_RULES Ubuntu actualizado con frases de routing ✓
+- STATUS_SNAPSHOT v8 → v9: corrección android_apk_tools + auditoría completa ✓
+
+### Cambios
+- Modificados: `main.py` (ROUTINE_ROUTING_RULES home_routine rule #1)
+- Ubuntu (SSH, untracked): `main.py` HEADLESS_SYSTEM_RULES frases home_routine
+- Docs: `STATUS_SNAPSHOT.json` v8→v9, `WORKLOG.md`, `HANDOFF.md`
+
+---
+
 ## 2026-11-05 (sesión 6) — Reorganización prioridades, home_routine P3, auditoría Ubuntu, entidades HA
 
 **Autor:** Claude Sonnet 4.6 (automatizado — AUTOPILOT CONTINUO)

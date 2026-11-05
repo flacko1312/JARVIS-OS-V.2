@@ -214,26 +214,36 @@ TOOL_RESULT_TRUTH_RULE = (
 ROUTINE_ROUTING_RULES = """
 [SCHEDULING AND ROUTINE TOOL ROUTING — mandatory]
 Classify the user's intent before calling any action tool:
-1. A recurring or persistent schedule MUST use lilith_routine with operation=create.
-   Recurring/persistent cues include equivalents of: every day, daily, every morning,
-   every night, every week, every Monday, every N hours/days, routine, automate,
-   from now on, todos los días, cada día, diariamente, cada mañana, cada noche,
-   cada semana, todos los lunes, cada X horas/días, rutina, automatiza, a partir de ahora.
-2. A single future occurrence or an explicit request to be reminded once MUST use reminder.
-3. An action requested for now, with no future or recurring schedule, may use
-   lilith_home_action.
+1. A DOMESTIC LIFE ROUTINE PHRASE (greeting, leaving, arriving, bedtime, work mode) MUST
+   use home_routine immediately. These are fixed multi-step sequences, not one-off device
+   commands. Trigger phrases and mappings:
+   - "buenos días", "good morning", "despierta", "ya me levanté" → home_routine action=buenos_dias
+   - "me voy", "me voy de casa", "salgo", "hasta luego", "adiós", "leaving" → home_routine action=me_voy
+   - "llegué", "llegué a casa", "ya llegué", "estoy en casa", "I'm home" → home_routine action=llegue_a_casa
+   - "buenas noches", "good night", "me voy a dormir", "a dormir", "bedtime" → home_routine action=buenas_noches
+   - "modo taller", "modo trabajo", "workshop mode", "voy a trabajar" → home_routine action=modo_taller
+   Device actions inside home_routine require confirm=true; say "¿confirmo y apago los dispositivos?"
+   if not already confirmed.
+2. A recurring or persistent schedule MUST use lilith_routine with operation=create.
+   Recurring/persistent cues: every day, daily, every morning, every night, every week,
+   every Monday, every N hours/days, automate, from now on, todos los días, cada día,
+   diariamente, cada mañana, cada noche, cada semana, todos los lunes, automatiza, a partir de ahora.
+3. A single future occurrence or an explicit request to be reminded once MUST use reminder.
+4. An action requested for now on a specific device, with no future or recurring schedule,
+   may use lilith_home_action.
 Never call lilith_home_action as a side effect while defining a future routine.
-Never replace a recurring routine with reminder. For a recurring request, call only
-the appropriate lilith_routine operation. Spanish times such as "9 de la noche"
-and "10 de la noche" are unambiguously 21:00 and 22:00. Use Europe/Madrid for
-Madrid, hora de Madrid, mi zona horaria,
-or an omitted timezone. Ask only when recurrence, time, target, or action is genuinely
-missing or ambiguous, and call no action tool in that case.
+Never replace a recurring routine with reminder. Spanish times such as "9 de la noche"
+and "10 de la noche" are unambiguously 21:00 and 22:00. Use Europe/Madrid for Madrid.
+Ask only when recurrence, time, target, or action is genuinely missing or ambiguous.
 Examples:
-- "Enciende la bombilla" -> lilith_home_action.
-- "Recuérdame hoy a las 21:00 encender la bombilla" -> reminder.
-- "Todos los días a las 21:00 enciende la bombilla" -> lilith_routine create only.
-- "Crea una rutina para encender la bombilla cada día a las 21:00" -> lilith_routine create only.
+- "Buenos días" → home_routine action=buenos_dias (do NOT just say "buenos días" back).
+- "Me voy" → home_routine action=me_voy, then ask "¿confirmo y apago los dispositivos?".
+- "Llegué a casa" → home_routine action=llegue_a_casa, then ask "¿enciendo las luces?".
+- "Buenas noches" → home_routine action=buenas_noches, then ask "¿apago las luces?".
+- "Modo taller" → home_routine action=modo_taller, then ask "¿ajusto la iluminación?".
+- "Enciende la bombilla" → lilith_home_action (single device, right now).
+- "Recuérdame hoy a las 21:00 encender la bombilla" → reminder.
+- "Todos los días a las 21:00 enciende la bombilla" → lilith_routine create only.
 """.strip()
 
 MEMORY_ROUTING_RULES = """

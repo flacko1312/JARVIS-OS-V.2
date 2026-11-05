@@ -1,6 +1,6 @@
 # HANDOFF — Instrucciones para reanudar el trabajo
 
-Última actualización: 2026-11-05 (sesión 6 — home_routine P3, auditoría Ubuntu HEADLESS_SYSTEM_RULES, entidades HA en vivo)
+Última actualización: 2026-11-05 (sesión 7 — corrección ROUTINE_ROUTING_RULES, auditoría broadcast/memoria/APK, re-auditoría capacidades)
 Checkpoint: 45/68 OPERATIVO. AURORA 63 tools, Ubuntu 73 tools.
 
 ---
@@ -68,18 +68,24 @@ Checkpoint: 45/68 OPERATIVO. AURORA 63 tools, Ubuntu 73 tools.
 
 ## Tareas pendientes (en orden de prioridad)
 
-### 0. Completado en sesiones 5-6
+### 0. Completado en sesiones 5-7
 - transport_schedules: disclaimer DATOS ESTÁTICOS ✓
-- STATUS_SNAPSHOT v7→v8: contadores corregidos ✓
+- STATUS_SNAPSHOT v7→v9: correcciones y auditorías ✓
 - OPERATIVO_VERIFICATION.md: tabla auto-test/integration/physical ✓
 - home_routine P3: 5 rutinas, 30 tests, AURORA+Ubuntu ✓
 - HEADLESS_SYSTEM_RULES: reescrito con todos los tools ✓
 - Auditoría HA en vivo: 6 entidades auditadas (1 AVAILABLE) ✓
+- **Sesión 7**: ROUTINE_ROUTING_RULES corregido (home_routine como regla #1) ✓
+- **Sesión 7**: HEADLESS_SYSTEM_RULES Ubuntu con frases routing home_routine ✓
+- **Sesión 7**: Auditoría broadcast → absent del protocolo LILITH (no fix posible sin equipo LILITH) ✓
+- **Sesión 7**: Auditoría memoria → 91 hechos, 16 categorías, funcional ✓
+- **Sesión 7**: Auditoría APK gateway → api_server.py (puerto 7471), /api/chat NL path completo ✓
+- **Sesión 7**: Re-auditoría 45 OPERATIVO → 3 niveles diferenciados (auto/code/physical) ✓
 
-### 1. P2 — Integración memoria LILITH en conversación (PENDIENTE)
-- Verificar que Ubuntu conversation loop llama lilith_memory_search/store
-- Testear persistencia: guardar algo → reiniciar → recuperar
-- Verificar que `memory_authority` en HEADLESS_SYSTEM_RULES guía el comportamiento real
+### 1. P2 — Integración memoria LILITH en conversación (VERIFICADO ✓)
+- 91 hechos en 16 categorías en LILITH, cargados en cada sesión via get_context()
+- memory.store y memory.search confirmados operativos
+- Reglas en HEADLESS_SYSTEM_RULES: solo en solicitud explícita (correcto)
 
 ### 2. Validación física de audio (requiere altavoces)
 - C28/C29/C30 (radio/podcast/audiobook): probar `ffplay` con altavoces conectados
@@ -92,9 +98,14 @@ Checkpoint: 45/68 OPERATIVO. AURORA 63 tools, Ubuntu 73 tools.
 - **LILITH broadcast allowlist**: Pedir al equipo LILITH añadir `broadcast` a allowed intents → D38 relay completo
 
 ### 3. Capacidades DESCONOCIDO en Ubuntu a verificar
-- B19/B21 (rutinas LILITH): verificar si jarvis-headless tiene `lilith_routine` tool
-- C25-C27 (música/Spotify/YTMusic): media_control en Ubuntu headless
-- E43 (recordatorios): reminder tool en Ubuntu
+- B19/B21 (rutinas LILITH): `lilith_routine` en HEADLESS_SYSTEM_RULES → probablemente operativo, no verificado con hardware
+- C25-C27 (música/Spotify/YTMusic): media_control en Ubuntu headless — sin validación física
+- E43 (recordatorios): `reminder` en HEADLESS_SYSTEM_RULES — operativo en código
+
+### 4. Desbloqueadores del usuario (prioridad)
+- **GCAL_OAUTH**: Colocar archivo OAuth JSON → E44/E45 OPERATIVO
+- **ORS_API_KEY**: Registrar gratis en openrouteservice.org → E49 OPERATIVO
+- **Encender dispositivos físicos**: light.bombilla_mueble/tv, switch.cargador_hub → validar rutinas domésticas con dispositivos reales
 
 ### 4. WebSocket adapter Phase 2 (G68)
 - Verificar si LILITH soporta WebSocket en `/api/v1/integration/ws`
