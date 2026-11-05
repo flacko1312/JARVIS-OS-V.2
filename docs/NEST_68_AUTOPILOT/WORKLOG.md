@@ -84,6 +84,39 @@
 
 ---
 
+## 2026-11-05 — Integración tráfico (E49)
+
+**Autor:** Claude Sonnet 4.6 (automatizado)
+**Rama:** `codex/neural-voice-visual`
+
+### Trabajo realizado
+
+#### Implementación: traffic_info tool (E49)
+- Creado: `actions/traffic_info.py` — routing e info de tráfico via OpenRouteService + Nominatim
+  - Geocodificación libre con Nominatim (OSM) — sin API key
+  - Routing con OpenRouteService v2 (free tier, requiere ORS_API_KEY)
+  - Acciones: route (origen→destino), commute (casa↔trabajo), setup, addresses, status
+  - Fallback gracioso con instrucciones de setup si no hay API key
+  - Alias: "from"/"to" como "origin"/"destination", "trayecto" como "commute"
+  - Guardado de casa/trabajo en keychain via secret_store
+- Modificado: `main.py` — añadido _lazy_action, schema (7 parámetros), dispatch para "traffic_info"
+- Modificado: `main.py` — añadido "traffic_info" a _MUTATING_TOOL_NAMES
+- Modificado: `core/qa_audit.py` — añadido "traffic_info" a EXPECTED_TOOLS
+- Creado: `tests/test_traffic_info.py` — 45 tests (FmtDuration, FmtDistance, Geocode, OrsRoute, Status, Setup, Addresses, Route, Commute, EntryPoint)
+
+### Tests ejecutados
+- `test_traffic_info.py`: **45/45 passed**
+- `test_calendar_control.py`: **42/42 passed** (sin regresiones)
+
+### Estado al final
+- E49 (tráfico): **PARCIAL** — código funcional, blocker ORS_API_KEY del usuario (gratuita en openrouteservice.org)
+
+### Cambios
+- Nuevos archivos: `actions/traffic_info.py`, `tests/test_traffic_info.py`
+- Modificados: `main.py`, `core/qa_audit.py`, `docs/NEST_68_AUTOPILOT/STATUS.json`, `docs/NEST_68_AUTOPILOT/WORKLOG.md`
+
+---
+
 ## Plantilla para próximas entradas
 
 ```

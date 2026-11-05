@@ -77,6 +77,7 @@ check_messages = _lazy_action("actions.message_monitor", "check_messages")
 reminder = _lazy_action("actions.reminder", "reminder")
 timer = _lazy_action("actions.timer", "timer")
 calendar_control = _lazy_action("actions.calendar_control", "calendar_control")
+traffic_info = _lazy_action("actions.traffic_info", "traffic_info")
 computer_settings = _lazy_action("actions.computer_settings", "computer_settings")
 screen_process = _lazy_action("actions.screen_processor", "screen_process")
 youtube_video = _lazy_action("actions.youtube_video", "youtube_video")
@@ -274,7 +275,7 @@ _MEMORY_LOOKUP_TOOL_NAMES = frozenset({"local_memory_search", "lilith_memory_sea
 # Tools that must execute serially because they can change external/user-visible state.
 # This is also the scope for the per-turn exact-effect deduplicator below.
 _MUTATING_TOOL_NAMES = frozenset({
-    "open_app", "send_message", "prepare_message_reply", "email_control", "reminder", "timer", "calendar_control",
+    "open_app", "send_message", "prepare_message_reply", "email_control", "reminder", "timer", "calendar_control", "traffic_info",
     "youtube_video", "media_control", "browser_control", "agent_task",
     "computer_settings", "computer_control", "desktop_control", "file_controller",
     "file_processor", "code_helper", "dev_agent", "game_updater", "flight_finder",
@@ -1544,6 +1545,30 @@ TOOL_DECLARATIONS = [
                 "event_id":         {"type": "STRING", "description": "Event ID returned by list/search; required for delete"},
                 "calendar_id":      {"type": "STRING", "description": "Calendar ID (default: 'primary')"},
                 "credentials_path": {"type": "STRING", "description": "Path to Google OAuth client JSON; for connect"},
+            },
+            "required": []
+        }
+    },
+    {
+        "name": "traffic_info",
+        "description": (
+            "Get traffic and routing information: travel time and distance between two addresses, "
+            "commute time from home to work (or back), and address setup. "
+            "Actions: route (time+distance between origin and destination), "
+            "commute (home↔work using saved addresses), setup (save home/work/api_key), "
+            "addresses (show saved addresses), status (connection state). "
+            "Requires a free OpenRouteService API key — guides the user through setup if missing."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "action":      {"type": "STRING", "description": "route | commute | setup | addresses | status (default: route)"},
+                "origin":      {"type": "STRING", "description": "Starting point address or city; for route"},
+                "destination": {"type": "STRING", "description": "Destination address or city; for route"},
+                "direction":   {"type": "STRING", "description": "to_work | to_home; for commute (default: to_work)"},
+                "home":        {"type": "STRING", "description": "Home address to save; for setup"},
+                "work":        {"type": "STRING", "description": "Work address to save; for setup"},
+                "api_key":     {"type": "STRING", "description": "OpenRouteService API key to save; for setup"},
             },
             "required": []
         }
@@ -3763,6 +3788,10 @@ class JarvisLive:
                         args["credentials_path"] = current_file
                 r = await asyncio.to_thread(lambda: calendar_control(parameters=args, response=None, player=self.ui, session_memory=None))
                 result = r or "Calendar action completed."
+
+            elif name == "traffic_info":
+                r = await asyncio.to_thread(lambda: traffic_info(parameters=args, response=None, player=self.ui, session_memory=None))
+                result = r or "Traffic info retrieved."
 
             elif name == "date_time":
                 result = self._date_time_authority.answer_action(
