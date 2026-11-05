@@ -218,15 +218,18 @@ class ConversationPersistenceTests(unittest.IsolatedAsyncioTestCase):
         restarted = self.make_jarvis()
         restarted._run_live = AsyncMock()
         restarted._listen_audio = AsyncMock()
-        task = asyncio.create_task(restarted.run())
-        await asyncio.sleep(0.08)
+        # Prevent real LILITH network call so the task shuts down within the
+        # 2-second window regardless of LILITH_API_URL configuration.
+        with patch("main.LilithBridge.from_env", return_value=None):
+            task = asyncio.create_task(restarted.run())
+            await asyncio.sleep(0.08)
 
-        self.assertEqual(restarted._conversation_id, identity)
-        self.assertEqual(restarted.conversation_state, main.ConversationState.STANDBY)
-        restarted._run_live.assert_not_awaited()
-        restarted._listen_audio.assert_not_awaited()
-        restarted.request_shutdown()
-        await asyncio.wait_for(task, timeout=1)
+            self.assertEqual(restarted._conversation_id, identity)
+            self.assertEqual(restarted.conversation_state, main.ConversationState.STANDBY)
+            restarted._run_live.assert_not_awaited()
+            restarted._listen_audio.assert_not_awaited()
+            restarted.request_shutdown()
+            await asyncio.wait_for(task, timeout=2)
 
     async def test_goaway_and_nonresumable_update_preserve_good_handle_and_continuity(self):
         jarvis = self.make_jarvis()

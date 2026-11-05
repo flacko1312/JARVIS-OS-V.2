@@ -75,6 +75,7 @@ prepare_message_reply = _lazy_action("actions.send_message", "prepare_message_re
 email_control = _lazy_action("actions.email_control", "email_control")
 check_messages = _lazy_action("actions.message_monitor", "check_messages")
 reminder = _lazy_action("actions.reminder", "reminder")
+timer = _lazy_action("actions.timer", "timer")
 computer_settings = _lazy_action("actions.computer_settings", "computer_settings")
 screen_process = _lazy_action("actions.screen_processor", "screen_process")
 youtube_video = _lazy_action("actions.youtube_video", "youtube_video")
@@ -272,7 +273,7 @@ _MEMORY_LOOKUP_TOOL_NAMES = frozenset({"local_memory_search", "lilith_memory_sea
 # Tools that must execute serially because they can change external/user-visible state.
 # This is also the scope for the per-turn exact-effect deduplicator below.
 _MUTATING_TOOL_NAMES = frozenset({
-    "open_app", "send_message", "prepare_message_reply", "email_control", "reminder",
+    "open_app", "send_message", "prepare_message_reply", "email_control", "reminder", "timer",
     "youtube_video", "media_control", "browser_control", "agent_task",
     "computer_settings", "computer_control", "desktop_control", "file_controller",
     "file_processor", "code_helper", "dev_agent", "game_updater", "flight_finder",
@@ -1495,6 +1496,25 @@ TOOL_DECLARATIONS = [
                 "text":    {"type": "STRING", "description": "Natural Spanish one-shot time, e.g. 'mañana a las 9 de la noche' or 'en 30 minutos'"},
                 "timezone":{"type": "STRING", "description": "IANA timezone; defaults to Europe/Madrid"},
                 "message": {"type": "STRING", "description": "Reminder message text"}
+            },
+            "required": []
+        }
+    },
+    {
+        "name": "timer",
+        "description": (
+            "Create, list or cancel in-process countdown timers. Use when the user asks to set a timer "
+            "for a specific duration (e.g. '5 minutos', '30 segundos', '1 hora'). "
+            "On expiry JARVIS speaks the notification. "
+            "NOT for future reminders at a specific wall-clock time — use reminder for those."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "action":   {"type": "STRING", "description": "create | list | cancel (default: create)"},
+                "duration": {"type": "STRING", "description": "Duration string, e.g. '5 minutos', '30 segundos', '1 hora 30 minutos'"},
+                "label":    {"type": "STRING", "description": "Optional name for this timer, e.g. 'pizza', 'huevos'"},
+                "id":       {"type": "STRING", "description": "Timer ID returned by create/list; required for cancel"},
             },
             "required": []
         }
@@ -3702,6 +3722,10 @@ class JarvisLive:
             elif name == "reminder":
                 r = await asyncio.to_thread(lambda: reminder(parameters=args, response=None, player=self.ui))
                 result = r or "Reminder set."
+
+            elif name == "timer":
+                r = await asyncio.to_thread(lambda: timer(parameters=args, response=None, player=self.ui))
+                result = r or "Timer set."
 
             elif name == "date_time":
                 result = self._date_time_authority.answer_action(
