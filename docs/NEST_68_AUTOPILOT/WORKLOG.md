@@ -2,6 +2,19 @@
 
 ---
 
+## 2026-11-05 — AUTOPILOT: C30 audiolibros
+
+**Autor:** Claude Sonnet 4.6 (automatizado — AUTOPILOT CONTINUO)
+**Rama:** `codex/neural-voice-visual`
+
+### C30 — audiobook_control (Audiolibros LibriVox)
+- `actions/audiobook_control.py`: LibriVox API pública (sin clave), búsqueda por título/autor con fallback, listado de capítulos, streaming ffplay, fallback os.startfile/xdg-open
+- `tests/test_audiobook_control.py`: 31 tests → **31/31 PASS** (AURORA + Ubuntu headless)
+- Desplegado y registrado en AURORA (`main.py` + `core/qa_audit.py`) y Ubuntu headless
+- **Blocker:** validación física (altavoces)
+
+---
+
 ## 2026-11-05 — AUTOPILOT: C28 radio, C29 podcasts, D38 broadcast
 
 **Autor:** Claude Sonnet 4.6 (automatizado — AUTOPILOT CONTINUO)

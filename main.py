@@ -81,6 +81,7 @@ traffic_info = _lazy_action("actions.traffic_info", "traffic_info")
 radio_control = _lazy_action("actions.radio_control", "radio_control")
 podcast_control = _lazy_action("actions.podcast_control", "podcast_control")
 broadcast_control = _lazy_action("actions.broadcast_control", "broadcast_control")
+audiobook_control = _lazy_action("actions.audiobook_control", "audiobook_control")
 computer_settings = _lazy_action("actions.computer_settings", "computer_settings")
 screen_process = _lazy_action("actions.screen_processor", "screen_process")
 youtube_video = _lazy_action("actions.youtube_video", "youtube_video")
@@ -279,7 +280,7 @@ _MEMORY_LOOKUP_TOOL_NAMES = frozenset({"local_memory_search", "lilith_memory_sea
 # This is also the scope for the per-turn exact-effect deduplicator below.
 _MUTATING_TOOL_NAMES = frozenset({
     "open_app", "send_message", "prepare_message_reply", "email_control", "reminder", "timer",
-    "calendar_control", "traffic_info", "radio_control", "podcast_control", "broadcast_control",
+    "calendar_control", "traffic_info", "radio_control", "podcast_control", "broadcast_control", "audiobook_control",
     "youtube_video", "media_control", "browser_control", "agent_task",
     "computer_settings", "computer_control", "desktop_control", "file_controller",
     "file_processor", "code_helper", "dev_agent", "game_updater", "flight_finder",
@@ -1633,6 +1634,31 @@ TOOL_DECLARATIONS = [
             },
             "required": []
         }
+    },
+    {
+        "name": "audiobook_control",
+        "description": (
+            "Searches and plays public-domain audiobooks from LibriVox (no login required). "
+            "Actions: search (find audiobooks by title/author), chapters (list chapters), "
+            "play (stream a chapter via ffplay), stop (stop playback), status (now playing). "
+            "Returns direct audio stream URLs for all audiobooks."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "action": {
+                    "type": "STRING",
+                    "enum": ["search", "chapters", "play", "stop", "status"],
+                    "description": "search: find books. chapters: list chapters. play: stream. stop: stop. status: now playing.",
+                },
+                "query":       {"type": "STRING", "description": "Book title or author name."},
+                "book":        {"type": "STRING", "description": "Alias for query."},
+                "book_id":     {"type": "STRING", "description": "LibriVox book ID to skip search."},
+                "chapter":     {"type": "INTEGER", "description": "Chapter number to play (1-indexed, default 1)."},
+                "chapter_url": {"type": "STRING", "description": "Direct chapter audio URL to play immediately."},
+            },
+            "required": [],
+        },
     },
     {
         "name": "youtube_video",
@@ -3865,6 +3891,10 @@ class JarvisLive:
             elif name == "broadcast_control":
                 r = await asyncio.to_thread(lambda: broadcast_control(parameters=args, response=None, player=self.ui, session_memory=None))
                 result = r or "Broadcast sent."
+
+            elif name == "audiobook_control":
+                r = await asyncio.to_thread(lambda: audiobook_control(parameters=args, response=None, player=self.ui, session_memory=None))
+                result = r or "Audiobook action completed."
 
             elif name == "date_time":
                 result = self._date_time_authority.answer_action(
