@@ -86,6 +86,7 @@ shopping_list = _lazy_action("actions.shopping_list", "shopping_list")
 news_control = _lazy_action("actions.news_control", "news_control")
 alarm_control = _lazy_action("actions.alarm_control", "alarm_control")
 transport_schedules = _lazy_action("actions.transport_schedules", "transport_schedules")
+_batch_home_action_mod = None  # loaded lazily in dispatch
 computer_settings = _lazy_action("actions.computer_settings", "computer_settings")
 screen_process = _lazy_action("actions.screen_processor", "screen_process")
 youtube_video = _lazy_action("actions.youtube_video", "youtube_video")
@@ -2482,6 +2483,44 @@ TOOL_DECLARATIONS = [
         }
     },
     {
+        "name": "batch_home_action",
+        "description": (
+            "Control MULTIPLE smart home devices simultaneously with one command. "
+            "Use this when the user wants to control a room, a group, or several devices at once. "
+            "Examples: 'apaga todas las luces del salón', 'enciende todo en el dormitorio', "
+            "'apaga la bombilla mueble y la bombilla TV'. "
+            "Each target is resolved by LILITH via natural language. "
+            "Only turn_on and turn_off are supported. Results are reported per device. "
+            "For a single device, use lilith_home_action instead."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "targets": {
+                    "type": "ARRAY",
+                    "items": {"type": "STRING"},
+                    "description": (
+                        "List of device names to control. Each is a natural language device name. "
+                        "Examples: ['bombilla mueble', 'bombilla TV'], ['luz salón', 'enchufe hub']"
+                    ),
+                },
+                "action": {
+                    "type": "STRING",
+                    "enum": ["turn_on", "turn_off"],
+                    "description": "Action to apply to all targets.",
+                },
+                "parameters": {
+                    "type": "OBJECT",
+                    "description": (
+                        "Optional HA parameters applied to all targets. "
+                        "E.g. brightness_pct, transition. Same as lilith_home_action."
+                    ),
+                },
+            },
+            "required": ["targets", "action"],
+        },
+    },
+    {
         "name": "lilith_home_action",
         "description": (
             "Control a smart home device NOW through LILITH and Home Assistant. Use only for an "
@@ -4239,6 +4278,23 @@ class JarvisLive:
                             )
                         except Exception as exc:
                             result = f"LILITH memory delete failed: {exc}"
+
+            elif name == "batch_home_action":
+                bridge = getattr(self, "_lilith", None)
+                if bridge is None or not bridge.is_running:
+                    result = "LILITH is not available. Cannot control home devices."
+                else:
+                    global _batch_home_action_mod
+                    if _batch_home_action_mod is None:
+                        import importlib
+                        _batch_home_action_mod = importlib.import_module("actions.batch_home_action")
+                    client = bridge._runtime.client
+                    result = await _batch_home_action_mod.batch_home_action_async(
+                        targets=[str(t) for t in (args.get("targets") or [])],
+                        action=str(args.get("action", "turn_on")),
+                        client=client,
+                        ha_params=args.get("parameters") or None,
+                    ) or "Batch action completed."
 
             elif name == "lilith_home_action":
                 bridge = getattr(self, "_lilith", None)

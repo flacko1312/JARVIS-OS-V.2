@@ -2,16 +2,16 @@
   "meta": {
     "project": "NEST 68",
     "snapshot_date": "2026-11-05",
-    "snapshot_version": 3,
+    "snapshot_version": 4,
     "audited_by": "Claude Sonnet 4.6 (AUTOPILOT CONTINUO)",
     "aurora_branch": "codex/neural-voice-visual",
     "note": "Versioned snapshot — STATUS.json is gitignored; this file is committed. Update when capabilities change.",
-    "tool_count_aurora": 60,
-    "tool_count_ubuntu": 70,
-    "tools_new_this_session": ["timer", "calendar_control", "traffic_info", "radio_control", "podcast_control", "broadcast_control", "audiobook_control", "shopping_list", "news_control", "alarm_control", "transport_schedules"],
-    "total_new_tools": 11,
-    "tests_aurora": "356 passed (all new tool tests including transport_schedules 32), 0 failures",
-    "tests_ubuntu": "356 passed (all new tool tests including transport_schedules 32), 0 failures",
+    "tool_count_aurora": 61,
+    "tool_count_ubuntu": 71,
+    "tools_new_this_session": ["timer", "calendar_control", "traffic_info", "radio_control", "podcast_control", "broadcast_control", "audiobook_control", "shopping_list", "news_control", "alarm_control", "transport_schedules", "batch_home_action"],
+    "total_new_tools": 12,
+    "tests_aurora": "373 passed (transport_schedules 32 + batch_home_action 17), 0 failures",
+    "tests_ubuntu": "373 passed (transport_schedules 32 + batch_home_action 17), 0 failures",
     "lilith_status": "RUNNING — Docker container lilith_core healthy, port 8000, database+mqtt+kernel+home_assistant online",
     "lilith_api_url_aurora": "CONFIGURED — http://192.168.1.50:8000, confirmed authenticated endpoints working",
     "lilith_authenticated_endpoints": ["health", "runtime/status", "memory/search", "memory/context", "notifications", "git/status", "source/list", "docs/list", "home/resolve", "commands/submit"],
@@ -47,13 +47,13 @@
     "REQUIERE_HARDWARE": ["B16","B17","C32","C33","F55","F56","F57","F58","F59","F60"]
   },
   "capability_count": {
-    "OPERATIVO": 39,
-    "PARCIAL": 13,
+    "OPERATIVO": 41,
+    "PARCIAL": 11,
     "DESCONOCIDO": 7,
     "AUSENTE": 1,
     "BLOQUEADO": 4,
     "REQUIERE_HARDWARE": 6,
-    "note": "Up from 38 OPERATIVO last checkpoint (+1 E51 transport_schedules fully registered)"
+    "note": "Up from 39 OPERATIVO last checkpoint (+2 B23/B24 batch_home_action)"
   },
   "blocking_items_for_user": {
     "GCAL_OAUTH": "E44/E45: Google Calendar OAuth client JSON needed. Set GCAL_OAUTH_CLIENT_FILE or place in C:\\JARVIS\\config\\gcal_client.json",
@@ -64,8 +64,8 @@
   "android_apk_tools": {
     "gateway_port": 7471,
     "invoke_endpoint": "POST /api/tool/invoke",
-    "new_tools_registered": ["timer","alarm_control","shopping_list","news_control","radio_control","podcast_control","audiobook_control","broadcast_control","calendar_control","traffic_info","transport_schedules"],
-    "total_permission_rules": 84,
+    "new_tools_registered": ["timer","alarm_control","shopping_list","news_control","radio_control","podcast_control","audiobook_control","broadcast_control","calendar_control","traffic_info","transport_schedules","batch_home_action"],
+    "total_permission_rules": 85,
     "permission_levels": {
       "timer": "SAFE_WRITE",
       "alarm_control": "SAFE_WRITE",
@@ -77,7 +77,8 @@
       "broadcast_control": "SAFE_WRITE",
       "calendar_control": "READ_ONLY (create/delete=CONFIRM_REQUIRED)",
       "traffic_info": "READ_ONLY",
-      "transport_schedules": "READ_ONLY"
+      "transport_schedules": "READ_ONLY",
+      "batch_home_action": "SAFE_WRITE"
     }
   }
 }

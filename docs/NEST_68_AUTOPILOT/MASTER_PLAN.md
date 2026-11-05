@@ -50,8 +50,8 @@ Flujo canónico: Usuario → AURORA/JARVIS → LILITH (autorización/memoria/rut
 | 20 | Automatizaciones por horarios | LILITH | OPERATIVO | OPERATIVO | OPERATIVO | LILITH routines.create soporta schedule_type; alarm_control + timer también |
 | 21 | Automatizaciones por voz | AURORA→LILITH | OPERATIVO | OPERATIVO | OPERATIVO | Vía lilith_routine; routines.list confirmado vía commands/submit |
 | 22 | Automatizaciones por eventos | LILITH→HA | AUSENTE | AUSENTE | DESCONOCIDO | Requiere triggers de sensores HA; sin implementar |
-| 23 | Agrupación por habitaciones | LILITH→HA | PARCIAL | PARCIAL | DESCONOCIDO | home.resolve funcional; entidades HA sin inventariar |
-| 24 | Control simultáneo dispositivos | LILITH→HA | PARCIAL | PARCIAL | DESCONOCIDO | home.action funciona por entidad; multi-entity requiere bucle JARVIS |
+| 23 | Agrupación por habitaciones | LILITH→HA | OPERATIVO | OPERATIVO | DESCONOCIDO | batch_home_action tool: multi-target vía home.resolve; grupos por habitación vía lista; 17 tests |
+| 24 | Control simultáneo dispositivos | LILITH→HA | OPERATIVO | OPERATIVO | DESCONOCIDO | batch_home_action tool: targets=[...], action=turn_on/off; ejecución concurrente; dispatch AURORA+Ubuntu |
 
 ### BLOQUE C — Audio y multimedia (25–35)
 
@@ -129,15 +129,15 @@ Flujo canónico: Usuario → AURORA/JARVIS → LILITH (autorización/memoria/rut
 | Bloque | Total | OPERATIVO | PARCIAL | DESCONOCIDO | AUSENTE | BLOQUEADO | REQUIERE HARDWARE |
 |---|---|---|---|---|---|---|---|
 | A — Voz/IA | 10 | 7 | 1 | 2 | 0 | 0 | 0 |
-| B — Domótica | 14 | 4 | 4 | 1 | 2 | 1 | 2 |
+| B — Domótica | 14 | 6 | 2 | 1 | 2 | 1 | 2 |
 | C — Multimedia | 11 | 7 | 2 | 0 | 1 | 0 | 1 (BT) |
 | D — Comunicación | 5 | 4 | 0 | 0 | 0 | 1 | 0 |
 | E — Organización | 14 | 11 | 3 | 0 | 0 | 0 | 0 |
 | F — Conectividad | 7 | 1 | 0 | 0 | 0 | 0 | 6 |
 | G — Herramientas | 7 | 5 | 2 | 0 | 0 | 2 | 0 |
-| **Total** | **68** | **39** | **12** | **3** | **3** | **4** | **9** |
+| **Total** | **68** | **41** | **10** | **3** | **3** | **4** | **9** |
 
-*Actualizado 2026-11-05 (sesión 4): E51 transport_schedules completado y desplegado en AURORA+Ubuntu. 39/68 OPERATIVO.*
+*Actualizado 2026-11-05 (sesión 4): E51 transport_schedules + B23/B24 batch_home_action completados. 41/68 OPERATIVO.*
 
 *Matter/Thread están en AUSENTE (bloque B, filas 16-17) por hardware.
 

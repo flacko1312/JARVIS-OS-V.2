@@ -22,7 +22,7 @@ EXPECTED_TOOLS = {
     "lilith_source_list", "lilith_source_read", "lilith_source_search", "lilith_git_status",
     "lilith_command_submit", "lilith_routine", "open_capabilities_catalog",
     "calculator", "timer", "calendar_control", "traffic_info",
-    "radio_control", "podcast_control", "broadcast_control", "audiobook_control", "shopping_list", "news_control", "alarm_control", "transport_schedules",
+    "radio_control", "podcast_control", "broadcast_control", "audiobook_control", "shopping_list", "news_control", "alarm_control", "transport_schedules", "batch_home_action",
 }
 
 

@@ -1,7 +1,7 @@
 # HANDOFF — Instrucciones para reanudar el trabajo
 
-Última actualización: 2026-11-05 (sesión 4 — E51 transport_schedules completo)
-Checkpoint: 11 herramientas desplegadas en AURORA+Ubuntu. 39/68 OPERATIVO.
+Última actualización: 2026-11-05 (sesión 4 — E51 transport_schedules + B23/B24 batch_home_action)
+Checkpoint: 12 herramientas desplegadas en AURORA+Ubuntu. 41/68 OPERATIVO.
 
 ---
 
@@ -17,17 +17,16 @@ Checkpoint: 11 herramientas desplegadas en AURORA+Ubuntu. 39/68 OPERATIVO.
 
 ## Estado actual del ecosistema (2026-11-05)
 
-### AURORA/JARVIS Windows — 60 tools, branch codex/neural-voice-visual
-- 39/68 capacidades OPERATIVO
-- 356/356 tests pasan (incluye transport_schedules 32/32)
+### AURORA/JARVIS Windows — 61 tools, branch codex/neural-voice-visual
+- 41/68 capacidades OPERATIVO
+- 373/373 tests pasan (transport_schedules 32 + batch_home_action 17)
 - LILITH_API_URL=http://192.168.1.50:8000 — configurado y verificado
 - Todos los endpoints `/api/v1/integration/*` autenticados funcionando
 
-### JARVIS Ubuntu Headless — `/home/flako1312/jarvis-headless` — 70 tools
-- 356/356 tests pasan + 3/3 ToolContractTests
-- Puerto 8000: API principal (Gemini Live headless)
-- Puerto 7471: Android APK gateway — 84 reglas de permisos para 11 tools (incluye transport_schedules)
-- transport_schedules desplegado y registrado (lazy import + schema + dispatch + qa_audit)
+### JARVIS Ubuntu Headless — `/home/flako1312/jarvis-headless` — 71 tools
+- 373/373 tests pasan + 3/3 ToolContractTests
+- Puerto 7471: Android APK gateway — 85 reglas de permisos para 12 tools
+- transport_schedules + batch_home_action desplegados y registrados (lazy import + schema + dispatch + qa_audit)
 
 ### LILITH Core — Docker `lilith_core`, puerto 8000
 - Estado: RUNNING, healthy, database+mqtt+kernel+home_assistant=true
