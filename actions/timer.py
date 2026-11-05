@@ -12,9 +12,8 @@ import sys
 import tempfile
 import threading
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from zoneinfo import ZoneInfo
 
 _TIMERS: dict[str, threading.Timer] = {}  # id -> live Timer handle
 _LOCK = threading.Lock()
@@ -64,7 +63,7 @@ def _save_registry(items: list[dict]) -> None:
 
 
 def _active_registry() -> list[dict]:
-    now = datetime.now(ZoneInfo("UTC"))
+    now = datetime.now(timezone.utc)
     active = [
         item for item in _load_registry()
         if _fires_at(item) is not None and _fires_at(item) > now
@@ -76,7 +75,7 @@ def _active_registry() -> list[dict]:
 def _fires_at(item: dict) -> datetime | None:
     try:
         t = datetime.fromisoformat(str(item["fires_at"]))
-        return t if t.tzinfo else t.replace(tzinfo=ZoneInfo("UTC"))
+        return t if t.tzinfo else t.replace(tzinfo=timezone.utc)
     except (KeyError, TypeError, ValueError):
         return None
 
@@ -176,7 +175,7 @@ def _remaining_str(item: dict) -> str:
     fires = _fires_at(item)
     if fires is None:
         return "desconocido"
-    remaining = int((fires - datetime.now(ZoneInfo("UTC"))).total_seconds())
+    remaining = int((fires - datetime.now(timezone.utc)).total_seconds())
     if remaining <= 0:
         return "expirado"
     return _format_duration(remaining)
@@ -252,21 +251,21 @@ def timer(
     duplicate = next(
         (i for i in items
          if i.get("label", "").lower() == label.lower()
-         and abs(int((_fires_at(i) or datetime.now(ZoneInfo("UTC"))) - datetime.now(ZoneInfo("UTC"))).total_seconds() - seconds) < 10),
+         and abs(int((_fires_at(i) or datetime.now(timezone.utc)) - datetime.now(timezone.utc)).total_seconds() - seconds) < 10),
         None,
     )
     if duplicate:
         return f"Ya hay un temporizador similar activo: {duplicate.get('id')}."
 
     timer_id = f"tmr_{uuid.uuid4().hex[:10]}"
-    fires_at = datetime.now(ZoneInfo("UTC")) + timedelta(seconds=seconds)
+    fires_at = datetime.now(timezone.utc) + timedelta(seconds=seconds)
 
     record: dict = {
         "id": timer_id,
         "label": label,
         "duration_seconds": seconds,
         "fires_at": fires_at.isoformat(),
-        "created_at": datetime.now(ZoneInfo("UTC")).isoformat(),
+        "created_at": datetime.now(timezone.utc).isoformat(),
     }
 
     handle = threading.Timer(seconds, _on_timer_fire, args=(timer_id, label, player))

@@ -1,0 +1,32 @@
+{
+  "meta": {
+    "project": "NEST 68",
+    "snapshot_date": "2026-11-05",
+    "audited_by": "Claude Sonnet 4.6 (AUTOPILOT CONTINUO)",
+    "aurora_branch": "codex/neural-voice-visual",
+    "note": "Versioned snapshot — STATUS.json is gitignored; this file is committed. Update when capabilities change.",
+    "tool_count_aurora": 59,
+    "tools_new_this_session": ["timer", "calendar_control", "traffic_info", "radio_control", "podcast_control", "broadcast_control", "audiobook_control", "shopping_list", "news_control", "alarm_control"],
+    "total_new_tools": 10,
+    "tests_aurora": "324 passed (all new tool tests), 0 failures",
+    "tests_ubuntu": "324 passed (all new tool tests), 0 failures",
+    "lilith_status": "RUNNING — Docker container lilith_core healthy, port 8000, database+mqtt online",
+    "lilith_api_url_aurora": "NOT CONFIGURED in .env — user must add LILITH_API_URL=http://<lilith-host>:8000",
+    "home_assistant": "Running in Docker (homeassistant/home-assistant:stable), 7 days uptime"
+  },
+  "tool_count_discrepancy_note": "10 tools implemented total (timer+calendar+traffic from earlier + 7 from final batch). Opening message said '9 tools' — was a typo (should be 10). Table showed only 7 (last batch). All 10 are verified deployed on AURORA and Ubuntu.",
+  "capabilities_summary": {
+    "OPERATIVO_aurora": ["A1","A3","A4","A5","A6","A7","A8","A10","B19","B21","C25","C26","C27","C34","D39","D40","E42","E43","E46","E47","E48","E50","E52","E53","E54","F61","G64","G65","G66","G67"],
+    "PARCIAL_aurora": ["A2","A9","B11","B12","B13","B14","B15","B20","B23","B24","C28","C29","C30","C31","C35_AUSENTE","D37","D38","E41","E44","E45","E49","E51","G68"],
+    "AUSENTE": ["B22","C35"],
+    "BLOQUEADO": ["D36","B18","G62","G63"],
+    "REQUIERE_HARDWARE": ["B16","B17","C32","C33","F55","F56","F57","F58","F59","F60"],
+    "DESCONOCIDO_ubuntu": ["A1-A10 (all voice/live)", "B19","B21","C25-C27","C34","D39","D40","E42-E45","E47","E48","E51","E52-E54","F61","G64-G67"]
+  },
+  "blocking_items_for_user": {
+    "LILITH_API_URL": "Add to C:\\JARVIS\\.env: LILITH_API_URL=http://100.95.4.122:8000 (Tailscale) or http://192.168.1.50:8000 (LAN). Required for broadcast relay, home actions from AURORA.",
+    "GCAL_OAUTH": "E44/E45: Google Calendar OAuth client JSON needed. Set GCAL_OAUTH_CLIENT_FILE or place in C:\\JARVIS\\config\\gcal_client.json",
+    "ORS_API_KEY": "E49: Free OpenRouteService API key from openrouteservice.org. Set via jarvis: 'configura tráfico api_key=<key>'",
+    "PHYSICAL_VALIDATION": "C28/C29/C30/D37/D38/E41 require speakers connected for audio validation"
+  }
+}

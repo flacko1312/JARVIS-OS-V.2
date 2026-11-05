@@ -2,6 +2,55 @@
 
 ---
 
+## 2026-11-05 — AUTOPILOT: Auditoría de integración, corrección tzdata, despliegue completo Ubuntu
+
+**Autor:** Claude Sonnet 4.6 (automatizado — AUTOPILOT CONTINUO)
+**Rama:** `codex/neural-voice-visual`
+
+### Hallazgos de auditoría
+
+#### LILITH Core: ACTIVO (no estaba inactivo)
+- Contenedor Docker `lilith_core` activo y saludable en puerto 8000
+- API responde: `{"status":"online","database":true,"mqtt":true}`
+- Home Assistant también corriendo (`homeassistant/home-assistant:stable`, 7 días uptime)
+- **Acción necesaria del usuario:** Añadir `LILITH_API_URL=http://100.95.4.122:8000` (Tailscale) o `http://192.168.1.50:8000` (LAN) en `C:\JARVIS\.env` para activar broadcast relay y acciones de hogar desde AURORA
+
+#### Corrección tzdata/zoneinfo (19 fallos en test_timer.py)
+- **Causa:** `actions/timer.py` usaba `ZoneInfo("UTC")` que requiere el paquete `tzdata` en Python 3.14 en Windows
+- **Corrección:** Reemplazados todos los `ZoneInfo("UTC")` → `datetime.timezone.utc` (stdlib, sin dependencias externas)
+- Afectaba exactamente 19 tests (todos en `TestTimerCreate`, `TestTimerList`, `TestTimerCancel`, `TestTimerFireCallback`, `TestTimerUnknownAction`)
+- **Resultado:** 324/324 passed en AURORA (incluye test_timer.py: 36/36)
+
+#### Herramientas faltantes en Ubuntu headless
+- `calendar_control.py` y `traffic_info.py` nunca habían sido desplegadas en Ubuntu
+- `test_timer.py`, `test_calendar_control.py`, `test_traffic_info.py` faltaban en Ubuntu
+- Ubuntu `main.py` no tenía registradas: `timer`, `calendar_control`, `traffic_info`
+- Ubuntu `core/qa_audit.py` no tenía los nuevos 10 tools en `EXPECTED_TOOLS`
+
+#### Correcciones aplicadas en Ubuntu headless
+- Desplegados: `actions/calendar_control.py`, `actions/traffic_info.py`, `actions/timer.py` (corregido)
+- Copiados: `tests/test_timer.py`, `tests/test_calendar_control.py`, `tests/test_traffic_info.py`
+- Parchado `main.py`: lazy imports, TOOL_DECLARATIONS, dispatch branches para timer/calendar/traffic
+- Parchado `core/qa_audit.py`: añadidos los 10 nuevos tools a EXPECTED_TOOLS
+- **Resultado:** 324/324 passed en Ubuntu headless
+
+#### Discrepancia tool count (7 vs 9 en mensaje anterior)
+- Corrección: Se implementaron **10 herramientas nuevas** en total (no 7 ni 9)
+  - 3 herramientas de sesión anterior: `timer`, `calendar_control`, `traffic_info`
+  - 7 herramientas del lote final: `radio_control`, `podcast_control`, `broadcast_control`, `audiobook_control`, `shopping_list`, `news_control`, `alarm_control`
+- El mensaje inicial decía "9" (typo) y la tabla mostraba solo las 7 del último commit
+
+#### STATUS_SNAPSHOT.json creado
+- Nuevo archivo versionado `docs/NEST_68_AUTOPILOT/STATUS_SNAPSHOT.json`
+- No está en `.gitignore` (que solo excluye `status.json` minúsculas)
+- Contiene: conteo de tools, estados de capacidades, bloqueadores pendientes del usuario
+
+### Tests finales
+- AURORA: **324 passed** (10 módulos de herramientas nuevas)
+- Ubuntu headless: **324 passed** (10 módulos de herramientas nuevas)
+
+---
+
 ## 2026-11-05 — AUTOPILOT: E41 alarmas de reloj
 
 **Autor:** Claude Sonnet 4.6 (automatizado — AUTOPILOT CONTINUO)
