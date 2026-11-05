@@ -78,6 +78,9 @@ reminder = _lazy_action("actions.reminder", "reminder")
 timer = _lazy_action("actions.timer", "timer")
 calendar_control = _lazy_action("actions.calendar_control", "calendar_control")
 traffic_info = _lazy_action("actions.traffic_info", "traffic_info")
+radio_control = _lazy_action("actions.radio_control", "radio_control")
+podcast_control = _lazy_action("actions.podcast_control", "podcast_control")
+broadcast_control = _lazy_action("actions.broadcast_control", "broadcast_control")
 computer_settings = _lazy_action("actions.computer_settings", "computer_settings")
 screen_process = _lazy_action("actions.screen_processor", "screen_process")
 youtube_video = _lazy_action("actions.youtube_video", "youtube_video")
@@ -275,7 +278,8 @@ _MEMORY_LOOKUP_TOOL_NAMES = frozenset({"local_memory_search", "lilith_memory_sea
 # Tools that must execute serially because they can change external/user-visible state.
 # This is also the scope for the per-turn exact-effect deduplicator below.
 _MUTATING_TOOL_NAMES = frozenset({
-    "open_app", "send_message", "prepare_message_reply", "email_control", "reminder", "timer", "calendar_control", "traffic_info",
+    "open_app", "send_message", "prepare_message_reply", "email_control", "reminder", "timer",
+    "calendar_control", "traffic_info", "radio_control", "podcast_control", "broadcast_control",
     "youtube_video", "media_control", "browser_control", "agent_task",
     "computer_settings", "computer_control", "desktop_control", "file_controller",
     "file_processor", "code_helper", "dev_agent", "game_updater", "flight_finder",
@@ -1569,6 +1573,63 @@ TOOL_DECLARATIONS = [
                 "home":        {"type": "STRING", "description": "Home address to save; for setup"},
                 "work":        {"type": "STRING", "description": "Work address to save; for setup"},
                 "api_key":     {"type": "STRING", "description": "OpenRouteService API key to save; for setup"},
+            },
+            "required": []
+        }
+    },
+    {
+        "name": "radio_control",
+        "description": (
+            "Play internet radio streams on this device. "
+            "Actions: play (start a station), stop (stop playback), status (what's playing), "
+            "list (show preset stations), add (save a new station), remove (delete a saved station). "
+            "Preset stations include RTVE Radio 1/2/3, Cadena SER, COPE, Onda Cero, Los 40, BBC."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "action":  {"type": "STRING", "description": "play | stop | status | list | add | remove (default: play)"},
+                "station": {"type": "STRING", "description": "Station name, key (e.g. 'radio1', 'ser', 'cope'), or direct stream URL; for play"},
+                "key":     {"type": "STRING", "description": "Short identifier for the station; for add/remove"},
+                "name":    {"type": "STRING", "description": "Display name for the station; for add"},
+                "url":     {"type": "STRING", "description": "Stream URL; for add"},
+            },
+            "required": []
+        }
+    },
+    {
+        "name": "podcast_control",
+        "description": (
+            "Search for podcasts and play episodes. Uses the iTunes Podcast Search API (no key needed). "
+            "Actions: search (find podcasts by name/topic), episodes (list recent episodes), "
+            "play (play the latest episode or a specific URL), stop (stop playback), status (what's playing)."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "action":      {"type": "STRING", "description": "search | episodes | play | stop | status (default: search)"},
+                "query":       {"type": "STRING", "description": "Podcast name or topic to search/play"},
+                "podcast":     {"type": "STRING", "description": "Alias for query"},
+                "feed_url":    {"type": "STRING", "description": "RSS feed URL to get episodes from directly"},
+                "episode_url": {"type": "STRING", "description": "Direct audio URL for a specific episode to play"},
+            },
+            "required": []
+        }
+    },
+    {
+        "name": "broadcast_control",
+        "description": (
+            "Broadcast a spoken announcement on this device's speakers. "
+            "On AURORA uses Gemini Live TTS; on Ubuntu headless uses local TTS. "
+            "With action 'broadcast' also attempts to relay via LILITH to home speakers. "
+            "Actions: announce/say (local TTS), broadcast (local + LILITH relay attempt), status."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "action":  {"type": "STRING", "description": "announce | broadcast | status (default: announce)"},
+                "message": {"type": "STRING", "description": "Text to speak aloud"},
+                "text":    {"type": "STRING", "description": "Alias for message"},
             },
             "required": []
         }
@@ -3792,6 +3853,18 @@ class JarvisLive:
             elif name == "traffic_info":
                 r = await asyncio.to_thread(lambda: traffic_info(parameters=args, response=None, player=self.ui, session_memory=None))
                 result = r or "Traffic info retrieved."
+
+            elif name == "radio_control":
+                r = await asyncio.to_thread(lambda: radio_control(parameters=args, response=None, player=self.ui, session_memory=None))
+                result = r or "Radio action completed."
+
+            elif name == "podcast_control":
+                r = await asyncio.to_thread(lambda: podcast_control(parameters=args, response=None, player=self.ui, session_memory=None))
+                result = r or "Podcast action completed."
+
+            elif name == "broadcast_control":
+                r = await asyncio.to_thread(lambda: broadcast_control(parameters=args, response=None, player=self.ui, session_memory=None))
+                result = r or "Broadcast sent."
 
             elif name == "date_time":
                 result = self._date_time_authority.answer_action(

@@ -2,6 +2,32 @@
 
 ---
 
+## 2026-11-05 — AUTOPILOT: C28 radio, C29 podcasts, D38 broadcast
+
+**Autor:** Claude Sonnet 4.6 (automatizado — AUTOPILOT CONTINUO)
+**Rama:** `codex/neural-voice-visual`
+
+### C28 — radio_control (Internet Radio)
+- `actions/radio_control.py`: 10 emisoras builtin (RTVE R1/R2/R3, SER, COPE, Onda Cero, Los40, Rock FM, BBC R1/R6), registry JSON en `~/.jarvis/radio/`, streaming via ffplay, fallback os.startfile/xdg-open
+- `tests/test_radio_control.py`: 31 tests → **76/76 PASS** (AURORA + Ubuntu headless)
+- Desplegado y registrado en AURORA (`main.py` + `core/qa_audit.py`) y Ubuntu headless
+- **Blocker:** validación física (altavoces)
+
+### C29 — podcast_control (Podcasts)
+- `actions/podcast_control.py`: iTunes Search API (sin clave), RSS parser con namespace `itunes:`, ffplay streaming, episodios recientes
+- `tests/test_podcast_control.py`: 26 tests → **76/76 PASS** (AURORA + Ubuntu headless)
+- Desplegado en ambos entornos
+
+### D38 — broadcast_control (TTS Broadcast)
+- `actions/broadcast_control.py`: player.speak → tts_engine.speak → espeak-ng subprocess; relay LILITH best-effort POST `/api/broadcast`
+- `tests/test_broadcast_control.py`: 19 tests → **76/76 PASS** (AURORA + Ubuntu headless)
+- LILITH relay silencia errores (LILITH actualmente inactive); no bloquea anuncio local
+
+### Fix cross-plataforma
+- `tests/test_radio_control.py` + `tests/test_podcast_control.py`: `patch("os.startfile", create=True)` + mock `subprocess.Popen` para compatibilidad Linux (os.startfile no existe en Ubuntu)
+
+---
+
 ## 2026-11-05 — Sesión inicial: Auditoría AURORA + creación sistema de seguimiento
 
 **Autor:** Claude Sonnet 4.6 (automatizado)
