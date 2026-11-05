@@ -83,6 +83,7 @@ podcast_control = _lazy_action("actions.podcast_control", "podcast_control")
 broadcast_control = _lazy_action("actions.broadcast_control", "broadcast_control")
 audiobook_control = _lazy_action("actions.audiobook_control", "audiobook_control")
 shopping_list = _lazy_action("actions.shopping_list", "shopping_list")
+news_control = _lazy_action("actions.news_control", "news_control")
 computer_settings = _lazy_action("actions.computer_settings", "computer_settings")
 screen_process = _lazy_action("actions.screen_processor", "screen_process")
 youtube_video = _lazy_action("actions.youtube_video", "youtube_video")
@@ -281,7 +282,7 @@ _MEMORY_LOOKUP_TOOL_NAMES = frozenset({"local_memory_search", "lilith_memory_sea
 # This is also the scope for the per-turn exact-effect deduplicator below.
 _MUTATING_TOOL_NAMES = frozenset({
     "open_app", "send_message", "prepare_message_reply", "email_control", "reminder", "timer",
-    "calendar_control", "traffic_info", "radio_control", "podcast_control", "broadcast_control", "audiobook_control", "shopping_list",
+    "calendar_control", "traffic_info", "radio_control", "podcast_control", "broadcast_control", "audiobook_control", "shopping_list", "news_control",
     "youtube_video", "media_control", "browser_control", "agent_task",
     "computer_settings", "computer_control", "desktop_control", "file_controller",
     "file_processor", "code_helper", "dev_agent", "game_updater", "flight_finder",
@@ -1682,6 +1683,32 @@ TOOL_DECLARATIONS = [
                 "product":  {"type": "STRING", "description": "Alias for item."},
                 "quantity": {"type": "STRING", "description": "Amount (e.g. '2', '1kg', '500ml')."},
                 "list":     {"type": "STRING", "description": "List name (default: 'compra')."},
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "news_control",
+        "description": (
+            "Delivers spoken news headlines from curated RSS feeds. "
+            "Sources include RTVE, El País, El Mundo, BBC, Reuters, Xataka, Marca, Hacker News. "
+            "No API key required. "
+            "Actions: headlines/noticias (numbered list with descriptions), "
+            "summary/resumen (voice-ready briefing), sources/fuentes (list available feeds)."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "action": {
+                    "type": "STRING",
+                    "enum": ["headlines", "summary", "sources"],
+                    "description": "headlines: numbered list. summary: spoken briefing. sources: available feeds.",
+                },
+                "source": {
+                    "type": "STRING",
+                    "description": "Feed key (rtve, elpais, elmundo, bbc, reuters, xataka, marca, hackernews) or direct RSS URL.",
+                },
+                "count": {"type": "INTEGER", "description": "Max headlines to return (default 7)."},
             },
             "required": [],
         },
@@ -3925,6 +3952,10 @@ class JarvisLive:
             elif name == "shopping_list":
                 r = await asyncio.to_thread(lambda: shopping_list(parameters=args, response=None, player=self.ui, session_memory=None))
                 result = r or "Shopping list updated."
+
+            elif name == "news_control":
+                r = await asyncio.to_thread(lambda: news_control(parameters=args, response=None, player=self.ui, session_memory=None))
+                result = r or "News retrieved."
 
             elif name == "date_time":
                 result = self._date_time_authority.answer_action(

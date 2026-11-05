@@ -2,6 +2,19 @@
 
 ---
 
+## 2026-11-05 — AUTOPILOT: E50 noticias
+
+**Autor:** Claude Sonnet 4.6 (automatizado — AUTOPILOT CONTINUO)
+**Rama:** `codex/neural-voice-visual`
+
+### E50 — news_control (Noticias RSS)
+- `actions/news_control.py`: 9 feeds RSS curados (RTVE, El País, El Mundo, BBC, Reuters, Xataka, Marca, Hacker News), RSS 2.0 parser, headlines numerados + resumen de voz, sin clave API
+- Upgrade de PARCIAL (web_search genérico) a OPERATIVO con herramienta dedicada
+- `tests/test_news_control.py`: 28 tests → **28/28 PASS** (AURORA + Ubuntu headless)
+- Desplegado en ambos entornos
+
+---
+
 ## 2026-11-05 — AUTOPILOT: E46 listas de la compra
 
 **Autor:** Claude Sonnet 4.6 (automatizado — AUTOPILOT CONTINUO)
