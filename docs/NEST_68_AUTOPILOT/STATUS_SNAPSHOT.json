@@ -16,7 +16,7 @@
     "lilith_api_url_aurora": "CONFIGURED — http://192.168.1.50:8000, confirmed authenticated endpoints working",
     "lilith_authenticated_endpoints": ["health", "runtime/status", "memory/search", "memory/context", "notifications", "git/status", "source/list", "docs/list", "home/resolve", "commands/submit"],
     "lilith_broadcast_relay": "commands/submit with intent=broadcast returns 403 (command_intent_not_allowed) — broadcast not in allowed intents for this token. Local TTS announce works.",
-    "home_assistant": "Running in Docker. Entities audited: light.bombilla_mueble (unavailable), light.bombilla_tv (unavailable), switch.cargador_hub (unavailable), sensor.lilith_temperatura (unavailable), media_player.hub (AVAILABLE, state=off), media_player.mc_smart_tv_pro_cast (unavailable). No cover.* or climate.* entities.",
+    "home_assistant": "Running in Docker. Entities audited: light.bombilla_mueble (unavailable), light.bombilla_tv (unavailable), switch.cargador_hub (unavailable), sensor.lilith_temperatura (unavailable), media_player.hub (AVAILABLE, state=off), media_player.mc_smart_tv_pro_cast (unavailable). No cover.* or climate.* entities. NOTE: media_player domain not allowed for JARVIS token (domain_not_allowed); only light.* and switch.* domains permitted.",
     "android_apk_gateway": "Port 7471, endpoint /api/tool/invoke — 13 tools registered in headless_permissions.py (87 total rules)"
   },
   "lilith_connection": {

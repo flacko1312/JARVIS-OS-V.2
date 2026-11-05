@@ -102,7 +102,7 @@ _ROUTINES: dict[str, dict] = {
 
 def _lilith_home_action(entity_id: str, action: str,
                         extra_params: dict | None = None) -> dict:
-    """Call LILITH home action endpoint directly."""
+    """Call LILITH home/action endpoint directly."""
     import json
     import urllib.request
 
@@ -111,18 +111,14 @@ def _lilith_home_action(entity_id: str, action: str,
     if not api_url or not api_key:
         return {"ok": False, "error": "LILITH not configured"}
 
-    payload: dict[str, Any] = {
-        "intent": "home.action",
-        "action": action,
-        "entity_id": entity_id,
-    }
+    payload: dict[str, Any] = {"entity_id": entity_id, "action": action}
     if extra_params:
-        payload.update(extra_params)
+        payload["parameters"] = extra_params
 
     try:
         body = json.dumps(payload).encode()
         req = urllib.request.Request(
-            f"{api_url}/api/v1/integration/commands/submit",
+            f"{api_url}/api/v1/integration/home/action",
             data=body,
             headers={
                 "Authorization": f"Bearer {api_key}",
