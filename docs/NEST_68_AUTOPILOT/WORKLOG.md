@@ -639,3 +639,20 @@ Cambio clave: HEADLESS_SYSTEM_RULES Ubuntu corregido; home_routine deployado en 
 ### Resultado y siguiente paso
 **HALLAZGO DE CONSISTENCIA:** el recuento 44/68 no queda respaldado por la lista de IDs de la version 11. No elevar ni reducir el numero por inferencia. Proximo bloque: cotejar los 68 IDs del MASTER_PLAN y definir estados mutuamente excluyentes, conservando subestados por plataforma. Sin cambios en servicios, dispositivos, secretos ni SOAK.
 
+
+## 2026-11-05 23:00 — Reconciliacion de 68 IDs (solo lectura)
+
+**Autor:** ChatGPT / NEST 68 nocturno
+**Rama:** codex/neural-voice-visual
+
+### Verificacion
+- MASTER_PLAN.md: siete bloques A 1-10, B 11-24, C 25-35, D 36-40, E 41-54, F 55-61, G 62-68: 68 capacidades.
+- STATUS_SNAPSHOT v11, listas de estados con IDs validos: OPERATIVO_aurora 43, PARCIAL_aurora 8, AUSENTE 2, BLOQUEADO 4, REQUIERE_HARDWARE 10. Total 67 IDs distintos, sin duplicados.
+- Falta exclusivamente G67 (Audio local) en esas listas. MASTER_PLAN G67: AURORA OPERATIVO (WASAPI auditado), Ubuntu PARCIAL (ffplay, hardware no validado). La lista de tiers lo marca code_only_no_physical.
+- Particion exclusiva **propuesta, NO aplicada**: 43 OPERATIVO, 9 PARCIAL (incluye G67), 2 AUSENTE, 4 BLOQUEADO, 10 REQUIERE_HARDWARE = 68. Es una clasificacion conservadora global; no equivale a certificacion fisica.
+- Elementos A9_physical, C35_AUSENTE y home_routine_voice son anotaciones/alias, no IDs nuevos. DESCONOCIDO_ubuntu describe subestado de plataforma, no otra categoria global.
+- La cifra 44/68 del snapshot queda pendiente de correccion documental consensuada con criterios por plataforma. No se cambiaron conteos ni codigos de produccion.
+- JARVIS Ubuntu /health OK (STANDBY); LILITH /health OK (database y MQTT). Git Windows HEAD 23c6f34 al inicio, limpio; Ubuntu y LILITH con modificaciones ajenas preservadas.
+
+### Siguiente paso
+Ajustar STATUS_SNAPSHOT v12 de manera coherente con esta particion, manteniendo estados por plataforma separados; verificar que G67 permanezca PARCIAL hasta prueba fisica. Sin cambios de servicios ni SOAK.

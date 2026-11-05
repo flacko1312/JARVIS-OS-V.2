@@ -157,3 +157,10 @@ ORS_API_KEY=                              FALTA — usuario debe registrar
 - Inconsistencia STATUS_SNAPSHOT v11: OPERATIVO=44 declarado, lista OPERATIVO_aurora=43, tiers=45 (extras home_routine_voice y G67). Contadores de estados suman 72, no 68. Ver WORKLOG.
 - Proxima tarea: reconciliar MASTER_PLAN 68 IDs con STATUS_SNAPSHOT sin inventar resultados ni tocar hardware.
 - Preservar todos los cambios sin seguimiento y modificados de Ubuntu y LILITH.
+
+## Auditoria nocturna 2026-11-05 23:00
+- Se reconciliaron 67 IDs exclusivos del snapshot con los 68 del MASTER_PLAN: falta G67 (audio local) como estado global.
+- Particion conservadora propuesta: 43 OPERATIVO, 9 PARCIAL (G67 incluido), 2 AUSENTE, 4 BLOQUEADO, 10 REQUIERE_HARDWARE = 68.
+- A9_physical, C35_AUSENTE, home_routine_voice y DESCONOCIDO_ubuntu son etiquetas de subestado, no capacidades adicionales.
+- Proximo bloque: corregir STATUS_SNAPSHOT v12 sin inflar operatividad y conservar estados de cada plataforma.
+- JARVIS y LILITH health OK. Ningun servicio ni archivo Ubuntu/LILITH modificado.
