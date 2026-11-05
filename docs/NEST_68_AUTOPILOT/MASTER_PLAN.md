@@ -38,11 +38,11 @@ Flujo canónico: Usuario → AURORA/JARVIS → LILITH (autorización/memoria/rut
 
 | # | Capacidad | Responsable | Estado AURORA | Estado Ubuntu | Estado LILITH/HA | Notas |
 |---|---|---|---|---|---|---|
-| 11 | Luces inteligentes | LILITH→HA | PARCIAL (tool) | DESCONOCIDO | DESCONOCIDO | lilith_home_action tool; entidades HA sin auditar desde aquí |
-| 12 | Enchufes | LILITH→HA | PARCIAL (tool) | DESCONOCIDO | DESCONOCIDO | Misma vía que luces |
-| 13 | Persianas/cortinas | LILITH→HA | PARCIAL (tool) | DESCONOCIDO | DESCONOCIDO | Requiere entidades cover.* en HA |
-| 14 | Termostatos | LILITH→HA | PARCIAL (tool) | DESCONOCIDO | DESCONOCIDO | Requiere entidades climate.* |
-| 15 | Climatización | LILITH→HA | PARCIAL (tool) | DESCONOCIDO | DESCONOCIDO | Misma vía que termostatos |
+| 11 | Luces inteligentes | LILITH→HA | OPERATIVO | OPERATIVO | DESCONOCIDO | lilith_home_action + lilith_home_status + batch_home_action; entidades offline (físico pendiente) |
+| 12 | Enchufes | LILITH→HA | OPERATIVO | OPERATIVO | DESCONOCIDO | Misma vía; switch.cargador_hub conocido (offline) |
+| 13 | Persianas/cortinas | LILITH→HA | PARCIAL | PARCIAL | DESCONOCIDO | Requiere entidades cover.* en HA (sin registrar aún) |
+| 14 | Termostatos | LILITH→HA | PARCIAL | PARCIAL | DESCONOCIDO | Requiere entidades climate.* en HA (sin registrar aún) |
+| 15 | Climatización | LILITH→HA | PARCIAL | PARCIAL | DESCONOCIDO | Misma vía que termostatos |
 | 16 | Matter | HA | AUSENTE | AUSENTE | AUSENTE | REQUIERE HARDWARE (Matter Border Router) |
 | 17 | Thread | HA | AUSENTE | AUSENTE | AUSENTE | REQUIERE HARDWARE (Thread Border Router) |
 | 18 | Integración Google Home | — | BLOQUEADO | BLOQUEADO | BLOQUEADO | API propietaria; no acceso público oficial |
@@ -129,15 +129,15 @@ Flujo canónico: Usuario → AURORA/JARVIS → LILITH (autorización/memoria/rut
 | Bloque | Total | OPERATIVO | PARCIAL | DESCONOCIDO | AUSENTE | BLOQUEADO | REQUIERE HARDWARE |
 |---|---|---|---|---|---|---|---|
 | A — Voz/IA | 10 | 9 | 1 | 0 | 0 | 0 | 0 |
-| B — Domótica | 14 | 6 | 2 | 1 | 2 | 1 | 2 |
+| B — Domótica | 14 | 8 | 1 | 0 | 2 | 1 | 2 |
 | C — Multimedia | 11 | 7 | 2 | 0 | 1 | 0 | 1 (BT) |
 | D — Comunicación | 5 | 4 | 0 | 0 | 0 | 1 | 0 |
 | E — Organización | 14 | 11 | 3 | 0 | 0 | 0 | 0 |
 | F — Conectividad | 7 | 1 | 0 | 0 | 0 | 0 | 6 |
 | G — Herramientas | 7 | 5 | 2 | 0 | 0 | 2 | 0 |
-| **Total** | **68** | **43** | **8** | **1** | **3** | **4** | **9** |
+| **Total** | **68** | **45** | **7** | **0** | **3** | **4** | **9** |
 
-*Actualizado 2026-11-05 (sesión 4): E51/B23/B24 completos + auditoría Ubuntu herramientas (71 tools). 43/68 OPERATIVO.*
+*Actualizado 2026-11-05 (sesión 4): lilith_home_status añadido AURORA; B11/B12 OPERATIVO. 45/68 OPERATIVO.*
 
 *Matter/Thread están en AUSENTE (bloque B, filas 16-17) por hardware.
 

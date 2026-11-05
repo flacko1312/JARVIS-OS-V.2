@@ -2483,6 +2483,25 @@ TOOL_DECLARATIONS = [
         }
     },
     {
+        "name": "lilith_home_status",
+        "description": (
+            "Query the current state of a Home Assistant device or sensor through LILITH. "
+            "Use for checking temperature, humidity, light state, switch state, presence, "
+            "energy, battery, or any sensor value. Describe the device in natural language. "
+            "Read-only — does not change any device state."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "target": {
+                    "type": "STRING",
+                    "description": "Device or sensor name in natural language (e.g. 'temperatura salón', 'luz cocina', 'sensor humedad')",
+                },
+            },
+            "required": ["target"],
+        },
+    },
+    {
         "name": "batch_home_action",
         "description": (
             "Control MULTIPLE smart home devices simultaneously with one command. "
@@ -4278,6 +4297,32 @@ class JarvisLive:
                             )
                         except Exception as exc:
                             result = f"LILITH memory delete failed: {exc}"
+
+            elif name == "lilith_home_status":
+                _hs_bridge = getattr(self, "_lilith", None)
+                if _hs_bridge is None or not _hs_bridge.is_running:
+                    result = "LILITH is not connected."
+                else:
+                    _hs_client = _hs_bridge._runtime.client
+                    target = str(args.get("target", ""))
+                    if not target:
+                        result = "No device/sensor specified."
+                    else:
+                        resolved = await _hs_client.home_resolve(target)
+                        status_val = resolved.get("status", "unknown")
+                        if status_val == "resolved":
+                            entity_id = resolved["entity_id"]
+                            state_data = await _hs_client.home_entity(entity_id)
+                            result = (
+                                f"Device: {resolved.get('friendly_name', entity_id)}\n"
+                                f"Entity: {entity_id}\n"
+                                f"State: {state_data}"
+                            )
+                        elif status_val == "ambiguous":
+                            candidates = resolved.get("candidates", [])
+                            result = f"Ambiguous — multiple devices match: {candidates}"
+                        else:
+                            result = f"Could not resolve '{target}': {resolved}"
 
             elif name == "batch_home_action":
                 bridge = getattr(self, "_lilith", None)

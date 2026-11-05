@@ -1,7 +1,7 @@
 # HANDOFF — Instrucciones para reanudar el trabajo
 
-Última actualización: 2026-11-05 (sesión 4 — E51 + B23/B24 + auditoría Ubuntu A3-A9)
-Checkpoint: 12 herramientas desplegadas en AURORA+Ubuntu. 43/68 OPERATIVO.
+Última actualización: 2026-11-05 (sesión 4 — E51 + B23/B24 + lilith_home_status + auditoría Ubuntu)
+Checkpoint: 13 herramientas nuevas AURORA, 71 tools Ubuntu. 45/68 OPERATIVO.
 
 ---
 
@@ -17,8 +17,8 @@ Checkpoint: 12 herramientas desplegadas en AURORA+Ubuntu. 43/68 OPERATIVO.
 
 ## Estado actual del ecosistema (2026-11-05)
 
-### AURORA/JARVIS Windows — 61 tools, branch codex/neural-voice-visual
-- 43/68 capacidades OPERATIVO
+### AURORA/JARVIS Windows — 62 tools, branch codex/neural-voice-visual
+- 45/68 capacidades OPERATIVO
 - 373/373 tests pasan (transport_schedules 32 + batch_home_action 17)
 - LILITH_API_URL=http://192.168.1.50:8000 — configurado y verificado
 - Todos los endpoints `/api/v1/integration/*` autenticados funcionando
