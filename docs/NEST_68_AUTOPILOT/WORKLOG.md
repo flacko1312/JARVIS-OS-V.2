@@ -712,3 +712,17 @@ Revisar si el contrato /api/tool/invoke y sus permisos tienen pruebas hermeticas
 
 ### Siguiente bloque
 Auditar en lectura el riesgo de invocacion remota de lilith_home_action y documentar una propuesta de politica por dispositivo/accion sin cambiar comportamiento ni habilitar nuevas capacidades. Ampliar pruebas hermeticas solo si el riesgo y los contratos estan claros.
+## 2026-11-06 04:00 - Auditoria de politica por entidad y accion (solo lectura)
+
+**Autor:** ChatGPT / NEST 68 nocturno
+
+- Preflight: Windows HEAD 0f50b62 y arbol limpio. Ubuntu HEAD c5c0516 (54 entradas locales en git status) y LILITH HEAD 9ba6550 con cambios ajenos; sin modificarlos.
+- Health real: gateway JARVIS GET http://127.0.0.1:7471/api/health -> status=ok, STANDBY; LILITH GET http://127.0.0.1:8000/health -> online, database=true, mqtt=true. La prueba inicial de puerto 8001 no era aplicable; el gateway escucha en 7471.
+- Inspeccion: core/headless_permissions.py clasifica lilith_home_action turn_on, turn_off y toggle como SAFE_WRITE. api_server.py /api/tool/invoke exige Bearer y rechaza DENIED/CONFIRM_REQUIRED, pero SAFE_WRITE pasa directamente a _dispatch_tool.
+- En _dispatch_tool, lilith_home_action valida accion/target, resuelve entidad mediante LILITH y llama home_action. No hay comprobacion adicional de confirmacion por entity_id, dominio, dispositivo o accion en esta capa. LILITH aplica su propia allowlist (segun snapshot, solo light y turn_on/turn_off), por lo que el riesgo real queda limitado por ese segundo control, que NO se ha sometido a bypass ni probado fisicamente.
+- Riesgo: cualquier cliente con token valido del gateway puede solicitar encendido/apagado de luces autorizadas sin confirmacion vocal. toggle pasa permiso gateway pero la allowlist de LILITH podria rechazarlo. No afirmar que otros dominios sean controlables.
+- Propuesta NO desplegada: exigir confirmacion explicita para toda mutacion HA desde /api/tool/invoke; definir allowlist por entidad y accion (deny-by-default), separar permisos de consulta y accion, y agregar pruebas hermeticas que comprueben bloqueo antes de _dispatch_tool y ausencia de llamadas a home_action. Evaluar compatibilidad con APK y flujo de confirmacion antes de cualquier cambio.
+- No se enviaron POST, no se tocaron dispositivos, permisos, servicios ni SOAK. No se ejecutaron pruebas de efectos; revision estatica y GET /health exclusivamente.
+
+### Siguiente bloque
+Disenar tests aislados de politica remota (sin desplegar): casos por dominio, accion, entidad, token y ausencia de confirmacion; comprobar contrato APK para evitar regresion. Mantener doble confirmacion Alexa intacta.

@@ -188,3 +188,9 @@ ORS_API_KEY=                              FALTA — usuario debe registrar
 - Observacion: lilith_home_action turn_on/turn_off/toggle SAFE_WRITE permite control directo autenticado sin confirmacion vocal; no se cambio politica ni se acciono HA.
 - Health Ubuntu JARVIS y LILITH OK; cambios ajenos Ubuntu/LILITH preservados.
 - Proximo bloque: revisar politica remota por entidad y accion; proponer mitigacion sin desplegar.
+
+## Auditoria nocturna 2026-11-06 04:00
+- JARVIS gateway /api/health en puerto 7471: OK STANDBY; LILITH /health puerto 8000: online, DB y MQTT OK.
+- Confirmado en codigo: /api/tool/invoke permite lilith_home_action turn_on/turn_off/toggle como SAFE_WRITE tras autenticar, sin confirmacion adicional por entidad. LILITH conserva su propia allowlist, documentada como light/turn_on/turn_off; no se ha probado bypass.
+- Propuesta documental: confirmacion explicita para mutaciones HA remotas y allowlist granular por entidad/accion, previa evaluacion del contrato APK; sin desplegar cambios.
+- Ubuntu/LILITH sin modificar, SOAK intactos. Siguiente bloque: pruebas hermeticas de politica remota y compatibilidad APK.
