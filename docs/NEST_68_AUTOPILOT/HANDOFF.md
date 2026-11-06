@@ -323,3 +323,10 @@ ORS_API_KEY=                              FALTA — usuario debe registrar
 - Añadidos 12 tests en `tests/test_multiroom_expiry_dry_run.py`; `py -m pytest -q tests/test_multiroom_expiry_dry_run.py tests/test_multiroom_auth_dry_run.py tests/test_multiroom_malformed_dry_run.py` => **42 passed**.
 - Intento de suite amplia `py -m pytest -q tests -k multiroom` bloqueado en coleccion por **40 errores de dependencias ausentes** en Python global 3.14 (google/genai, PyQt6, playwright, sqlalchemy, etc.). No significa fallo de los tests multiroom; no se instalaron dependencias ni se toco el entorno activo. Proximo ciclo: localizar entorno virtual de proyecto y ejecutar bateria dirigida, sin alterar servicios.
 - Estado C35: preparacion software hermetica, NO operativo; transporte real, secretos, audio fisico y validacion pendientes. Ubuntu tiene numerosos cambios ajenos sin seguimiento: intactos. Snapshot global de 68 capacidades sin promocion por tests simulados.
+
+## 2026-11-06 — Diagnostico entorno Python Windows (ciclo seguro)
+- Leidos STATUS_SNAPSHOT v12, MASTER_PLAN, HANDOFF, WORKLOG y Git de Windows/Ubuntu. Ubuntu dirty/untracked ajeno preservado; Windows limpio antes de este bloque.
+- Identificado entorno correcto `C:\JARVIS\.venv\Scripts\python.exe` (Python 3.14.5), con PyQt6, playwright, sqlalchemy, google y pytest disponibles. El Python global no era el entorno del proyecto; no instalar dependencias.
+- Suite completa de seleccion multiroom desde entorno de proyecto: `.\.venv\Scripts\python.exe -m pytest -q -p no:cacheprovider tests -k multiroom --disable-warnings --maxfail=1` => **110 passed, 1968 deselected, 1 warning** (exit 0).
+- Sin red, audio fisico, reinicios, HA/LILITH ni cambios Ubuntu. C35 permanece NO operativo fisicamente: tests de simulacion, no transporte real.
+- Siguiente: diagnosticar la advertencia de pytest y auditar pruebas hermeticas de integracion B22 sin tocar HA.
