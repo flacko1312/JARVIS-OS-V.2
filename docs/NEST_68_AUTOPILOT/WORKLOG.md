@@ -887,3 +887,11 @@ Inspeccionar exclusivamente el despacho de batch_home_action y la ruta de /api/c
 - Nuevos `core/ha_event_proposals_dry_run.py` y `tests/test_ha_event_proposals_dry_run.py`: propuestas de IDs de rutinas sin ejecutar nada; deduplicacion y rechazo de datos malformados.
 - `.\.venv\Scripts\python.exe -m pytest -q -p no:cacheprovider tests/test_ha_event_dry_run.py tests/test_ha_event_proposals_dry_run.py` => **13 passed** (6 nuevas). Sin red, sonido, HA, LILITH ni dispositivos.
 - B22 sigue AUSENTE como automatizacion productiva; falta integracion autorizada con el flujo de eventos y autoridad de rutinas LILITH. Siguiente: pruebas de eventos repetidos y diseño de contrato de entrega sin activar HA.
+
+## 2026-11-06 — Cierre seguro B22/C35, sin despliegue
+- Preflight: Windows limpio antes del bloque; Ubuntu mantiene cambios modificados y sin seguimiento; JARVIS Ubuntu en STANDBY y LILITH/HA saludables. No se reiniciaron servicios ni se ejecutó audio o control físico.
+- B22: añadido `core/ha_event_processor_dry_run.py`, con estado de conexión, reconexión observable, deduplicación determinista, validación fail-closed, contador de errores y registro inyectable. Solo devuelve propuestas de rutina; no se suscribe a HA ni llama a LILITH.
+- B22: `tests/test_ha_event_processor_dry_run.py` + evaluadores previos: 18 pruebas dirigidas PASS. B22 permanece AUSENTE como automatización real porque falta el flujo autorizado HA→LILITH.
+- C35: verificada la batería hermética multiroom existente: 110 pruebas PASS desde el entorno `.venv`. C35 permanece AUSENTE como reproducción real: no hay transporte autenticado desplegado, provisionamiento de claves, sincronización física ni altavoces validados.
+- Estado global conservador: 43 OPERATIVO, 9 PARCIAL, 2 AUSENTE, 4 BLOQUEADO y 10 REQUIERE_HARDWARE = 68. No se promovieron capacidades por simulaciones.
+- `STATUS_SNAPSHOT.json` actualizado a v13. Cambios propios pendientes de commit; no se tocaron archivos Ubuntu, LILITH Core, Home Assistant, APK ni SOAK.

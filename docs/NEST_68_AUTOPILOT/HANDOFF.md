@@ -336,3 +336,11 @@ ORS_API_KEY=                              FALTA — usuario debe registrar
 - Nuevos `core/ha_event_proposals_dry_run.py` y `tests/test_ha_event_proposals_dry_run.py`: propuestas de IDs de rutinas sin ejecutar nada; deduplicacion y rechazo de datos malformados.
 - `.\.venv\Scripts\python.exe -m pytest -q -p no:cacheprovider tests/test_ha_event_dry_run.py tests/test_ha_event_proposals_dry_run.py` => **13 passed** (6 nuevas). Sin red, sonido, HA, LILITH ni dispositivos.
 - B22 sigue AUSENTE como automatizacion productiva; falta integracion autorizada con el flujo de eventos y autoridad de rutinas LILITH. Siguiente: pruebas de eventos repetidos y diseño de contrato de entrega sin activar HA.
+
+## Checkpoint 2026-11-06 — cierre B22/C35 seguro
+- Windows: nuevo `core/ha_event_processor_dry_run.py` y `tests/test_ha_event_processor_dry_run.py`; 18 pruebas B22 dirigidas PASS junto con los evaluadores previos.
+- B22 queda AUSENTE: el procesador solo valida, deduplica, registra y propone IDs. No hay suscripción HA, ejecución de rutinas ni llamadas mutantes a LILITH.
+- C35: batería multiroom hermética 110 PASS en `C:\JARVIS\.venv`; sigue AUSENTE físicamente. Los módulos cubren planificación, handshake, ACK, HMAC de prueba, expiración y sincronización simulada, pero no transporte real ni audio.
+- Snapshot v13: 43 OPERATIVO, 9 PARCIAL, 2 AUSENTE, 4 BLOQUEADO, 10 REQUIERE_HARDWARE. Esta partición es la clasificación conservadora y exclusiva de 68 IDs.
+- Ubuntu: no sobrescribir, no resetear, no limpiar; conserva sus modificaciones/untracked. Servicios observados en STANDBY/healthy, sin reinicios en este bloque.
+- Siguiente bloque seguro: revisión estática de voz/dispatcher y pruebas dirigidas restantes en `.venv`; cualquier integración HA, transporte multiroom, audio físico o cambio de permisos requiere ventana/autorización separada.

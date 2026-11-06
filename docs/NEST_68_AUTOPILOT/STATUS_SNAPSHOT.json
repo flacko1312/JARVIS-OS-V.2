@@ -2,7 +2,7 @@
     "meta":  {
                  "project":  "NEST 68",
                  "snapshot_date":  "2026-11-05",
-                 "snapshot_version":  12,
+                 "snapshot_version":  13,
                  "audited_by":  "Claude Sonnet 4.6 (AUTOPILOT CONTINUO)",
                  "aurora_branch":  "codex/neural-voice-visual",
                  "note":  "Versioned snapshot — STATUS.json is gitignored; this file is committed. Update when capabilities change.",
@@ -26,8 +26,8 @@
                                                 "home_routine"
                                             ],
                  "total_new_tools":  14,
-                 "tests_aurora":  "79 passed (home_routine 30 + transport_schedules 32 + batch_home_action 17), 0 failures",
-                 "tests_ubuntu":  "79 passed (home_routine 30 + transport_schedules 32 + batch_home_action 17), 0 failures",
+                 "tests_aurora":  "79 passed (home_routine 30 + transport_schedules 32 + batch_home_action 17), 0 failures; B22 hermetic suite 18 passed; C35 multiroom selection 110 passed",
+                 "tests_ubuntu":  "79 passed (home_routine 30 + transport_schedules 32 + batch_home_action 17), 0 failures; no new production deployment",
                  "lilith_status":  "RUNNING — Docker container lilith_core healthy, port 8000, database+mqtt+kernel+home_assistant online",
                  "lilith_memory_audit":  "93 facts confirmed (get_context() returns total_facts:93; semantic DB has 518+ entries, limit=20 per search query). memory.store + memory.search tested successfully. Session start log confirms injection: \u0027[JARVIS] LILITH context loaded: 93 facts\u0027. Local long_term.json (Windows) has 10 personal items (name, age, birthday, etc.). Ubuntu local memory intentionally empty — LILITH is canonical store.",
                  "lilith_routine_audit":  "4 enabled routines, all targeting light.bombilla_mueble (physically offline since 2026-10-29). 29-33 failures each. Root cause: physical bulb disconnected, not a code bug. FIXED (session 9): _fetch_routine_health_summary had wrong path \u0027data.response.routines\u0027 — corrected to \u0027response.routines\u0027. Now confirmed: \u0027[JARVIS] Routine health: failures detected, injecting alert\u0027 logged at every session connect. Gemini correctly reports failures when user asks about routines (P5 routine_check: PASS 27s).",
@@ -257,6 +257,12 @@
                                                                "/api/panel"
                                                            ]
                           },
+    "safe_preparations":  {
+                                      "B22":  "core/ha_event_processor_dry_run.py adds fail-closed connection state, deterministic deduplication, validation, error counters and logs. It returns RoutineProposal only; no HA subscription, LILITH call or physical action.",
+                                      "C35":  "Windows-only hermetic planner/handshake/sync/HMAC/expiry/ACK suites are present and tested. No authenticated transport, key provisioning, audio stream or physical playback is deployed.",
+                                      "classification":  "B22 and C35 remain AUSENTE globally; simulated tests do not promote capabilities to OPERATIVO.",
+                                      "ubuntu_changes":  "Ubuntu modified/untracked files were preserved and not overwritten or committed by this block."
+                                  },
     "natural_conversation_gaps":  {
                                       "covered":  "home_routine phrases (session 7 fix), LILITH memory context (91 facts auto-loaded), web_search/weather/date_time auto-routed, lilith_routine/reminder/lilith_home_action routing defined",
                                       "gap_physical_devices":  "All lights unavailable (physical offline). me_voy/llegue_a_casa/buenas_noches/modo_taller ask confirmation but device execution returns \u0027not available\u0027. Only buenos_dias fully functional (info-only).",
