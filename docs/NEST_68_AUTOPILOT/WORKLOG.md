@@ -896,3 +896,9 @@ Inspeccionar exclusivamente el despacho de batch_home_action y la ruta de /api/c
 - Estado global conservador: 43 OPERATIVO, 9 PARCIAL, 2 AUSENTE, 4 BLOQUEADO y 10 REQUIERE_HARDWARE = 68. No se promovieron capacidades por simulaciones.
 - `STATUS_SNAPSHOT.json` actualizado a v13. Cambios propios pendientes de commit; no se tocaron archivos Ubuntu, LILITH Core, Home Assistant, APK ni SOAK.
 - Verificación remota posterior: Ubuntu compiló `main.py`, `actions/home_routine.py` y `actions/transport_schedules.py`; suites disponibles `transport_schedules`, `batch_home_action`, `timer`, `calendar_control` y `traffic_info`: **172 passed**. `tests/test_home_routine.py` no existe en el checkout Ubuntu, por lo que no se presenta como prueba pasada allí.
+
+## 2026-11-06 — Integración JARVIS B22/C35 sin mutar autoridad externa
+- B22: añadido `core/ha_event_bridge.py`, puente autenticado de solo lectura que procesa propuestas, consulta `routines.get` en LILITH con `request_id`/`idempotency_key` estables y bloquea la ejecución. 23 pruebas B22 dirigidas PASS.
+- C35: añadido `core/multiroom_transport.py`, transporte TCP de control con framing JSON, HMAC, ACK, rechazo fail-closed y reintentos. No transporta audio ni se inicia automáticamente. 114 pruebas multiroom PASS en Windows.
+- Archivos nuevos copiados a Ubuntu sin sobrescribir cambios: compilación PASS; B22 bridge 23/23 PASS y transporte 4/4 PASS. Quedan untracked por la política de preservar la rama Ubuntu.
+- No se modificaron LILITH Core, Home Assistant, permisos, APK, servicios, SOAK ni dispositivos. B22/C35 permanecen AUSENTE en el inventario global porque falta la integración productiva/autorizada y la validación física.
