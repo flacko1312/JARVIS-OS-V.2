@@ -10,6 +10,8 @@ defecto y cualquier intento de saltárselo falla cerrado.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
+import json
 from typing import Any, Mapping
 
 from core.ha_event_dry_run import EventRule
@@ -49,7 +51,9 @@ class HAEventBridge:
             return result, ()
         envelopes: list[RoutineEnvelope] = []
         for proposal in result.proposals:
-            request_id = f"jarvis:ha-event:{proposal.routine_id}"
+            event_identity = event.get("id") if isinstance(event.get("id"), str) and event.get("id") else event
+            event_digest = hashlib.sha256(json.dumps(event_identity, sort_keys=True, default=str).encode()).hexdigest()[:24]
+            request_id = f"jarvis:ha-event:{event_digest}:{proposal.routine_id}"
             response = await self._client.command_submit(
                 intent="routines.get",
                 parameters={"routine_id": proposal.routine_id},

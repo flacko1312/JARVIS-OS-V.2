@@ -349,3 +349,11 @@ ORS_API_KEY=                              FALTA — usuario debe registrar
 - C35 transport: `core/multiroom_transport.py` fue copiado como archivo nuevo a Ubuntu; 4/4 pruebas TCP loopback PASS allí y 114/114 multiroom PASS en Windows. El transporte no está arrancado por ningún servicio, no lleva audio y requiere provisión coordinada de claves antes de cualquier despliegue real.
 - Regresión Windows de voz/dispatcher: 68/68 PASS. Ubuntu: las pruebas que importan `main.py` siguen bloqueadas en colección por `numpy` ausente; no instalar dependencias durante SOAK ni declarar voz Ubuntu certificada por ese motivo.
 - Corrección del diagnóstico: el `.venv` de Ubuntu sí contiene `numpy 2.5.4`; con `/home/flako1312/jarvis-headless/.venv/bin/python`, las pruebas de voz/sesión/wake/transcripción pasan 82/82. El fallo solo afecta al Python global y no al entorno del servicio validado.
+
+## 2026-11-06 15:55 — B22 idempotencia por evento (automatización)
+- Detectado defecto: `HAEventBridge.inspect_event` reutilizaba `request_id` e `idempotency_key` por `routine_id`, incluso para eventos HA distintos; podía confundir lecturas de verificación en el servicio remoto.
+- Corregido: identificador determinista basado en hash del ID del evento (o contenido cuando falta) + ID de rutina. No ejecuta rutinas ni acciona dispositivos.
+- Nueva regresión `tests/test_ha_event_request_identity.py`: IDs distintos para eventos distintos y deduplicación de reenvíos.
+- Suite dirigida Windows: 16/16 PASS (bridge, identidad, procesador, transporte). Ubuntu inspeccionado sin cambios; modificaciones ajenas preservadas. SOAK y servicios sin reiniciar.
+- B22 sigue AUSENTE como automatización real: LILITH no expone intent autorizado de ejecución. C35 sigue AUSENTE como audio multiroom físico.
+- Próximo: validar manejo de errores de `command_submit` en bridge sin ejecutar rutinas y endurecer transporte TCP frente a frames incompletos.

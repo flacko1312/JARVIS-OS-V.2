@@ -904,3 +904,11 @@ Inspeccionar exclusivamente el despacho de batch_home_action y la ruta de /api/c
 - No se modificaron LILITH Core, Home Assistant, permisos, APK, servicios, SOAK ni dispositivos. B22/C35 permanecen AUSENTE en el inventario global porque falta la integración productiva/autorizada y la validación física.
 - Regresión de voz/dispatcher Windows: **68 passed, 1 warning** (`test_tool_dispatch_contract`, `test_gemini_live_session`, interrupción y speech gate). Ubuntu no pudo coleccionar las pruebas que importan `main.py` por `ModuleNotFoundError: numpy`; no se instaló nada ni se modificó el servicio. Se mantiene como bloqueo de entorno preexistente.
 - Revisión corregida de entorno: Ubuntu ya tenía `.venv` con `numpy 2.5.4`; usando ese intérprete, voz/sesión/wake/transcripción pasan **82/82, 1 warning**. No se instaló nada ni se reinició el servicio.
+
+## 2026-11-06 15:55 — B22 idempotencia por evento (automatización)
+- Detectado defecto: `HAEventBridge.inspect_event` reutilizaba `request_id` e `idempotency_key` por `routine_id`, incluso para eventos HA distintos; podía confundir lecturas de verificación en el servicio remoto.
+- Corregido: identificador determinista basado en hash del ID del evento (o contenido cuando falta) + ID de rutina. No ejecuta rutinas ni acciona dispositivos.
+- Nueva regresión `tests/test_ha_event_request_identity.py`: IDs distintos para eventos distintos y deduplicación de reenvíos.
+- Suite dirigida Windows: 16/16 PASS (bridge, identidad, procesador, transporte). Ubuntu inspeccionado sin cambios; modificaciones ajenas preservadas. SOAK y servicios sin reiniciar.
+- B22 sigue AUSENTE como automatización real: LILITH no expone intent autorizado de ejecución. C35 sigue AUSENTE como audio multiroom físico.
+- Próximo: validar manejo de errores de `command_submit` en bridge sin ejecutar rutinas y endurecer transporte TCP frente a frames incompletos.
