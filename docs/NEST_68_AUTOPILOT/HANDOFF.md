@@ -296,3 +296,10 @@ ORS_API_KEY=                              FALTA — usuario debe registrar
 - Seis pruebas hermeticas nuevas para aislamiento de sesiones; 58/58 PASS total C35.
 - C35 NO operativo: sin transporte ni audio fisico.
 - Proximo bloque: correlacion de ACK/replays y especificacion de transporte seguro sin despliegue.
+
+## 2026-11-06 13:00 — C35 ACK correlacionado (solo simulacion)
+- Preflight: STATUS_SNAPSHOT v12, MASTER_PLAN, HANDOFF, WORKLOG y estados Git de Windows/Ubuntu consultados. Windows HEAD 173d080 limpio; Ubuntu conserva cambios locales ajenos.
+- Nuevos archivos solo Windows: core/multiroom_ack_dry_run.py y tests/test_multiroom_ack_dry_run.py. Ledger de ACK que comprueba sesion, emisor/destinatario invertidos y secuencia original; rechaza duplicados, replays entre sesiones, ACK sin pendiente y reutilizacion tras cierre.
+- Suite multiroom hermetica: 68/68 PASS (10 nuevas); git diff --check sin errores. Sin red, audio, servicios, HA, LILITH ni dispositivos.
+- C35 sigue AUSENTE como funcion fisica: ACK simulado no autentica un transporte real ni transmite sonido. Pendientes: autenticacion, transporte, sincronizacion y pruebas fisicas autorizadas.
+- Proximo bloque: especificar autenticacion del transporte y validar mensajes maliciosos con mocks sin desplegar.

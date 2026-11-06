@@ -847,3 +847,10 @@ Inspeccionar exclusivamente el despacho de batch_home_action y la ruta de /api/c
 - Contrato futuro de transporte (NO desplegado): canal autenticado entre pares fijos, session_id aleatorio no reutilizable, sequence monotona por emisor, ACK correlacionado, expiracion y abort fail-closed; no iniciar audio sin READY de ambos. Falta implementar transporte y validarlo en ventana autorizada.
 - No se tocaron Ubuntu, LILITH, HA, SOAK, APK ni doble confirmacion Alexa.
 - Siguiente: revisar correlacion de ACK y replays entre sesiones con pruebas puras; no activar transporte.
+
+## 2026-11-06 13:00 — C35 ACK correlacionado (solo simulacion)
+- Preflight: STATUS_SNAPSHOT v12, MASTER_PLAN, HANDOFF, WORKLOG y estados Git de Windows/Ubuntu consultados. Windows HEAD 173d080 limpio; Ubuntu conserva cambios locales ajenos.
+- Nuevos archivos solo Windows: core/multiroom_ack_dry_run.py y tests/test_multiroom_ack_dry_run.py. Ledger de ACK que comprueba sesion, emisor/destinatario invertidos y secuencia original; rechaza duplicados, replays entre sesiones, ACK sin pendiente y reutilizacion tras cierre.
+- Suite multiroom hermetica: 68/68 PASS (10 nuevas); git diff --check sin errores. Sin red, audio, servicios, HA, LILITH ni dispositivos.
+- C35 sigue AUSENTE como funcion fisica: ACK simulado no autentica un transporte real ni transmite sonido. Pendientes: autenticacion, transporte, sincronizacion y pruebas fisicas autorizadas.
+- Proximo bloque: especificar autenticacion del transporte y validar mensajes maliciosos con mocks sin desplegar.
