@@ -357,3 +357,10 @@ ORS_API_KEY=                              FALTA — usuario debe registrar
 - Suite dirigida Windows: 16/16 PASS (bridge, identidad, procesador, transporte). Ubuntu inspeccionado sin cambios; modificaciones ajenas preservadas. SOAK y servicios sin reiniciar.
 - B22 sigue AUSENTE como automatización real: LILITH no expone intent autorizado de ejecución. C35 sigue AUSENTE como audio multiroom físico.
 - Próximo: validar manejo de errores de `command_submit` en bridge sin ejecutar rutinas y endurecer transporte TCP frente a frames incompletos.
+
+## 2026-11-06 16:59 — C35 TCP: rechazo de frames incompletos
+- Preflight: consultados STATUS_SNAPSHOT, MASTER_PLAN, HANDOFF, WORKLOG y Git Windows/Ubuntu. Windows HEAD c409a03 con backup ajeno untracked preservado; Ubuntu HEAD f61f9ec con modificaciones/untracked ajenos preservados.
+- Detectado defecto real en core/multiroom_transport.py: readline() aceptaba un JSON firmado terminado por EOF sin delimitador de nueva línea. Ahora servidor y cliente exigen frame completo (newline) y longitud máxima de 16384 bytes; fallan cerrado ante truncamiento.
+- Nueva regresión tests/test_multiroom_incomplete_frames.py: EOF sin newline en solicitud y respuesta, ambas rechazadas. Pruebas dirigidas 6/6 PASS; git diff --check exit 0 (aviso no bloqueante de conversión LF/CRLF).
+- No se inició transporte productivo, audio, HA, LILITH, servicios ni SOAK. Ubuntu no se modificó. C35 continúa AUSENTE como multiroom físico; este cambio solo endurece transporte de control Windows.
+- Próximo bloque: revisar excepciones de callback y lectura de frames sobredimensionados; verificar compatibilidad y preparar despliegue coordinado cuando se autorice.

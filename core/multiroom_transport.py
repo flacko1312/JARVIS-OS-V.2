@@ -72,8 +72,8 @@ class MultiroomServer:
     async def _handle(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         try:
             raw = await asyncio.wait_for(reader.readline(), timeout=3)
-            if not raw or len(raw) > 16_384:
-                raise TransportError("invalid frame size")
+            if not raw or len(raw) > 16_384 or not raw.endswith(b"\n"):
+                raise TransportError("invalid or incomplete frame")
             payload = _verify(raw, self._key)
             response = await self._on_message(payload) if self._on_message else {"ok": True}
             if not isinstance(response, dict):
@@ -110,6 +110,8 @@ class MultiroomClient:
                 writer.write(_frame(payload, self._key))
                 await writer.drain()
                 raw = await asyncio.wait_for(reader.readline(), timeout=3)
+                if not raw or len(raw) > 16_384 or not raw.endswith(b"\n"):
+                    raise TransportError("invalid or incomplete response frame")
                 response = _verify(raw, self._key)
                 if response.get("ok") is False:
                     raise TransportError("peer rejected frame")
