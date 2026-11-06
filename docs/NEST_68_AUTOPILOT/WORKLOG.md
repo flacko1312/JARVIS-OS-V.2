@@ -862,3 +862,9 @@ Inspeccionar exclusivamente el despacho de batch_home_action y la ruta de /api/c
 - IMPORTANTE: C35 sigue AUSENTE fisicamente. Este codigo NO proporciona transporte, distribucion segura de claves, sincronizacion de audio ni prueba de red; prohibido llamarlo autenticacion desplegada.
 - Sin modificaciones Ubuntu/LILITH/HA/APK, SOAK, permisos, dispositivos o servicios.
 - Siguiente bloque: pruebas de robustez del protocolo ante mensajes malformados y expiracion de sesiones; despues propuesta de transporte para ventana autorizada.
+
+## 2026-11-06 — C35 mensajes malformados (ciclo seguro)
+- Nuevo archivo propio: `tests/test_multiroom_malformed_dry_run.py`, 15 casos nuevos para cargas/firmas inválidas y no consumo de secuencia tras rechazo.
+- Verificación: `py -m pytest -q tests/test_multiroom_malformed_dry_run.py tests/test_multiroom_auth_dry_run.py` => **30 passed in 0.12s**. `python` no está en PATH; `py` funciona.
+- Sin red, sonido, dispositivos, servicios, LILITH ni cambios en Ubuntu. C35 continúa como software simulado, NO operativo físicamente.
+- Próximo bloque: pruebas de expiración de sesiones y revisión de límites de memoria del verificador, después transporte autenticado desactivado por defecto.
