@@ -139,7 +139,8 @@ Windows:
 Get-Process python* | Select-Object Name, CPU, WorkingSet
 ```
 
-If RAM > 500 MB on Ubuntu JARVIS, restart: `systemctl --user restart jarvis-headless.service`
+RAM growth observed: 332 MB at night-1 → 796 MB peak at night-2 (58 min of operation).
+If RAM > 900 MB on Ubuntu JARVIS, restart: `systemctl --user restart jarvis-headless.service`
 
 ---
 

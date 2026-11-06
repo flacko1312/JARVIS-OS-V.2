@@ -1,5 +1,55 @@
 # TEST_RESULTS — JARVIS Overnight Diagnostics
-Generated: 2026-11-06 23:11 CET
+Last updated: 2026-11-07 00:08 CET (automated overnight session — night 2)
+First generated: 2026-11-06 23:11 CET
+
+---
+
+## Overnight session 2 — 2026-11-07 (automated)
+
+### Pre-session state verification
+- Ubuntu jarvis-headless.service: **active/running**, PID 441329 (no restart needed)
+- LILITH: **online**, database=true, mqtt=true
+- Journal confirms: `SHARED_ALARM Ubuntu watcher started (feature gated)` at 23:09:44
+- Journal shows watcher polling LILITH every 2s (memory/context GET 200 OK)
+
+### Regression tests (2026-11-07 ~00:05)
+| Suite | Command | Result |
+|---|---|---|
+| Windows: shared alarm | `.venv\Scripts\python -m pytest tests/test_shared_alarm_v2.py tests/test_alarm_control.py` | **84/84 PASS** |
+| Ubuntu: full shared alarm suite | `.venv/bin/python -m pytest tests/test_shared_alarm_v2.py tests/test_shared_alarm_runner.py tests/test_alarm_startup_and_crosscancel.py tests/test_alarm_control.py` | **78/78 PASS** |
+
+### Live E2E tests against real LILITH (2026-11-07 00:05–00:07)
+**Mode: Real LILITH API, far-future fire_at (4–5h). All test alarms cleaned up after.**
+
+| Test | Result |
+|---|---|
+| Windows creates → alarm stored in LILITH | **PASS** |
+| Windows creates → Ubuntu sees same alarm | **PASS** |
+| Ubuntu creates → Windows lists it | **PASS** |
+| Windows cancels Ubuntu-created alarm | **PASS** |
+| Cancelled alarm gone from LILITH | **PASS** |
+| Ubuntu also doesn't see cancelled alarm | **PASS** |
+| Cancel before delivery → alarm removed | **PASS** |
+| Ubuntu watcher also sees removed | **PASS** |
+| Modify alarm increments revision | **PASS** |
+| Modified fire_at updates correctly | **PASS** |
+| Only one record after modify (no duplicate) | **PASS** |
+| Correct revision after modify | **PASS** |
+| Restart recovery: Windows sees alarm (new instance) | **PASS** |
+| Restart recovery: Ubuntu sees alarm (new instance) | **PASS** |
+| LILITH unavailable raises SharedAlarmError | **PASS** |
+| LILITH unavailable error message correct | **PASS** |
+| All alarms cleaned up: 3 test alarms removed | **PASS** |
+| Post-cleanup LILITH list empty of test alarms | **PASS** (implicit via cleanup) |
+| alarm1 ID format valid (32 hex chars) | **PASS** |
+| alarm1 source is jarvis_windows | **PASS** |
+
+**Total night-2 E2E: 20/20 PASS**
+
+### LILITH alarm state after tests
+- 0 jarvis_alarm records remaining
+- 0 jarvis_alarm_receipt records (all cleaned)
+- 9 pre-existing old-format records (non-v2, safely ignored — unchanged)
 
 ---
 

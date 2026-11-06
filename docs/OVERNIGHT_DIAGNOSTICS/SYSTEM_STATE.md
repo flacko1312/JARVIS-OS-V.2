@@ -1,5 +1,6 @@
 # SYSTEM_STATE — JARVIS Overnight Diagnostics
-Generated: 2026-11-06 23:11 CET (automated overnight session)
+Last updated: 2026-11-07 00:08 CET (automated overnight session — night 2)
+First generated: 2026-11-06 23:11 CET
 
 ---
 
@@ -10,9 +11,9 @@ Generated: 2026-11-06 23:11 CET (automated overnight session)
 | Hostname | flako |
 | OS | Windows 11 Home |
 | Branch | codex/neural-voice-visual |
-| HEAD commit | 60a94d9 feat(alarm): Windows shared-alarm integration via LILITH + 53 hermetic tests |
-| Working tree | Modified: docs/JARVIS_CAPABILITIES.md, STATUS_SNAPSHOT.json, main.py |
-| Untracked | VOICE_CHECK_2026-11-06.md, lilith_client/adapter_connector.py.bak.m3, logs/ |
+| HEAD commit | e92a01a feat(alarm): deploy shared alarms E2E + overnight diagnostics |
+| Working tree | Clean (only untracked: VOICE_CHECK_2026-11-06.md, lilith_client/*.bak, logs/) |
+| Untracked | VOICE_CHECK_2026-11-06.md, lilith_client/adapter_connector.py.bak.m3_20261106, logs/ |
 
 ### Active processes (JARVIS)
 - JARVIS Windows does NOT run as a background service; invoked interactively
@@ -42,10 +43,12 @@ GEMINI_VOICE_NAME=puck
 | Hostname | server-lilith |
 | Branch | codex/neural-voice-visual |
 | HEAD commit | b836e1f test(alarm): extended runner coverage |
-| Working tree | Many modified/untracked preexisting entries (preserved, not committed) |
+| Working tree | Many preexisting modified/untracked entries (preserved, not committed) |
 | Service | jarvis-headless.service (systemd --user) |
-| PID after restart | 441329 |
-| Running since | 2026-11-06 23:09:41 CET |
+| PID | 441329 (unchanged — no restart tonight) |
+| Running since | 2026-11-06 23:09:41 CET (~58 min as of 00:07) |
+| CPU (accumulated) | 13 min 24 sec / ~58 min uptime = ~23% avg |
+| RAM (RSS) | 796 MB peak (from systemctl) |
 
 ### Active services
 | Service | Port | State |

@@ -2,6 +2,52 @@
 
 ---
 
+## 2026-11-07 00:08 CET — E41 shared alarms: overnight verification (night 2)
+
+**Author:** Claude Sonnet 4.6 (Scheduled overnight task — jaevis--headless)
+**Branch:** `codex/neural-voice-visual`
+
+### Work done
+
+#### Preflight
+- Read: HANDOFF, WORKLOG, SYSTEM_STATE, TEST_RESULTS, STATUS_SNAPSHOT, all memory files.
+- Windows HEAD e92a01a — clean (only untracked pre-existing files).
+- Ubuntu HEAD b836e1f — pre-existing modified/untracked entries preserved, NO commit.
+- LILITH: online, database=true, mqtt=true, /health 62ms latency.
+- Ubuntu jarvis-headless.service: active/running, PID 441329, running since 23:09:41 (night 1).
+- Journal confirms: `SHARED_ALARM Ubuntu watcher started (feature gated)` at 23:09:44.
+- Watcher poll confirmed in journal: memory/context GET 200 OK every 2s continuously.
+
+#### Regression tests (all PASS)
+- Windows: 84/84 PASS (test_shared_alarm_v2 + test_alarm_control)
+- Ubuntu: 78/78 PASS (test_shared_alarm_v2 + test_shared_alarm_runner + test_alarm_startup_and_crosscancel + test_alarm_control)
+
+#### Live E2E against real LILITH (20/20 PASS)
+All tests used far-future fire_at (4–5h). All 3 test alarms cleaned up after.
+- Windows creates → Ubuntu sees it (correct label, source, revision) ✓
+- Ubuntu creates → Windows can list and cancel it ✓
+- Cancel before delivery → removed from LILITH, Ubuntu also confirmed absent ✓
+- Modify → revision increments, single record (no duplicate) ✓
+- Restart recovery → alarm persists in LILITH after fresh store instantiation ✓
+- LILITH unavailable → SharedAlarmError raised, fails closed ✓
+
+#### Performance observations
+- Ubuntu RAM grew: 332 MB (night 1) → 796 MB peak (night 2, 58 min). Normal for Gemini SDK + audio.
+- Ubuntu disk at 84% (unchanged from night 1). Not critical.
+- Ubuntu swap at 45% (unchanged). Monitor.
+- System load: 0.77/0.63/0.55. Normal.
+
+#### Physical audio test
+NOT performed (automated session, no user present). Still pending user validation.
+
+### State after this session
+- Shared alarms: ENABLED on both nodes, watcher running, no test alarms remaining
+- Ubuntu service: NOT restarted (preserved PID 441329)
+- No new commits (Windows was already clean; Ubuntu pre-existing changes preserved)
+- Overnight diagnostics updated: SYSTEM_STATE, TEST_RESULTS, PERFORMANCE_BASELINE, TROUBLESHOOTING
+
+---
+
 ## 2026-11-06 23:14 CET — E41 shared alarms: deployed and E2E verified
 
 **Autor:** Claude Sonnet 4.6 (Scheduled overnight task — jaevis--headless)

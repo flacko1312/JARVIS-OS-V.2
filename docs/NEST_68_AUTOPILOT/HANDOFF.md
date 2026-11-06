@@ -411,6 +411,19 @@ ORS_API_KEY=                              FALTA — usuario debe registrar
 - Creado docs/OVERNIGHT_DIAGNOSTICS/ (SYSTEM_STATE, TEST_RESULTS, PERFORMANCE_BASELINE, TROUBLESHOOTING).
 - PRÓXIMA TAREA: validación física de audio Ubuntu (TTS real del anuncio de alarma).
 
+## 2026-11-07 00:08 — Overnight verification night 2 — ALL PASS
+
+- Automated session. No user present.
+- Ubuntu jarvis-headless PID 441329 still running (not restarted). Watcher confirmed active from journal.
+- LILITH online (62ms). 84/84 Windows tests PASS. 78/78 Ubuntu tests PASS.
+- Live E2E against real LILITH: 20/20 PASS (create, list, cancel, modify, restart-recovery, fail-closed).
+- All test alarms cleaned up. 0 jarvis_alarm records remaining in LILITH.
+- Performance: Ubuntu RAM 796 MB peak (normal), disk 84% (monitor), swap 45% (stable).
+- Physical audio test still PENDING (requires user presence).
+- Overnight diagnostics updated: docs/OVERNIGHT_DIAGNOSTICS/
+- NO new commits. Ubuntu pre-existing changes preserved.
+- NEXT: user validates physical TTS alarm announcement on Ubuntu speaker.
+
 ## 2026-11-06 20:00 - E41 alarmas: defecto de coordinacion confirmado
 
 - Preflight: STATUS_SNAPSHOT v13, MASTER_PLAN, HANDOFF, WORKLOG y git status de ambos JARVIS leidos; C35 descartado por usuario y APK fuera de alcance.
