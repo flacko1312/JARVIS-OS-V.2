@@ -674,3 +674,11 @@ Ajustar STATUS_SNAPSHOT v12 de manera coherente con esta particion, manteniendo 
 
 ### Siguiente paso
 Revisar los consumidores del snapshot y asegurar que no interpreten las anotaciones de niveles como capacidades adicionales. Verificar sin acciones fisicas las pruebas existentes de home_routine y gateway Android.
+
+## 2026-11-06 01:00 - Auditoria de consumidores de snapshot (solo lectura)
+- Git Windows HEAD 1abf6ef, arbol limpio al inicio. Ubuntu headless y LILITH con cambios locales previos: preservados sin modificacion.
+- Validacion PowerShell de STATUS_SNAPSHOT v12: 68 IDs en particion exclusiva, 68 unicos, 0 duplicados; G67 permanece PARCIAL_aurora.
+- git grep sobre archivos versionados *.py/*.ps1/*.js/*.ts no encontro referencias a STATUS_SNAPSHOT: no hay consumidores de codigo rastreados que dependan directamente de este archivo. No equivale a descartar consumidores dinamicos o no versionados.
+- JARVIS Ubuntu /health: status ok, STANDBY; LILITH /health: online, database=true, mqtt=true.
+- Intento inicial de rg no disponible en PowerShell; se uso git grep como alternativa. Sin pruebas fisicas ni peticiones /api/chat con efectos.
+- Proximo bloque: inspeccionar de forma no destructiva gateway Android y probar contratos de herramientas mediante tests aislados, sin ejecutar rutinas fisicas.

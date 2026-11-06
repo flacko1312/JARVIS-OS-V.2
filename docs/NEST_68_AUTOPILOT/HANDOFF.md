@@ -170,3 +170,9 @@ ORS_API_KEY=                              FALTA — usuario debe registrar
 - G67 es PARCIAL global por audio Ubuntu no validado fisicamente. Estados por plataforma y tiers son anotaciones separadas.
 - JARVIS Ubuntu y LILITH /health OK. Sin tocar servicios, SOAK ni arboles Ubuntu/LILITH.
 - Proximo bloque: auditar consumidores del snapshot y pruebas no destructivas de home_routine/Android.
+
+## Auditoria nocturna 2026-11-06 01:00
+- STATUS_SNAPSHOT v12 validado: 68 IDs exclusivos y sin duplicados; G67 parcial.
+- Sin consumidores directos de STATUS_SNAPSHOT en codigo versionado Python/PowerShell/JS/TS (git grep). No se afirma ausencia de consumidores dinamicos.
+- Ubuntu JARVIS y LILITH health OK; cambios locales preservados.
+- Proximo bloque: auditoria de gateway Android y tests aislados no destructivos.
