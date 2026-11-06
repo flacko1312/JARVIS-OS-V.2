@@ -742,3 +742,11 @@ Disenar tests aislados de politica remota (sin desplegar): casos por dominio, ac
 
 ### Siguiente bloque
 Inspeccionar exclusivamente el despacho de batch_home_action y la ruta de /api/chat frente a confirmaciones; documentar riesgo y tests faltantes antes de proponer cualquier parche. No desplegar cambios sin verificar APK real y politica de confirmacion.
+
+## 2026-11-06 05:10 - Despacho de batch_home_action y confirmación Android
+- Preflight: Windows HEAD 844690d limpio. JARVIS Ubuntu y LILITH /health OK; cambios locales previos de Ubuntu preservados.
+- Código auditado: `/api/tool/invoke` no implementa `batch_home_action` pese al permiso SAFE_WRITE, devuelve 400. `/api/chat` sí dispone de ruta al `batch_home_action_async` vía `_execute_tool` de Gemini. Solo se observó staging de confirmación explícito para Telegram, no para canal Android en ese punto.
+- Pruebas herméticas con token ficticio y servidor efímero: 3/3 PASS (401 sin autenticación; 400 batch directo; 503 chat sin JARVIS). `tests/test_batch_home_action.py`: 17/17 PASS.
+- Ninguna llamada productiva a LILITH home/action ni dispositivo HA. No se han reiniciado servicios, modificado permisos o archivos Ubuntu/LILITH.
+- Hallazgos completos y plan en `REMOTE_BATCH_AUTH_AUDIT_2026-11-06.md`.
+- Próximo ciclo: comprobar con mocks la confirmación de `/api/chat` frente a ejecución de acciones reales; diseñar cierre fail-closed compatible con APK, sin desplegar sin pruebas.

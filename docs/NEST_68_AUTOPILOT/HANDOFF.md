@@ -200,3 +200,10 @@ ORS_API_KEY=                              FALTA — usuario debe registrar
 - /api/tool/invoke rechaza DENIED/CONFIRM_REQUIRED, pero SAFE_WRITE permite lilith_home_action y batch_home_action (este ultimo pendiente de inspeccion de despacho).
 - Matriz de pruebas remotas propuesta y documentada en WORKLOG; 9 tests aislados PASS, 19 deselected. JARVIS/LILITH health OK.
 - Sin modificar Ubuntu/LILITH, SOAK, permisos ni dispositivos. Proximo: auditar batch_home_action y confirmar compatibilidad /api/chat.
+
+## Auditoría 2026-11-06 05:10 — control múltiple por Android
+- Revisados ambos canales: `/api/tool/invoke` devuelve HTTP 400 para `batch_home_action` (no existe rama de despacho); `/api/chat` usa el sistema de conversación y puede llegar a `batch_home_action_async`.
+- No se identifica un paso de confirmación obligatoria en `_execute_tool` específico del canal Android para `batch_home_action`; LILITH sigue aplicando su allowlist. No afirmar bypass ni efecto físico probado.
+- 3 comprobaciones HTTP aisladas PASS y 17 pruebas unitarias de batch PASS. Sin tocar producción.
+- Detalle: `REMOTE_BATCH_AUTH_AUDIT_2026-11-06.md`.
+- PRÓXIMA TAREA: desarrollar/ejecutar prueba hermética sobre el canal Android y confirmar si existe barrera adicional de confirmación antes de `client.home_action`. Proponer un guard reversible y compatible con APK, pero no cambiar permisos/servicios durante SOAK.
