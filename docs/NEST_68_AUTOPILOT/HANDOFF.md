@@ -285,3 +285,9 @@ ORS_API_KEY=                              FALTA — usuario debe registrar
 - Nuevos archivos solo Windows: core/multiroom_protocol_dry_run.py y tests/test_multiroom_protocol_dry_run.py. Contrato puro de prepare/ready/start/abort/ack con sesión, pares autorizados, secuencia estricta y latencia acotada; rechaza replays, mensajes fuera de orden, campos extra y sesiones abortadas.
 - Tests aislados del conjunto C35: 38/38 PASS, git diff --check correcto. No transporte real, red, audio, HA ni LILITH write; C35 permanece AUSENTE en operación física.
 - Próximo bloque: modelar handshake y timeout/reintentos fail-closed con pruebas herméticas; integración real y sonido requieren autorización posterior.
+
+## 2026-11-06 11:00 - C35 handshake y reintentos hermeticos
+- Preflight: leidos STATUS_SNAPSHOT v12, MASTER_PLAN, HANDOFF, WORKLOG; Git Windows limpio HEAD 6212ab7; Ubuntu con modificaciones y untracked ajenos preservados; LILITH con cambios ajenos preservados.
+- Nuevo modulo puro core/multiroom_handshake_dry_run.py y tests/test_multiroom_handshake_dry_run.py: estados new/waiting/ready/started/aborted, timeout determinista, hasta N reintentos y abort fail-closed. Sin red, reloj real, audio ni efectos.
+- Suite aislada multiroom: 52/52 PASS (14 nuevas), sin pytest cache. C35 permanece AUSENTE como reproduccion real; solo logica simulada.
+- Siguiente: probar fallos cruzados de sesion y documentar contrato de transporte, sin desplegar ni alterar SOAK.
