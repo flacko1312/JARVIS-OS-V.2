@@ -272,3 +272,10 @@ ORS_API_KEY=                              FALTA — usuario debe registrar
 - Tests: 11/11 PASS (pytest aislado), git diff --check correcto. Sin cambios en Ubuntu/LILITH/HA, permisos, SOAK ni reinicios.
 - C35 permanece AUSENTE como reproducción real: este bloque solo prepara la lógica de asignación, NO sincronización, transporte, latencia ni ejecución física. B22 también permanece AUSENTE como automatización real.
 - Siguiente bloque: diseñar contrato de coordinación multiroom entre Windows y Ubuntu con mensajes simulados, tiempos y fallos; no habilitar reproducción sin autorización.
+
+## 2026-11-06 09:00 — C35 simulador de coordinación multiroom
+- Preflight: HANDOFF, MASTER_PLAN, STATUS_SNAPSHOT y WORKLOG consultados; Git Windows limpio en HEAD 95f2c1b; Ubuntu con modificaciones y archivos sin seguimiento ajenos preservados.
+- Nuevos archivos Windows: core/multiroom_sync_dry_run.py y tests/test_multiroom_sync_dry_run.py. Modelo puro de latencias, preparación, desconexión y desfase; falla de forma segura sin I/O, audio, red ni dispositivos.
+- Pruebas aisladas: 21/21 PASS (11 anteriores de rutas + 10 nuevas de sincronización). Python invocado por ruta absoluta, pues alias python de Microsoft Store no sirve.
+- C35 sigue AUSENTE como función real: no existe transporte de audio ni sincronización física; únicamente planificador y simulador. Próximo: diseñar contrato de mensajes y pruebas de fallos/desconexiones entre dos asistentes sin tocar producción.
+- No se reiniciaron servicios, no se alteró Ubuntu/LILITH/HA, SOAK ni doble confirmación Alexa.
