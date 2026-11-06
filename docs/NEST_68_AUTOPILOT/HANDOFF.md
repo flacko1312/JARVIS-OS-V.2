@@ -238,3 +238,7 @@ ORS_API_KEY=                              FALTA — usuario debe registrar
 - **249 pruebas PASS** (7 warnings) y APK Debug de 18 MiB generada, firma v2 verificada. APK: `/home/flako1312/apk_nueva_src/app/build/outputs/apk/debug/app-debug.apk`. SHA-256 `76519a12b2cb1e55e184f2f2fd64a6c3ae781402395a62f0aeda84d3cbb9ae56`.
 - Backups originales + parches: `/home/flako1312/jarvis-headless-backups/android_home_confirm_20261106_0535/`. Ubuntu/APK siguen con modificaciones anteriores; no comprometerlas con commits masivos, reset o clean.
 - Informe de estado para reanudación: `ANDROID_CONFIRMATION_CONCURRENCY_2026-11-06.md`. Próximo bloque: SOLO lectura de condiciones SOAK, planificar reinicio controlado cuando el usuario lo autorice y pruebas APK bajo supervisión.
+
+## 2026-11-06 06:05 — Artefacto APK preservado
+- Copia independiente de la APK debug firmada (18 MiB) junto con checksum SHA-256 en `/home/flako1312/jarvis-headless-backups/android_home_confirm_20261106_0535/apk/jarvis-confirmation-debug-20261106.apk` y `.sha256`.
+- Copiados los helpers y tests nuevos al directorio de resguardo. Hash coincide con la APK generada. Sin reinicio ni instalación.
