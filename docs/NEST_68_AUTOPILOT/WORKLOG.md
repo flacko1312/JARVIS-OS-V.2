@@ -766,3 +766,10 @@ Inspeccionar exclusivamente el despacho de batch_home_action y la ruta de /api/c
 - Suite seleccionada: **197/197 PASS**, 7 avisos; HTTP E2E simulado aprobado. Servicio y dispositivos NO reiniciados/accionados.
 - Repo Ubuntu y APK mantienen cambios locales anteriores; no commit masivo. Copias y diffs de cada intervención en `/home/flako1312/jarvis-headless-backups/android_home_confirm_20261106_0535/`.
 - Informe completo: `ANDROID_HOME_CONFIRMATION_2026-11-06.md`.
+
+## 2026-11-06 05:45 — Sesiones Android separadas por instalación
+- Detectado SettingsStore.deviceUuid: UUID aleatorio persistente en DataStore que la APK ya generaba.
+- `JarvisApi` y `JarvisRepository` envían el identificador `jarvis-<deviceUuid>` en POST `/api/chat`, `/api/action/confirm`, `/api/action/cancel` (antes usaban `android` común para todos los dispositivos).
+- `AppContainer` pasa SettingsStore al repositorio JARVIS. Recompilación Kotlin offline: BUILD SUCCESSFUL, sin instalación.
+- Backups y diffs renovados en `/home/flako1312/jarvis-headless-backups/android_home_confirm_20261106_0535/apk/`. Sin cambios en servicios vivos.
+- Próximo bloque: auditar concurrencia de confirmaciones Android, desplegar únicamente en ventana autorizada y validar físicamente.

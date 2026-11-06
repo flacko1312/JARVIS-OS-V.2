@@ -221,5 +221,5 @@ ORS_API_KEY=                              FALTA — usuario debe registrar
 - Código Kotlin APK preparado con Confirmar/Cancelar, compilación offline satisfactoria; APK NO instalada.
 - 197 pruebas unitarias/integración aislada PASS; JARVIS/LILITH online. No acciones físicas.
 - Backups y parches individuales: `/home/flako1312/jarvis-headless-backups/android_home_confirm_20261106_0535/`.
-- PENDIENTE: sesión única persistente por instalación Android; ahora JarvisChatRequest usa `session="android"`, compartida entre clientes. Luego validación de concurrentes, despliegue controlado y pruebas físicas.
+- Sesión Android por instalación implementada en el código: JarvisRepository toma el UUID persistente de SettingsStore y usa el mismo session para chat/confirm/cancel; compilación Kotlin offline PASS. Pendiente validar en la APK instalada. Próximo: pruebas de concurrencia, despliegue seguro y pruebas físicas.
 - Informe: `ANDROID_HOME_CONFIRMATION_2026-11-06.md`.
