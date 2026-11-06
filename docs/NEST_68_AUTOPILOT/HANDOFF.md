@@ -291,3 +291,8 @@ ORS_API_KEY=                              FALTA — usuario debe registrar
 - Nuevo modulo puro core/multiroom_handshake_dry_run.py y tests/test_multiroom_handshake_dry_run.py: estados new/waiting/ready/started/aborted, timeout determinista, hasta N reintentos y abort fail-closed. Sin red, reloj real, audio ni efectos.
 - Suite aislada multiroom: 52/52 PASS (14 nuevas), sin pytest cache. C35 permanece AUSENTE como reproduccion real; solo logica simulada.
 - Siguiente: probar fallos cruzados de sesion y documentar contrato de transporte, sin desplegar ni alterar SOAK.
+
+## 2026-11-06 12:00 — C35 sesion cruzada
+- Seis pruebas hermeticas nuevas para aislamiento de sesiones; 58/58 PASS total C35.
+- C35 NO operativo: sin transporte ni audio fisico.
+- Proximo bloque: correlacion de ACK/replays y especificacion de transporte seguro sin despliegue.

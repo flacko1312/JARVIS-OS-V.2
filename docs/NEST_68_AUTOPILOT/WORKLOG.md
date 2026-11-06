@@ -839,3 +839,11 @@ Inspeccionar exclusivamente el despacho de batch_home_action y la ruta de /api/c
 - Nuevo modulo puro core/multiroom_handshake_dry_run.py y tests/test_multiroom_handshake_dry_run.py: estados new/waiting/ready/started/aborted, timeout determinista, hasta N reintentos y abort fail-closed. Sin red, reloj real, audio ni efectos.
 - Suite aislada multiroom: 52/52 PASS (14 nuevas), sin pytest cache. C35 permanece AUSENTE como reproduccion real; solo logica simulada.
 - Siguiente: probar fallos cruzados de sesion y documentar contrato de transporte, sin desplegar ni alterar SOAK.
+
+## 2026-11-06 12:00 — C35 aislamiento de sesiones multiroom
+- Preflight: STATUS_SNAPSHOT v12, MASTER_PLAN, HANDOFF, WORKLOG y Git Windows/Ubuntu consultados. Windows HEAD 5c17474 limpio antes del bloque; Ubuntu mantiene sus cambios ajenos intactos.
+- Añadido tests/test_multiroom_cross_session_dry_run.py: seis regresiones hermeticas para cancelacion de una sesion sin afectar otra, secuencias por sesion/emisor, rechazo de reutilizacion de sesion cancelada, timeouts independientes y rechazo de session_id incorrecto.
+- Suite C35: 58/58 PASS (52 anteriores + 6 nuevas), sin audio, red, servicios ni dispositivos. C35 sigue AUSENTE como reproduccion real.
+- Contrato futuro de transporte (NO desplegado): canal autenticado entre pares fijos, session_id aleatorio no reutilizable, sequence monotona por emisor, ACK correlacionado, expiracion y abort fail-closed; no iniciar audio sin READY de ambos. Falta implementar transporte y validarlo en ventana autorizada.
+- No se tocaron Ubuntu, LILITH, HA, SOAK, APK ni doble confirmacion Alexa.
+- Siguiente: revisar correlacion de ACK y replays entre sesiones con pruebas puras; no activar transporte.
