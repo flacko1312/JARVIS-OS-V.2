@@ -1793,8 +1793,9 @@ TOOL_DECLARATIONS = [
         "description": (
             "Schedules and manages clock alarms (wall-clock time, NOT countdown timers). "
             "Plays a beep sound and speaks the label when the alarm fires. "
-            "Actions: set (schedule alarm at a specific time), list (show alarms), "
-            "cancel (remove alarm by id or all), status (active count). "
+            "Actions: set (schedule alarm), list (show alarms), modify (change by id), "
+            "cancel (remove by id), list_shared (show LILITH alarms), status. "
+            "Shared mode is opt-in; Ubuntu announces shared alarms. "
             "Example times: '7:30', 'mañana 8:00', '9 AM', '20h00'."
         ),
         "parameters": {
@@ -1802,12 +1803,13 @@ TOOL_DECLARATIONS = [
             "properties": {
                 "action": {
                     "type": "STRING",
-                    "enum": ["set", "list", "cancel", "status"],
-                    "description": "set: create alarm. list: show all. cancel: remove. status: count.",
+                    "enum": ["set", "list", "list_shared", "modify", "cancel", "status"],
+                    "description": "set/create, list, list_shared, modify, cancel, status.",
                 },
                 "time":  {"type": "STRING", "description": "Alarm time (e.g. '7:30', 'mañana 8:00', '9 AM')."},
                 "label": {"type": "STRING", "description": "Alarm label/name (e.g. 'Despertador')."},
-                "id":    {"type": "STRING", "description": "Alarm ID to cancel (from list)."},
+                "id":    {"type": "STRING", "description": "Exact alarm ID to modify or cancel (from list)."},
+                "label_match": {"type": "STRING", "description": "Partial label to identify one shared alarm."},
             },
             "required": [],
         },

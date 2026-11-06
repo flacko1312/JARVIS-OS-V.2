@@ -1,4 +1,4 @@
-﻿{
+{
     "meta":  {
                  "project":  "NEST 68",
                  "snapshot_date":  "2026-11-05",
@@ -124,9 +124,9 @@
                                                             "G67 (audio hardware unverified on Ubuntu)"
                                                         ],
                                  "AUSENTE":  [
-                                                 "B22",
-                                                 "C35"
+                                                 "B22"
                                              ],
+    "DESCARTADO_POR_USUARIO": ["C35"],
                                  "BLOQUEADO":  [
                                                    "D36",
                                                    "B18",

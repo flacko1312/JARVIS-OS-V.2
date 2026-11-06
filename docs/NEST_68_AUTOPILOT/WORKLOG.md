@@ -2,6 +2,80 @@
 
 ---
 
+## 2026-11-06 23:14 CET — E41 shared alarms: deployed and E2E verified
+
+**Autor:** Claude Sonnet 4.6 (Scheduled overnight task — jaevis--headless)
+**Rama:** `codex/neural-voice-visual`
+
+### Trabajo realizado
+
+#### Preflight
+- Leídos: HANDOFF, WORKLOG, STATUS_SNAPSHOT v13, MASTER_PLAN y estados Git de Windows/Ubuntu/LILITH.
+- Windows HEAD 60a94d9 limpio antes de este bloque.
+- Ubuntu HEAD b836e1f con cambios ajenos preservados.
+- LILITH HEAD verificado online: status=online, database=true, mqtt=true.
+- SOAK services (lilith-global-soak-24h, lilith-soak01, etc.): todos inactive.
+- Local alarms Windows y Ubuntu: vacías (ninguna alarma real que proteger).
+- 9 registros en LILITH category jarvis_alarm: formato anterior no-v2, 0 registros válidos para shared_alarm_v2.
+
+#### Verificación de protocolo
+- shared_alarm_v2.py idéntico entre Windows y Ubuntu:
+  _CATEGORY, _RECEIPT_CATEGORY, _DELIVERY_MODE, _ROOT todos coinciden.
+- Puerta alarm_control.py Windows: `is_enabled()` → `shared_alarm_action(..., source="jarvis_windows")`.
+- Integración Ubuntu headless_main.py: watcher `watch_shared_alarms` iniciado en asyncio.create_task cuando enabled.
+
+#### Tests herméticos (pre-deployment)
+- Windows: 84/84 PASS (test_shared_alarm_v2 + test_alarm_control).
+- Ubuntu: 78/78 PASS (test_shared_alarm_v2 + test_shared_alarm_runner + test_alarm_startup_and_crosscancel + test_alarm_control).
+- LILITH memory API: accesible desde ambos lados.
+
+#### Backups y habilitación
+- Backups: C:\JARVIS\.env.bak.shared_alarm_20261106_*, /home/flako1312/jarvis-headless/.env.bak.shared_alarm_*.
+- Añadido a Windows .env: JARVIS_SHARED_ALARMS_ENABLED=1, JARVIS_ALARM_TIMEZONE=Europe/Madrid.
+- Añadido a Ubuntu .env: JARVIS_SHARED_ALARMS_ENABLED=1, JARVIS_ALARM_TIMEZONE=Europe/Madrid.
+- Reiniciado Ubuntu JARVIS: systemctl --user restart jarvis-headless.service → PID 441329.
+- Journal confirmó: `SHARED_ALARM Ubuntu watcher started (feature gated)`.
+
+#### E2E tests (real LILITH, software-only — sin audio físico)
+**Windows (8/8 PASS):**
+1. Windows create → LILITH stores — PASS
+2. Ubuntu sees Windows alarm — PASS
+3. Cancel before delivery — PASS
+4. Modify increments revision — PASS
+5. Windows sees Ubuntu alarm → Windows cancels — PASS
+6. LILITH unavailable → fail closed — PASS
+7. Restart recovery: alarm persists in LILITH — PASS
+
+**Ubuntu watcher (4/4 PASS, clock-injected):**
+A. Watcher announces expired alarm — PASS (mock notifier called once)
+B. Ledger prevents re-announcement — PASS
+C. Cancelled alarm not announced — PASS
+D. Restart recovery via ledger — PASS
+
+#### Cleanup
+- Eliminados todos los registros de test de LILITH (3 E2E Windows + 1 E2E Ubuntu + receipt).
+- LILITH: 9 registros originales intactos, 0 receipts.
+- Local alarms (Windows y Ubuntu): siguen vacías.
+
+#### Regresión post-deployment
+- Windows: 84/84 PASS — sin regresiones.
+- Ubuntu: 78/78 PASS — sin regresiones.
+
+### Archivos nuevos Windows
+- `docs/OVERNIGHT_DIAGNOSTICS/SYSTEM_STATE.md`
+- `docs/OVERNIGHT_DIAGNOSTICS/TEST_RESULTS.md`
+- `docs/OVERNIGHT_DIAGNOSTICS/PERFORMANCE_BASELINE.md`
+- `docs/OVERNIGHT_DIAGNOSTICS/TROUBLESHOOTING.md`
+- `.env` (añadidas 2 líneas de shared alarms)
+
+### Estado final
+- **E41 shared alarms: ENABLED y verificado (software) en ambos nodos.**
+- Pendiente: validación física de audio Ubuntu (anuncio TTS real).
+- Pendiente: commit Ubuntu de cambios de alarmas (preexistentes no trackeados preservados).
+- No se tocó LILITH Core, HA, APK, SOAK, permisos ni dispositivos físicos.
+
+---
+
 ## 2026-11-05 (sesión 9) — Cierre funcional: P1-P5 bugs fijados, P3 health injection verificado
 
 **Autor:** Claude Sonnet 4.6 (AUTOPILOT CONTINUO)

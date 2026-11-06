@@ -399,6 +399,18 @@ ORS_API_KEY=                              FALTA — usuario debe registrar
 - Sin reinicios, cambios SOAK, APK, HA, LILITH ni pruebas físicas.
 - Próximo: implementar vigilante Ubuntu (`shared_alarm_v2` Ubuntu watcher que llame `claim_delivery` y anuncie por TTS). Después, prueba supervisada con `JARVIS_SHARED_ALARMS_ENABLED=1`.
 
+## 2026-11-06 23:14 — E41 shared alarms: DESPLEGADO y verificado en ambos nodos
+
+- Preflight completo: STATUS_SNAPSHOT v13, MASTER_PLAN, WORKLOG, Git Windows/Ubuntu/LILITH.
+- SOAK services todos inactive; local alarms vacías; 9 registros LILITH formato antiguo (no-v2, ignorados).
+- Tests herméticos pre-deployment: Windows 84/84 PASS, Ubuntu 78/78 PASS.
+- Backups .env en ambos lados. JARVIS_SHARED_ALARMS_ENABLED=1 + JARVIS_ALARM_TIMEZONE=Europe/Madrid añadidos a ambos .env.
+- Ubuntu JARVIS reiniciado → PID 441329; journal confirma `SHARED_ALARM Ubuntu watcher started`.
+- E2E Windows 8/8 PASS + Ubuntu watcher 4/4 PASS (todos software/mock, sin audio físico).
+- Regresión post-deployment: Windows 84/84, Ubuntu 78/78. LILITH 9 registros originales intactos.
+- Creado docs/OVERNIGHT_DIAGNOSTICS/ (SYSTEM_STATE, TEST_RESULTS, PERFORMANCE_BASELINE, TROUBLESHOOTING).
+- PRÓXIMA TAREA: validación física de audio Ubuntu (TTS real del anuncio de alarma).
+
 ## 2026-11-06 20:00 - E41 alarmas: defecto de coordinacion confirmado
 
 - Preflight: STATUS_SNAPSHOT v13, MASTER_PLAN, HANDOFF, WORKLOG y git status de ambos JARVIS leidos; C35 descartado por usuario y APK fuera de alcance.
