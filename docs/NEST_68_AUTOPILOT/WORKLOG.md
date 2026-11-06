@@ -758,3 +758,11 @@ Inspeccionar exclusivamente el despacho de batch_home_action y la ruta de /api/c
 - Resultado: evidencia estática de ausencia de confirmación específica Android para batch_home_action; no equivale a demostrar acción física ni bypass de la allowlist LILITH. No se ejecutaron pruebas de efecto.
 - Sin cambios en Ubuntu/LILITH, permisos, servicios, SOAK o Alexa.
 - Próximo bloque: test hermético con instancia simulada y llamada a _execute_tool_guarded para batch_home_action; verificar que no llega a home_action si se exige confirmación, antes de proponer parche reversible. No desplegar cambios durante SOAK.
+
+## 2026-11-06 05:40 — Android confirmaciones domésticas, código y pruebas
+- Se preparó un gate de acciones físicas para el canal Android: `lilith_home_action`, `batch_home_action`, `home_routine(confirm=true)` → acción pendiente, no ejecución inmediata. Reusa `/api/action/confirm` y `/api/action/cancel` con propietario de sesión y consumo de una vez.
+- `/api/tool/invoke` ahora rechaza por código las acciones domésticas sin handshake de confirmación. Se corrigió `confirm="false"` en `actions/home_routine.py`.
+- APK Android: DTO, endpoints, Repository, ViewModel y ChatScreen preparados con diálogo Confirmar/Cancelar. Compilación Kotlin offline: BUILD SUCCESSFUL. NO instalada.
+- Suite seleccionada: **197/197 PASS**, 7 avisos; HTTP E2E simulado aprobado. Servicio y dispositivos NO reiniciados/accionados.
+- Repo Ubuntu y APK mantienen cambios locales anteriores; no commit masivo. Copias y diffs de cada intervención en `/home/flako1312/jarvis-headless-backups/android_home_confirm_20261106_0535/`.
+- Informe completo: `ANDROID_HOME_CONFIRMATION_2026-11-06.md`.

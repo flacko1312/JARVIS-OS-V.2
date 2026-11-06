@@ -215,3 +215,11 @@ ORS_API_KEY=                              FALTA — usuario debe registrar
 - Resultado: evidencia estática de ausencia de confirmación específica Android para batch_home_action; no equivale a demostrar acción física ni bypass de la allowlist LILITH. No se ejecutaron pruebas de efecto.
 - Sin cambios en Ubuntu/LILITH, permisos, servicios, SOAK o Alexa.
 - Próximo bloque: test hermético con instancia simulada y llamada a _execute_tool_guarded para batch_home_action; verificar que no llega a home_action si se exige confirmación, antes de proponer parche reversible. No desplegar cambios durante SOAK.
+
+## 2026-11-06 05:40 — Trabajo Android preparado, NO desplegado
+- Código Ubuntu actualizado pero servicio NO reiniciado: `main.py` / `api_server.py` / `actions/home_routine.py`; helper `core/android_home_confirmation.py`, tests de política y HTTP E2E simulados.
+- Código Kotlin APK preparado con Confirmar/Cancelar, compilación offline satisfactoria; APK NO instalada.
+- 197 pruebas unitarias/integración aislada PASS; JARVIS/LILITH online. No acciones físicas.
+- Backups y parches individuales: `/home/flako1312/jarvis-headless-backups/android_home_confirm_20261106_0535/`.
+- PENDIENTE: sesión única persistente por instalación Android; ahora JarvisChatRequest usa `session="android"`, compartida entre clientes. Luego validación de concurrentes, despliegue controlado y pruebas físicas.
+- Informe: `ANDROID_HOME_CONFIRMATION_2026-11-06.md`.
