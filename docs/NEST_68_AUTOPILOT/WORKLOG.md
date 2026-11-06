@@ -803,3 +803,12 @@ Inspeccionar exclusivamente el despacho de batch_home_action y la ruta de /api/c
 - Ubuntu: tests/test_gemini_live_session.py, test_local_barge_in.py, test_barge_in_dedup.py, test_block9_voice_stability.py, test_catalog_voice.py, test_phy2_004_audio_interruption.py, test_phy2_004_speech_gate.py, test_headless_on_demand_wake.py, test_headless_hey_jarvis_wake.py -> **150 passed, 1 warning**.
 - Tests mocked / simulated: no physical microphone recording, audio playback, Gemini network session, action HA or LILITH Core write. Code has dispatch contract AST tests in Git on both hosts: Windows commit 3b6b91c; Ubuntu commit d5a1db8 with all other dirty files preserved.
 - Next permitted step: additional static/tool tests + controlled diagnosis. Hardware audio validation and any restart remain awaiting user authorization.
+
+## 2026-11-06 — B22: evaluador hermético de eventos HA (sin despliegue)
+- Preflight: leídos STATUS_SNAPSHOT v12, MASTER_PLAN, HANDOFF, WORKLOG y Git de Windows, Ubuntu y LILITH. Windows limpio HEAD 874176c; Ubuntu con cambios ajenos preservados; LILITH HEAD 1257c53 y cambios ajenos preservados.
+- Health GET Ubuntu JARVIS: ok/STANDBY; LILITH: online, database=true, mqtt=true.
+- Nuevos archivos exclusivos Windows: core/ha_event_dry_run.py y tests/test_ha_event_dry_run.py. Evaluador puro de transiciones state_changed de sensor/binary_sensor; retorna solo ID de rutina. No conecta a HA, no ejecuta rutinas ni toca LILITH.
+- Test hermético: 7 passed (C:\JARVIS\.venv\Scripts\python.exe -m pytest -q -p no:cacheprovider tests/test_ha_event_dry_run.py); git diff --check sin errores. Primera invocación 'python' encontró alias Microsoft Store; corregido usando .venv.
+- B22 sigue AUSENTE como automatización real: este es solo un componente aislado y probado. Integración del flujo de eventos, autorización y ejecución requiere diseño/validación con LILITH/HA y permiso; no marcar OPERATIVO.
+- C35 multiroom sigue AUSENTE. Próximo ciclo: diseñar planificador puro de zonas/altavoces y pruebas mock sin emitir audio.
+- Sin reinicios, cambios SOAK, APK, HA, LILITH, permisos ni audio físico.

@@ -255,3 +255,12 @@ ORS_API_KEY=                              FALTA — usuario debe registrar
 - Windows Git latest for JARVIS-only closeout: 3b6b91c (criteria + AST dispatch test), preceded by 333625b (timer speech first). Ubuntu isolated static dispatch test committed d5a1db8, preserving ~60 unrelated modified/untracked entries.
 - Authoritative JARVIS-only closure document: docs/NEST_68_AUTOPILOT/JARVIS_ONLY_EXIT_CRITERIA_2026-11-06.md.
 - Do not restart production or modify APK, LILITH, HA. Prioritize software validation and prepare only supervised physical tests as final blockers.
+
+## 2026-11-06 — B22: evaluador hermético de eventos HA (sin despliegue)
+- Preflight: leídos STATUS_SNAPSHOT v12, MASTER_PLAN, HANDOFF, WORKLOG y Git de Windows, Ubuntu y LILITH. Windows limpio HEAD 874176c; Ubuntu con cambios ajenos preservados; LILITH HEAD 1257c53 y cambios ajenos preservados.
+- Health GET Ubuntu JARVIS: ok/STANDBY; LILITH: online, database=true, mqtt=true.
+- Nuevos archivos exclusivos Windows: core/ha_event_dry_run.py y tests/test_ha_event_dry_run.py. Evaluador puro de transiciones state_changed de sensor/binary_sensor; retorna solo ID de rutina. No conecta a HA, no ejecuta rutinas ni toca LILITH.
+- Test hermético: 7 passed (C:\JARVIS\.venv\Scripts\python.exe -m pytest -q -p no:cacheprovider tests/test_ha_event_dry_run.py); git diff --check sin errores. Primera invocación 'python' encontró alias Microsoft Store; corregido usando .venv.
+- B22 sigue AUSENTE como automatización real: este es solo un componente aislado y probado. Integración del flujo de eventos, autorización y ejecución requiere diseño/validación con LILITH/HA y permiso; no marcar OPERATIVO.
+- C35 multiroom sigue AUSENTE. Próximo ciclo: diseñar planificador puro de zonas/altavoces y pruebas mock sin emitir audio.
+- Sin reinicios, cambios SOAK, APK, HA, LILITH, permisos ni audio físico.
