@@ -697,3 +697,18 @@ Revisar los consumidores del snapshot y asegurar que no interpreten las anotacio
 
 ### Siguiente bloque
 Revisar si el contrato /api/tool/invoke y sus permisos tienen pruebas hermeticas equivalentes; ampliar tests solo si existe hueco verificable, sin llamadas a produccion.
+
+## 2026-11-06 03:00 - Auditoria aislada de permisos Android invoke
+
+**Autor:** ChatGPT / NEST 68 nocturno
+
+- Preflight: Windows HEAD 2bb0dd5 limpio; Ubuntu HEAD c5c0516 y LILITH HEAD 9ba6550 con cambios ajenos preservados.
+- Health: JARVIS Ubuntu /health ok STANDBY; LILITH /health online, database=true, mqtt=true.
+- Se inspeccionaron api_server.py, core/headless_permissions.py y tests/test_block8_remote_access.py. POST /api/tool/invoke exige token, usa check_permission y rechaza DENIED/CONFIRM_REQUIRED antes de _dispatch_tool.
+- Prueba hermetica: PYTHONDONTWRITEBYTECODE=1 python3 -m pytest -q -p no:cacheprovider tests/test_block8_remote_access.py tests/test_android_gateway_unit.py -k 'invoke_denied_tool or invoke_confirm_required_blocked or wrong_token or no_token_disables_server or invalid_token or no_token_configured or empty_token or valid_token or auth_and_bounded_inputs_fail_closed'. Resultado: **9 passed, 19 deselected** en 1.11s.
+- Hallazgo a evaluar (NO cambio): lilith_home_action turn_on/turn_off/toggle estan SAFE_WRITE y /api/tool/invoke puede ejecutarlos remotamente con token sin confirmacion vocal. Es una politica existente; no se realizaron acciones fisicas ni se modificaron permisos. La exigencia de confirmacion de home_routine no implica confirmacion general para estas llamadas directas.
+- Alcance: tests comprueban denegacion y autenticacion, NO certifican autorizacion granular por entidad HA ni seguridad de todos los dispatches. No se hicieron peticiones al gateway productivo.
+- Ubuntu/LILITH: ningun archivo alterado, ningun servicio reiniciado, SOAK preservado.
+
+### Siguiente bloque
+Auditar en lectura el riesgo de invocacion remota de lilith_home_action y documentar una propuesta de politica por dispositivo/accion sin cambiar comportamiento ni habilitar nuevas capacidades. Ampliar pruebas hermeticas solo si el riesgo y los contratos estan claros.

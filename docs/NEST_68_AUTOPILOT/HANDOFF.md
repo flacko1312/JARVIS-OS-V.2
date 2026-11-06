@@ -182,3 +182,9 @@ ORS_API_KEY=                              FALTA — usuario debe registrar
 - tests/test_android_gateway.py es prueba E2E real y se evito en horario nocturno.
 - Health JARVIS/LILITH OK; archivos Ubuntu/LILITH sin modificar.
 - Siguiente bloque: cobertura de permisos /api/tool/invoke sin produccion.
+
+## Auditoria nocturna 2026-11-06 03:00
+- Permisos Android /api/tool/invoke: 9 pruebas aisladas PASS (auth, denegacion, confirmacion).
+- Observacion: lilith_home_action turn_on/turn_off/toggle SAFE_WRITE permite control directo autenticado sin confirmacion vocal; no se cambio politica ni se acciono HA.
+- Health Ubuntu JARVIS y LILITH OK; cambios ajenos Ubuntu/LILITH preservados.
+- Proximo bloque: revisar politica remota por entidad y accion; proponer mitigacion sin desplegar.
