@@ -332,6 +332,11 @@ def _action_status() -> str:
 
 def alarm_control(parameters=None, response=None, player=None, session_memory=None) -> str:
     """NEST 68 E41 — Clock alarm scheduling (wall-clock, not countdown)."""
+    # Feature-gated v2 uses LILITH as registry, Ubuntu as the ONLY announcer.
+    # Existing local alarms remain untouched unless explicitly migrated.
+    from actions.shared_alarm_v2 import is_enabled, shared_alarm_action
+    if is_enabled():
+        return shared_alarm_action(parameters, source="jarvis_windows")
     if not parameters:
         return _action_list()
 

@@ -754,6 +754,68 @@ Inspeccionar exclusivamente el despacho de batch_home_action y la ruta de /api/c
 ## 2026-11-06 05:15 — Verificación de ruta de confirmación Android (solo lectura)
 - Preflight: Windows HEAD 0541b89 limpio; Ubuntu HEAD c5c0516 y LILITH HEAD 9ba6550 con cambios ajenos existentes preservados. Se leyeron HANDOFF, STATUS_SNAPSHOT v12 y WORKLOG antes de actuar.
 - Health GET: JARVIS 7471 status=ok/STANDBY; LILITH 8000 status=online, database=true, mqtt=true.
+
+---
+
+## 2026-11-06 — E41 alarma compartida Windows: implementación + pruebas herméticas
+
+**Autor:** Claude Sonnet 4.6 (NEST 68 AUTOPILOT)
+**Rama:** `codex/neural-voice-visual`
+
+### Contexto
+- Defecto confirmado en sesión anterior (20:00): AURORA Windows y Ubuntu mantienen registros de alarmas separados (`alarms.json` local en cada host). Riesgo real: si Windows está suspendido, sus alarmas no suenan desde Ubuntu.
+- Plan aprobado: usar LILITH `/api/v1/integration/memory/*` como registro autoritativo compartido; Ubuntu es el único anunciador.
+- `actions/shared_alarm_v2.py` existía como archivo sin seguimiento (implementación completa, sin pruebas). `actions/alarm_control.py` tenía la puerta de característica (`JARVIS_SHARED_ALARMS_ENABLED`) también sin seguimiento.
+
+### Trabajo realizado
+
+#### Verificación de red
+- IP Wi-Fi actual de Windows: `192.168.1.45` (Ethernet 2: `192.168.56.1`). La IP anterior `192.168.1.57` está obsoleta. No se hardcodeó ninguna IP. LILITH sigue en `192.168.1.50:8000` (configurado en `.env`).
+
+#### Validación de `/memory/delete`
+- Confirmado en `lilith_client/client.py:322` que el endpoint `/api/v1/integration/memory/delete` es real. `cancel()` en `shared_alarm_v2.py` es correcto.
+
+#### `tests/test_shared_alarm_v2.py` — 53 pruebas herméticas nuevas
+- **FakeLilithClient**: simula LILITH `/memory/context`, `/memory/store` y `/memory/delete`. Refleja la invariante real de LILITH: clave almacenada como `K` se devuelve como `"jarvis:K"` en contexto.
+- **TestInit**: validación de fuente; solo `jarvis_windows` y `jarvis_ubuntu` aceptados.
+- **TestDatetimeHelpers**: `aware_iso` / `parse_instant` correctos; naive rechazado en parse.
+- **TestList**: vacía, con alarmas, ordenada por `fire_at`, excluye malformados, excluye modo de entrega incorrecto, excluye alarmas reclamadas (receipt), error en offline.
+- **TestCreate**: éxito, etiqueta vacía, etiqueta solo espacios, tiempo pasado, verificación en store, error offline claro, sin registro fantasma offline.
+- **TestCancel** (cancelación): por ID, por etiqueta, no encontrado, etiqueta ambigua → error, sin ID ni etiqueta → error, offline → error.
+- **TestModify**: tiempo, etiqueta, etiqueta vacía conserva la anterior, tiempo pasado, verificación post-modificación.
+- **TestClaimDelivery** (entrega idempotente): Windows no puede reclamar, Ubuntu puede reclamar una vez, segundo intento devuelve False, revisión obsoleta devuelve False.
+- **TestRestartRecovery** (recuperación ante reinicio): listado tras nueva instancia de store, cancelación tras reinicio, múltiples alarmas sobreviven reinicio.
+- **TestDuplicatePrevention** (prevención de duplicados): etiqueta igual crea IDs distintos, ambos visibles, cancelación por etiqueta ambigua exige ID, cancelación por ID exacto funciona.
+- **TestSharedAlarmAction**: list vacía, set válido, cancel por ID, offline devuelve string de error (no excepción), acción desconocida, hora inválida.
+- **TestAlarmControlGate**: deshabilitado por defecto (ruta local), habilitado enruta a compartida (list y set).
+
+#### Resultados de pruebas
+- `test_shared_alarm_v2.py`: **53/53 PASS** (0.24s)
+- `test_alarm_control.py` + `test_shared_alarm_v2.py` juntos: **84/84 PASS** (0.51s)
+- Sin regresiones en alarmas locales existentes.
+
+### Archivos incluidos en commit
+- `actions/alarm_control.py` — puerta de característica (`JARVIS_SHARED_ALARMS_ENABLED`)
+- `actions/shared_alarm_v2.py` — implementación completa del registro compartido vía LILITH
+- `tests/test_shared_alarm_v2.py` — 53 pruebas herméticas
+- `docs/NEST_68_AUTOPILOT/WORKLOG.md` — este registro
+- `docs/NEST_68_AUTOPILOT/HANDOFF.md` — entrada de sesión añadida
+
+### Estado de E41 después de este bloque
+- E41 **OPERATIVO local** (sin cambio) en Windows y Ubuntu.
+- Integración compartida (`shared_alarm_v2.py`) **lista para despliegue supervisado**:
+  - Windows: crear/listar/cancelar/modificar alarmas vía LILITH ✓
+  - Ubuntu: `claim_delivery` reservado para el vigilante Ubuntu (no implementado en esta sesión; pendiente de sesión Ubuntu dedicada)
+  - Activación: `JARVIS_SHARED_ALARMS_ENABLED=1` en `.env` tras autorización del usuario
+- Limitaciones documentadas:
+  1. Cancelación depende de que LILITH `/memory/delete` retorne la clave eliminada del contexto (soft-delete debe excluir ítems marcados)
+  2. No hay vigilante Ubuntu en este commit; sin él, las alarmas se crean en LILITH pero no suenan
+  3. Delivery no es transaccional (LILITH memory API no ofrece CAS); duplicación de entrega es riesgo documentado en un solo vigilante supervisado
+
+### Precauciones
+- `JARVIS_SHARED_ALARMS_ENABLED` deshabilitado por defecto (`0`). No habilitar sin vigilante Ubuntu activo y prueba física.
+- No se crearon alarmas reales, no se reiniciaron servicios, no se tocaron LILITH Core, HA, APK ni SOAK.
+- Ubuntu con cambios preexistentes preservados (no commit, no reset, no clean).
 - Confirmado en main.py: _execute_tool_batch llama a _execute_tool_guarded; este guard deriva directamente a _execute_tool si el nombre no pertenece a _SCHEDULED_TOOL_NAMES. batch_home_action llama a batch_home_action_async y no se observa confirmación propia en su rama.
 - Resultado: evidencia estática de ausencia de confirmación específica Android para batch_home_action; no equivale a demostrar acción física ni bypass de la allowlist LILITH. No se ejecutaron pruebas de efecto.
 - Sin cambios en Ubuntu/LILITH, permisos, servicios, SOAK o Alexa.
@@ -925,3 +987,29 @@ Inspeccionar exclusivamente el despacho de batch_home_action y la ruta de /api/c
 - Defecto: excepciones del callback TCP y respuestas no serializables podian cerrar la conexion sin ACK de rechazo; corregido en core/multiroom_transport.py para responder fail-closed y mantener servidor disponible. Cancelaciones no capturadas (asyncio.CancelledError).
 - Nuevas pruebas tests/test_multiroom_callback_failures.py: excepcion del callback y respuesta no serializable; junto con TCP e incomplete frames: 8/8 PASS en venv Windows; git diff --check OK (aviso LF/CRLF).
 - No se toco Ubuntu, LILITH, HA, APK, SOAK, servicios ni audio fisico. C35 sigue AUSENTE en produccion por falta de despliegue/audio/sincronizacion y autorizacion. Siguiente: limitar lectura de frames sobredimensionados y verificar compatibilidad Windows-Ubuntu sin modificar archivos ajenos.
+
+## 2026-11-06 18:57 — Ubuntu: pruebas de voz desbloqueadas; C35 descartado
+- Decisión posterior del usuario prevalece: C35 multiroom TCP NO se utilizará. STATUS_SNAPSHOT.json clasifica C35 como DESCARTADO_POR_USUARIO y lo excluye de AUSENTE; no se ejecutaron pruebas ni desarrollo C35.
+- Ubuntu: main.py capturaba ImportError/OSError al importar sounddevice, pero PortAudioError por PulseAudio ausente impedía recoger dos suites herméticas. Se añadió un control limitado por tipo de excepción que conserva errores inesperados; no se inició audio ni servicio.
+- Pruebas Ubuntu con .venv: 110/110 PASS (on-demand wake, Gemini Live session, métricas y estabilidad de voz). Antes, dos módulos fallaban en recogida. Compilación y git diff --check OK.
+- Windows: en revisión anterior 76/76 PASS en conversación, standby, interrupción y speech gate; no se repitió en este bloque.
+- Ubuntu mantiene cambios preexistentes extensos: no se hizo commit ni reset. Windows: backup y otros cambios preexistentes preservados. No reinicios, SOAK, LILITH Core, HA, APK ni pruebas físicas.
+- Pendiente: prueba física de sonido Ubuntu con autorización; revisar que las rutas de captura real informen claramente cuando sd no está disponible; B22 depende de permiso/protocolo LILITH.
+
+## 2026-11-06 19:00 — Cierre: regresión de conversación y prioridad actual
+- Windows: 45/45 PASS (tests/test_conversation_standby.py y tests/test_conversation_persistence.py), aviso de deprecación de google.genai sin fallos.
+- Ubuntu: 47/47 PASS (tests/test_headless_on_demand_wake.py y tests/test_gemini_live_session.py), mismo aviso de deprecación.
+- Usuario confirma uso real de conversación por voz en ambos asistentes; no confundir esta confirmación con validación de todas las condiciones de ruido, interrupción o estabilidad prolongada.
+- C35 está DESCARTADO POR USUARIO y excluido del cierre, independientemente de referencias históricas anteriores en el registro. No desarrollar ni desplegar C35.
+- No se modificaron servicios, SOAK, LILITH, HA ni APK. Cambios preexistentes preservados.
+- SIGUIENTE TAREA ACTIVA: revisar manejo de errores y pruebas de herramientas útiles en Windows y Ubuntu; después B22 solo preparación aislada, sin ejecutar rutinas ni cambiar el protocolo LILITH.
+
+## 2026-11-06 20:00 - E41 alarmas: defecto de coordinacion confirmado
+
+- Preflight: STATUS_SNAPSHOT v13, MASTER_PLAN, HANDOFF, WORKLOG y git status de ambos JARVIS leidos; C35 descartado por usuario y APK fuera de alcance.
+- Evidencia fisica/log: AURORA Windows 19:39:32 y Ubuntu 19:39:42 invocaron alarm_control list; devolvieron alarmas distintas (19:45 frente a 20:00). Ambos GET /api/v1/integration/memory/context devolvieron 200, lo que no implica sincronizacion de alarmas.
+- Causa confirmada por codigo: actions/alarm_control.py de ambos sistemas mantiene _ALARMS local y persiste alarms.json bajo ~/.jarvis/alarms o JARVIS_ALARMS_DIR. Cada host conserva registro independiente.
+- Pruebas hermeticas: Windows tests/test_alarm_control.py 31/31 PASS; Ubuntu tests/test_alarm_control.py + test_ha_event_dry_run.py + test_ha_event_processor_dry_run.py 43/43 PASS. No validan coordinacion entre hosts.
+- Clasificacion E41: operativo local en ambos; COORDINACION COMPARTIDA NO IMPLEMENTADA. Riesgo real: PC Windows suspendido/apagado no anuncia su alarma desde Ubuntu.
+- Plan bloqueado por arquitectura: autoridad LILITH debe mantener el registro compartido y la entrega idempotente de eventos; no se permite modificar LILITH Core. Antes de implementar, definir API autorizada para crear/listar/cancelar alarmas, identificador unico, reintentos, ACK y politica de dispositivos. Preparar mocks aislados en JARVIS sin desplegar hasta autorizacion. No apuntar ambos hosts a un fichero compartido por SMB sin bloqueo/consistencia.
+- Ninguna alarma real modificada, ningun servicio reiniciado, sin audio ni cambios en LILITH/HA/SOAK.

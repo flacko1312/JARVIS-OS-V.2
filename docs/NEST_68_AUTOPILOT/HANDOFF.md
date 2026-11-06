@@ -363,10 +363,48 @@ ORS_API_KEY=                              FALTA — usuario debe registrar
 - Detectado defecto real en core/multiroom_transport.py: readline() aceptaba un JSON firmado terminado por EOF sin delimitador de nueva línea. Ahora servidor y cliente exigen frame completo (newline) y longitud máxima de 16384 bytes; fallan cerrado ante truncamiento.
 - Nueva regresión tests/test_multiroom_incomplete_frames.py: EOF sin newline en solicitud y respuesta, ambas rechazadas. Pruebas dirigidas 6/6 PASS; git diff --check exit 0 (aviso no bloqueante de conversión LF/CRLF).
 - No se inició transporte productivo, audio, HA, LILITH, servicios ni SOAK. Ubuntu no se modificó. C35 continúa AUSENTE como multiroom físico; este cambio solo endurece transporte de control Windows.
-- Próximo bloque: revisar excepciones de callback y lectura de frames sobredimensionados; verificar compatibilidad y preparar despliegue coordinado cuando se autorice.
+- Próximo bloque (actualizado 2026-11-06): C35 DESCARTADO POR USUARIO; no continuar su desarrollo ni despliegue. Priorizar pruebas herméticas de herramientas y compatibilidad Windows/Ubuntu, sin modificar LILITH, HA ni servicios.
 
 ## 2026-11-06 17:57 — C35 TCP: errores de callback aislados
 - Preflight: leidos STATUS_SNAPSHOT v13, MASTER_PLAN, HANDOFF, WORKLOG y estados Git de Windows y Ubuntu. Backup Windows sin seguimiento y todos los cambios Ubuntu preservados.
 - Defecto: excepciones del callback TCP y respuestas no serializables podian cerrar la conexion sin ACK de rechazo; corregido en core/multiroom_transport.py para responder fail-closed y mantener servidor disponible. Cancelaciones no capturadas (asyncio.CancelledError).
 - Nuevas pruebas tests/test_multiroom_callback_failures.py: excepcion del callback y respuesta no serializable; junto con TCP e incomplete frames: 8/8 PASS en venv Windows; git diff --check OK (aviso LF/CRLF).
 - No se toco Ubuntu, LILITH, HA, APK, SOAK, servicios ni audio fisico. C35 sigue AUSENTE en produccion por falta de despliegue/audio/sincronizacion y autorizacion. Siguiente: limitar lectura de frames sobredimensionados y verificar compatibilidad Windows-Ubuntu sin modificar archivos ajenos.
+
+## 2026-11-06 18:57 — Ubuntu: pruebas de voz desbloqueadas; C35 descartado
+- Decisión posterior del usuario prevalece: C35 multiroom TCP NO se utilizará. STATUS_SNAPSHOT.json clasifica C35 como DESCARTADO_POR_USUARIO y lo excluye de AUSENTE; no se ejecutaron pruebas ni desarrollo C35.
+- Ubuntu: main.py capturaba ImportError/OSError al importar sounddevice, pero PortAudioError por PulseAudio ausente impedía recoger dos suites herméticas. Se añadió un control limitado por tipo de excepción que conserva errores inesperados; no se inició audio ni servicio.
+- Pruebas Ubuntu con .venv: 110/110 PASS (on-demand wake, Gemini Live session, métricas y estabilidad de voz). Antes, dos módulos fallaban en recogida. Compilación y git diff --check OK.
+- Windows: en revisión anterior 76/76 PASS en conversación, standby, interrupción y speech gate; no se repitió en este bloque.
+- Ubuntu mantiene cambios preexistentes extensos: no se hizo commit ni reset. Windows: backup y otros cambios preexistentes preservados. No reinicios, SOAK, LILITH Core, HA, APK ni pruebas físicas.
+- Pendiente: prueba física de sonido Ubuntu con autorización; revisar que las rutas de captura real informen claramente cuando sd no está disponible; B22 depende de permiso/protocolo LILITH.
+
+## 2026-11-06 19:00 — Cierre: regresión de conversación y prioridad actual
+- Windows: 45/45 PASS (tests/test_conversation_standby.py y tests/test_conversation_persistence.py), aviso de deprecación de google.genai sin fallos.
+- Ubuntu: 47/47 PASS (tests/test_headless_on_demand_wake.py y tests/test_gemini_live_session.py), mismo aviso de deprecación.
+- Usuario confirma uso real de conversación por voz en ambos asistentes; no confundir esta confirmación con validación de todas las condiciones de ruido, interrupción o estabilidad prolongada.
+- C35 está DESCARTADO POR USUARIO y excluido del cierre, independientemente de referencias históricas anteriores en el registro. No desarrollar ni desplegar C35.
+- No se modificaron servicios, SOAK, LILITH, HA ni APK. Cambios preexistentes preservados.
+- SIGUIENTE TAREA ACTIVA: revisar manejo de errores y pruebas de herramientas útiles en Windows y Ubuntu; después B22 solo preparación aislada, sin ejecutar rutinas ni cambiar el protocolo LILITH.
+
+## 2026-11-06 — E41 shared_alarm_v2: integración Windows completada + 53 tests herméticos
+
+- Preflight: STATUS_SNAPSHOT v13, MASTER_PLAN, HANDOFF y WORKLOG leídos; Git Windows limpio antes de este bloque; Ubuntu con cambios ajenos preservados.
+- IP Wi-Fi Windows confirmada: `192.168.1.45`. LILITH en `192.168.1.50:8000`. `/memory/delete` verificado en `lilith_client/client.py:322`.
+- Nuevos archivos confirmados: `actions/shared_alarm_v2.py` (registro LILITH, Windows crea/lista/cancela/modifica) y `tests/test_shared_alarm_v2.py` (53 tests herméticos con FakeLilithClient).
+- `actions/alarm_control.py` ahora incluye puerta `JARVIS_SHARED_ALARMS_ENABLED` que enruta a `shared_alarm_action(..., source="jarvis_windows")` cuando habilitada.
+- Suites: `test_alarm_control.py` + `test_shared_alarm_v2.py` = **84/84 PASS**. Sin regresiones.
+- Cobertura: create, list, cancel, modify, offline recovery, restart recovery, duplicate prevention, claim_delivery (Windows bloqueado / Ubuntu once), gate routing.
+- **NO habilitar** `JARVIS_SHARED_ALARMS_ENABLED=1` hasta que el vigilante Ubuntu esté activo (tarea pendiente en sesión Ubuntu).
+- Sin reinicios, cambios SOAK, APK, HA, LILITH ni pruebas físicas.
+- Próximo: implementar vigilante Ubuntu (`shared_alarm_v2` Ubuntu watcher que llame `claim_delivery` y anuncie por TTS). Después, prueba supervisada con `JARVIS_SHARED_ALARMS_ENABLED=1`.
+
+## 2026-11-06 20:00 - E41 alarmas: defecto de coordinacion confirmado
+
+- Preflight: STATUS_SNAPSHOT v13, MASTER_PLAN, HANDOFF, WORKLOG y git status de ambos JARVIS leidos; C35 descartado por usuario y APK fuera de alcance.
+- Evidencia fisica/log: AURORA Windows 19:39:32 y Ubuntu 19:39:42 invocaron alarm_control list; devolvieron alarmas distintas (19:45 frente a 20:00). Ambos GET /api/v1/integration/memory/context devolvieron 200, lo que no implica sincronizacion de alarmas.
+- Causa confirmada por codigo: actions/alarm_control.py de ambos sistemas mantiene _ALARMS local y persiste alarms.json bajo ~/.jarvis/alarms o JARVIS_ALARMS_DIR. Cada host conserva registro independiente.
+- Pruebas hermeticas: Windows tests/test_alarm_control.py 31/31 PASS; Ubuntu tests/test_alarm_control.py + test_ha_event_dry_run.py + test_ha_event_processor_dry_run.py 43/43 PASS. No validan coordinacion entre hosts.
+- Clasificacion E41: operativo local en ambos; COORDINACION COMPARTIDA NO IMPLEMENTADA. Riesgo real: PC Windows suspendido/apagado no anuncia su alarma desde Ubuntu.
+- Plan bloqueado por arquitectura: autoridad LILITH debe mantener el registro compartido y la entrega idempotente de eventos; no se permite modificar LILITH Core. Antes de implementar, definir API autorizada para crear/listar/cancelar alarmas, identificador unico, reintentos, ACK y politica de dispositivos. Preparar mocks aislados en JARVIS sin desplegar hasta autorizacion. No apuntar ambos hosts a un fichero compartido por SMB sin bloqueo/consistencia.
+- Ninguna alarma real modificada, ningun servicio reiniciado, sin audio ni cambios en LILITH/HA/SOAK.
