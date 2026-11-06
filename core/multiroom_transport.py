@@ -80,16 +80,20 @@ class MultiroomServer:
                 response = {"ok": True}
             writer.write(_frame(response, self._key))
             await writer.drain()
-        except (asyncio.TimeoutError, TransportError, ConnectionError):
+        except Exception:
+            # Los callbacks externos pueden fallar: nunca filtrar su excepción al cliente.
             self.rejected += 1
-            writer.write(_frame({"ok": False, "error": "rejected"}, self._key))
             try:
+                writer.write(_frame({"ok": False, "error": "rejected"}, self._key))
                 await writer.drain()
-            except ConnectionError:
+            except (OSError, ConnectionError):
                 pass
         finally:
             writer.close()
-            await writer.wait_closed()
+            try:
+                await writer.wait_closed()
+            except (OSError, ConnectionError):
+                pass
 
 
 class MultiroomClient:

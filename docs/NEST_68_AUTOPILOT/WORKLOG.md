@@ -919,3 +919,9 @@ Inspeccionar exclusivamente el despacho de batch_home_action y la ruta de /api/c
 - Nueva regresión tests/test_multiroom_incomplete_frames.py: EOF sin newline en solicitud y respuesta, ambas rechazadas. Pruebas dirigidas 6/6 PASS; git diff --check exit 0 (aviso no bloqueante de conversión LF/CRLF).
 - No se inició transporte productivo, audio, HA, LILITH, servicios ni SOAK. Ubuntu no se modificó. C35 continúa AUSENTE como multiroom físico; este cambio solo endurece transporte de control Windows.
 - Próximo bloque: revisar excepciones de callback y lectura de frames sobredimensionados; verificar compatibilidad y preparar despliegue coordinado cuando se autorice.
+
+## 2026-11-06 17:57 — C35 TCP: errores de callback aislados
+- Preflight: leidos STATUS_SNAPSHOT v13, MASTER_PLAN, HANDOFF, WORKLOG y estados Git de Windows y Ubuntu. Backup Windows sin seguimiento y todos los cambios Ubuntu preservados.
+- Defecto: excepciones del callback TCP y respuestas no serializables podian cerrar la conexion sin ACK de rechazo; corregido en core/multiroom_transport.py para responder fail-closed y mantener servidor disponible. Cancelaciones no capturadas (asyncio.CancelledError).
+- Nuevas pruebas tests/test_multiroom_callback_failures.py: excepcion del callback y respuesta no serializable; junto con TCP e incomplete frames: 8/8 PASS en venv Windows; git diff --check OK (aviso LF/CRLF).
+- No se toco Ubuntu, LILITH, HA, APK, SOAK, servicios ni audio fisico. C35 sigue AUSENTE en produccion por falta de despliegue/audio/sincronizacion y autorizacion. Siguiente: limitar lectura de frames sobredimensionados y verificar compatibilidad Windows-Ubuntu sin modificar archivos ajenos.
