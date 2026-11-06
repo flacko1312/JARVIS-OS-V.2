@@ -118,8 +118,10 @@ class TestFormatDuration:
 def isolated_timer_registry(tmp_path, monkeypatch):
     """Each test gets its own registry file and cleared in-memory state."""
     monkeypatch.setenv("JARVIS_TIMER_DIR", str(tmp_path))
-    # Clear module-level in-memory timer dict between tests
+    # Clear module-level in-memory timer dict between tests.
+    # Never play real OS beeps/notifications during the automated suite.
     import actions.timer as _tm
+    monkeypatch.setattr(_tm, "_notify_os", MagicMock())
     for handle in list(_tm._TIMERS.values()):
         handle.cancel()
     _tm._TIMERS.clear()
@@ -262,3 +264,14 @@ class TestTimerUnknownAction:
     def test_unknown_action(self):
         result = timer({"action": "modify"})
         assert "no compatible" in result.lower()
+
+
+def test_spoken_timer_notification_precedes_os_notification(monkeypatch):
+    """A slow Windows notification backend cannot delay the spoken expiry."""
+    import actions.timer as module
+    player = MagicMock()
+    order = []
+    player.speak.side_effect = lambda _message: order.append("speech")
+    monkeypatch.setattr(module, "_notify_os", lambda _label: order.append("os"))
+    module._on_timer_fire("fake-expired-id", "pizza", player)
+    assert order == ["speech", "os"]

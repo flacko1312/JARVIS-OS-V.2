@@ -102,7 +102,8 @@ def _on_timer_fire(timer_id: str, label: str, player) -> None:
     items = _load_registry()
     _save_registry([item for item in items if item.get("id") != timer_id])
     text = f"Temporizador listo: {label}"
-    _notify_os(label)
+    # The Windows OS notification can block briefly; say the expiry first
+    # so a slow notification backend never delays JARVIS's spoken alert.
     if player is not None:
         directive = (
             "[INTERNAL TIMER FIRED] Di al usuario en español, con un tono amistoso, "
@@ -112,6 +113,8 @@ def _on_timer_fire(timer_id: str, label: str, player) -> None:
             player.speak(directive)
         except Exception:
             pass
+    # Retain the OS fallback; it runs after the spoken announcement.
+    _notify_os(label)
 
 
 def _parse_duration(text: str) -> tuple[int | None, str | None]:
