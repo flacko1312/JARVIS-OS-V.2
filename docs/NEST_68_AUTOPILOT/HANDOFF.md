@@ -344,3 +344,4 @@ ORS_API_KEY=                              FALTA — usuario debe registrar
 - Snapshot v13: 43 OPERATIVO, 9 PARCIAL, 2 AUSENTE, 4 BLOQUEADO, 10 REQUIERE_HARDWARE. Esta partición es la clasificación conservadora y exclusiva de 68 IDs.
 - Ubuntu: no sobrescribir, no resetear, no limpiar; conserva sus modificaciones/untracked. Servicios observados en STANDBY/healthy, sin reinicios en este bloque.
 - Siguiente bloque seguro: revisión estática de voz/dispatcher y pruebas dirigidas restantes en `.venv`; cualquier integración HA, transporte multiroom, audio físico o cambio de permisos requiere ventana/autorización separada.
+- Verificación Ubuntu adicional: `py_compile` de `main.py`, `actions/home_routine.py` y `actions/transport_schedules.py` PASS; batería disponible 172/172 PASS. No existe `tests/test_home_routine.py` en Ubuntu, por lo que la rutina no se declara probada automáticamente allí.
