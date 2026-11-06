@@ -207,3 +207,11 @@ ORS_API_KEY=                              FALTA — usuario debe registrar
 - 3 comprobaciones HTTP aisladas PASS y 17 pruebas unitarias de batch PASS. Sin tocar producción.
 - Detalle: `REMOTE_BATCH_AUTH_AUDIT_2026-11-06.md`.
 - PRÓXIMA TAREA: desarrollar/ejecutar prueba hermética sobre el canal Android y confirmar si existe barrera adicional de confirmación antes de `client.home_action`. Proponer un guard reversible y compatible con APK, pero no cambiar permisos/servicios durante SOAK.
+
+## 2026-11-06 05:15 — Verificación de ruta de confirmación Android (solo lectura)
+- Preflight: Windows HEAD 0541b89 limpio; Ubuntu HEAD c5c0516 y LILITH HEAD 9ba6550 con cambios ajenos existentes preservados. Se leyeron HANDOFF, STATUS_SNAPSHOT v12 y WORKLOG antes de actuar.
+- Health GET: JARVIS 7471 status=ok/STANDBY; LILITH 8000 status=online, database=true, mqtt=true.
+- Confirmado en main.py: _execute_tool_batch llama a _execute_tool_guarded; este guard deriva directamente a _execute_tool si el nombre no pertenece a _SCHEDULED_TOOL_NAMES. batch_home_action llama a batch_home_action_async y no se observa confirmación propia en su rama.
+- Resultado: evidencia estática de ausencia de confirmación específica Android para batch_home_action; no equivale a demostrar acción física ni bypass de la allowlist LILITH. No se ejecutaron pruebas de efecto.
+- Sin cambios en Ubuntu/LILITH, permisos, servicios, SOAK o Alexa.
+- Próximo bloque: test hermético con instancia simulada y llamada a _execute_tool_guarded para batch_home_action; verificar que no llega a home_action si se exige confirmación, antes de proponer parche reversible. No desplegar cambios durante SOAK.

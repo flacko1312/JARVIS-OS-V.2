@@ -750,3 +750,11 @@ Inspeccionar exclusivamente el despacho de batch_home_action y la ruta de /api/c
 - Ninguna llamada productiva a LILITH home/action ni dispositivo HA. No se han reiniciado servicios, modificado permisos o archivos Ubuntu/LILITH.
 - Hallazgos completos y plan en `REMOTE_BATCH_AUTH_AUDIT_2026-11-06.md`.
 - Próximo ciclo: comprobar con mocks la confirmación de `/api/chat` frente a ejecución de acciones reales; diseñar cierre fail-closed compatible con APK, sin desplegar sin pruebas.
+
+## 2026-11-06 05:15 — Verificación de ruta de confirmación Android (solo lectura)
+- Preflight: Windows HEAD 0541b89 limpio; Ubuntu HEAD c5c0516 y LILITH HEAD 9ba6550 con cambios ajenos existentes preservados. Se leyeron HANDOFF, STATUS_SNAPSHOT v12 y WORKLOG antes de actuar.
+- Health GET: JARVIS 7471 status=ok/STANDBY; LILITH 8000 status=online, database=true, mqtt=true.
+- Confirmado en main.py: _execute_tool_batch llama a _execute_tool_guarded; este guard deriva directamente a _execute_tool si el nombre no pertenece a _SCHEDULED_TOOL_NAMES. batch_home_action llama a batch_home_action_async y no se observa confirmación propia en su rama.
+- Resultado: evidencia estática de ausencia de confirmación específica Android para batch_home_action; no equivale a demostrar acción física ni bypass de la allowlist LILITH. No se ejecutaron pruebas de efecto.
+- Sin cambios en Ubuntu/LILITH, permisos, servicios, SOAK o Alexa.
+- Próximo bloque: test hermético con instancia simulada y llamada a _execute_tool_guarded para batch_home_action; verificar que no llega a home_action si se exige confirmación, antes de proponer parche reversible. No desplegar cambios durante SOAK.
