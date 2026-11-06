@@ -726,3 +726,19 @@ Auditar en lectura el riesgo de invocacion remota de lilith_home_action y docume
 
 ### Siguiente bloque
 Disenar tests aislados de politica remota (sin desplegar): casos por dominio, accion, entidad, token y ausencia de confirmacion; comprobar contrato APK para evitar regresion. Mantener doble confirmacion Alexa intacta.
+
+## 2026-11-06 05:00 - Contrato APK y matriz de autorizacion remota (sin despliegue)
+
+**Autor:** ChatGPT / NEST 68 nocturno
+
+- Preflight: Windows HEAD 1ff2c0b limpio; Ubuntu HEAD c5c0516 y LILITH HEAD 9ba6550, con modificaciones y archivos sin seguimiento ajenos preservados.
+- Health no destructivo: JARVIS GET /api/health en 7471 = ok/STANDBY; LILITH GET /health en 8000 = online, database=true, mqtt=true.
+- APK fuente /home/flako1312/apk_nueva_src/.../JarvisApi.kt: postChat usa POST /api/chat; no se encontraron referencias a /api/tool/invoke en fuentes Kotlin/Java inspeccionadas. Esto NO prueba el comportamiento de APK ya instalada ni de otros clientes.
+- api_server.py _respond_invoke: DENIED y CONFIRM_REQUIRED reciben 403 antes de _dispatch_tool; SAFE_WRITE entra al despacho tras autenticar.
+- Politica existente: lilith_home_action turn_on/turn_off/toggle = SAFE_WRITE. Adicionalmente batch_home_action wildcard = SAFE_WRITE en core/headless_permissions.py; revisar su ruta de despacho y efectos antes de afirmar alcance real. No se probaron dispositivos.
+- Matriz propuesta para futuras pruebas hermeticas: (1) sin token/invalido -> rechazo; (2) herramienta DENIED -> 403, despacho 0; (3) CONFIRM_REQUIRED -> 403, despacho 0; (4) mutacion HA sin confirmacion explicita -> rechazo futuro, despacho 0; (5) entidad fuera de allowlist -> rechazo, home_action 0; (6) accion fuera de allowlist -> rechazo; (7) consulta permitida -> sin mutacion; (8) compatibilidad /api/chat APK -> conservar flujo existente. Propuesta, NO comportamiento implementado.
+- Pruebas aisladas ejecutadas sin produccion: 9 passed, 19 deselected en 1.10s, pytest con PYTHONDONTWRITEBYTECODE=1 y cache deshabilitada.
+- Sin POST productivos, cambios de permisos, servicios, SOAK ni archivos Ubuntu/LILITH.
+
+### Siguiente bloque
+Inspeccionar exclusivamente el despacho de batch_home_action y la ruta de /api/chat frente a confirmaciones; documentar riesgo y tests faltantes antes de proponer cualquier parche. No desplegar cambios sin verificar APK real y politica de confirmacion.

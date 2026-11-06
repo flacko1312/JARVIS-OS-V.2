@@ -194,3 +194,9 @@ ORS_API_KEY=                              FALTA — usuario debe registrar
 - Confirmado en codigo: /api/tool/invoke permite lilith_home_action turn_on/turn_off/toggle como SAFE_WRITE tras autenticar, sin confirmacion adicional por entidad. LILITH conserva su propia allowlist, documentada como light/turn_on/turn_off; no se ha probado bypass.
 - Propuesta documental: confirmacion explicita para mutaciones HA remotas y allowlist granular por entidad/accion, previa evaluacion del contrato APK; sin desplegar cambios.
 - Ubuntu/LILITH sin modificar, SOAK intactos. Siguiente bloque: pruebas hermeticas de politica remota y compatibilidad APK.
+
+## Auditoria nocturna 2026-11-06 05:00
+- APK JarvisApi.kt fuente usa /api/chat; sin referencias Kotlin/Java a /api/tool/invoke en el arbol inspeccionado (no prueba APK instalada).
+- /api/tool/invoke rechaza DENIED/CONFIRM_REQUIRED, pero SAFE_WRITE permite lilith_home_action y batch_home_action (este ultimo pendiente de inspeccion de despacho).
+- Matriz de pruebas remotas propuesta y documentada en WORKLOG; 9 tests aislados PASS, 19 deselected. JARVIS/LILITH health OK.
+- Sin modificar Ubuntu/LILITH, SOAK, permisos ni dispositivos. Proximo: auditar batch_home_action y confirmar compatibilidad /api/chat.
