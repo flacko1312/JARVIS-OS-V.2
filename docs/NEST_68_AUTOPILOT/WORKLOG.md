@@ -781,3 +781,11 @@ Inspeccionar exclusivamente el despacho de batch_home_action y la ruta de /api/c
 - Health GET JARVIS 7471: ok/STANDBY. LILITH 8000: online, database=true, mqtt=true.
 - Lista de pruebas físicas para usuario: (1) confirmar salida y fuente predeterminadas en sesión de audio real; (2) prueba corta de reproducción audible; (3) prueba breve de captura con consentimiento; (4) wake word y respuesta TTS sin música y con música; (5) conversación contextual y memoria entre sesiones; (6) home_routine con simulación y, solo con permiso, dispositivos HA reales; (7) alarmas/radio/podcast; (8) multiroom y automatizaciones por eventos únicamente tras autorización y preparación. No ejecutar pruebas físicas automáticamente.
 - Siguiente bloque autónomo: identificar en lectura la pila de audio activa y comprobar configuración de captura/salida sin grabar ni reproducir, o ampliar tests herméticos de voz. Evitar alterar SOAK, servicios, permisos y cambios ajenos.
+
+## 2026-11-06 06:05 — Confirmaciones concurrentes y APK generada, SIN despliegue
+- Reproducido bug de confirmaciones simultáneas: canal global quedaba `telegram_confirmed` (prueba roja); corregido con candado compartido y ContextVar para canal Android (prueba verde).
+- Diferenciación explícita de canal para grupos Telegram con chat IDs negativos; argumentos pendientes congelados con deepcopy; vista previa Android por propietario, comprobando propietario/canal/caducidad.
+- Batería aislada: **249 passed, 7 warnings**, sin acciones HA ni Gemini real. Sintaxis y diff check correctos.
+- APK Debug compilada y firmada: 18 MiB, firma v2 válida, SHA-256 `76519a12b2cb1e55e184f2f2fd64a6c3ae781402395a62f0aeda84d3cbb9ae56`.
+- JARVIS y LILITH health OK; no reinicio, no instalación, doble Alexa intacta. Código Ubuntu/APK conserva otros cambios preexistentes; originales y parches bajo `/home/flako1312/jarvis-headless-backups/android_home_confirm_20261106_0535/`.
+- Informe: `ANDROID_CONFIRMATION_CONCURRENCY_2026-11-06.md`. Siguiente paso BLOQUEADO: reinicio autorizado de JARVIS y despliegue/supervisión de APK.

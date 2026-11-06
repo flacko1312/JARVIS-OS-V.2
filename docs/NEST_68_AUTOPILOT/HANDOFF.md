@@ -231,3 +231,10 @@ ORS_API_KEY=                              FALTA — usuario debe registrar
 - Health GET JARVIS 7471: ok/STANDBY. LILITH 8000: online, database=true, mqtt=true.
 - Lista de pruebas físicas para usuario: (1) confirmar salida y fuente predeterminadas en sesión de audio real; (2) prueba corta de reproducción audible; (3) prueba breve de captura con consentimiento; (4) wake word y respuesta TTS sin música y con música; (5) conversación contextual y memoria entre sesiones; (6) home_routine con simulación y, solo con permiso, dispositivos HA reales; (7) alarmas/radio/podcast; (8) multiroom y automatizaciones por eventos únicamente tras autorización y preparación. No ejecutar pruebas físicas automáticamente.
 - Siguiente bloque autónomo: identificar en lectura la pila de audio activa y comprobar configuración de captura/salida sin grabar ni reproducir, o ampliar tests herméticos de voz. Evitar alterar SOAK, servicios, permisos y cambios ajenos.
+
+## 2026-11-06 06:05 — Listo para ventana de despliegue autorizada
+- **NO reiniciar ni instalar hasta que el usuario lo indique.** Los servicios siguen vivos; toda la protección de confirmaciones nueva existe solo en código en disco.
+- Corregida carrera simultánea que filtraba estado `telegram_confirmed`; ahora aprobación Android aislada por tarea, serializada con chat, origen de canal explícito. Android pendiente por propietario; snapshot profundo de argumentos.
+- **249 pruebas PASS** (7 warnings) y APK Debug de 18 MiB generada, firma v2 verificada. APK: `/home/flako1312/apk_nueva_src/app/build/outputs/apk/debug/app-debug.apk`. SHA-256 `76519a12b2cb1e55e184f2f2fd64a6c3ae781402395a62f0aeda84d3cbb9ae56`.
+- Backups originales + parches: `/home/flako1312/jarvis-headless-backups/android_home_confirm_20261106_0535/`. Ubuntu/APK siguen con modificaciones anteriores; no comprometerlas con commits masivos, reset o clean.
+- Informe de estado para reanudación: `ANDROID_CONFIRMATION_CONCURRENCY_2026-11-06.md`. Próximo bloque: SOLO lectura de condiciones SOAK, planificar reinicio controlado cuando el usuario lo autorice y pruebas APK bajo supervisión.
