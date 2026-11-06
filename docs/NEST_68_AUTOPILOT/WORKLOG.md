@@ -881,3 +881,9 @@ Inspeccionar exclusivamente el despacho de batch_home_action y la ruta de /api/c
 - Suite completa de seleccion multiroom desde entorno de proyecto: `.\.venv\Scripts\python.exe -m pytest -q -p no:cacheprovider tests -k multiroom --disable-warnings --maxfail=1` => **110 passed, 1968 deselected, 1 warning** (exit 0).
 - Sin red, audio fisico, reinicios, HA/LILITH ni cambios Ubuntu. C35 permanece NO operativo fisicamente: tests de simulacion, no transporte real.
 - Siguiente: diagnosticar la advertencia de pytest y auditar pruebas hermeticas de integracion B22 sin tocar HA.
+
+## 2026-11-06 — B22 propuestas de rutinas por evento, solo dry-run
+- Acceso Remote Desktop Commander restablecido a ambos equipos; preflight STATUS_SNAPSHOT, MASTER_PLAN, HANDOFF, WORKLOG y estados Git de ambos JARVIS. Ubuntu con cambios ajenos preservados; Windows limpio antes de este bloque.
+- Nuevos `core/ha_event_proposals_dry_run.py` y `tests/test_ha_event_proposals_dry_run.py`: propuestas de IDs de rutinas sin ejecutar nada; deduplicacion y rechazo de datos malformados.
+- `.\.venv\Scripts\python.exe -m pytest -q -p no:cacheprovider tests/test_ha_event_dry_run.py tests/test_ha_event_proposals_dry_run.py` => **13 passed** (6 nuevas). Sin red, sonido, HA, LILITH ni dispositivos.
+- B22 sigue AUSENTE como automatizacion productiva; falta integracion autorizada con el flujo de eventos y autoridad de rutinas LILITH. Siguiente: pruebas de eventos repetidos y diseño de contrato de entrega sin activar HA.
