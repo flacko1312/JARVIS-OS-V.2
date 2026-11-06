@@ -262,6 +262,7 @@
                                       "C35":  "Windows-only hermetic planner/handshake/sync/HMAC/expiry/ACK suites are present and tested. No authenticated transport, key provisioning, audio stream or physical playback is deployed.",
                                       "C35_transport":  "core/multiroom_transport.py is deployed as an unused library on Windows and as new untracked files on Ubuntu. Loopback TCP framing/HMAC/ACK/retry tests pass; it is not started by either service and carries no audio.",
                                       "B22_bridge":  "core/ha_event_bridge.py is deployed as an unused library on Windows and as new untracked files on Ubuntu. It can read-verify routines.get; execution is fail-closed because current LILITH protocol has no event execution intent.",
+                                      "voice_regression":  "Windows dispatcher/Gemini/interruption/speech-gate regression: 68 passed. Ubuntu voice imports remain uncollectable because numpy is absent; no dependency installation or service change was performed.",
                                       "classification":  "B22 and C35 remain AUSENTE globally; simulated tests do not promote capabilities to OPERATIVO.",
                                       "ubuntu_changes":  "Ubuntu modified/untracked files were preserved and not overwritten or committed by this block."
                                   },
