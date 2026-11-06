@@ -868,3 +868,9 @@ Inspeccionar exclusivamente el despacho de batch_home_action y la ruta de /api/c
 - Verificación: `py -m pytest -q tests/test_multiroom_malformed_dry_run.py tests/test_multiroom_auth_dry_run.py` => **30 passed in 0.12s**. `python` no está en PATH; `py` funciona.
 - Sin red, sonido, dispositivos, servicios, LILITH ni cambios en Ubuntu. C35 continúa como software simulado, NO operativo físicamente.
 - Próximo bloque: pruebas de expiración de sesiones y revisión de límites de memoria del verificador, después transporte autenticado desactivado por defecto.
+
+## 2026-11-06 15:00 — C35 expiracion y cupo (simulacion)
+- Implementado `core/multiroom_expiry_dry_run.py` con reloj inyectado, caducidad fija fail-closed, rechazo de re-registro de sesion expirada y cupo de sesiones activas. No sockets, audio ni configuracion productiva.
+- Añadidos 12 tests en `tests/test_multiroom_expiry_dry_run.py`; `py -m pytest -q tests/test_multiroom_expiry_dry_run.py tests/test_multiroom_auth_dry_run.py tests/test_multiroom_malformed_dry_run.py` => **42 passed**.
+- Intento de suite amplia `py -m pytest -q tests -k multiroom` bloqueado en coleccion por **40 errores de dependencias ausentes** en Python global 3.14 (google/genai, PyQt6, playwright, sqlalchemy, etc.). No significa fallo de los tests multiroom; no se instalaron dependencias ni se toco el entorno activo. Proximo ciclo: localizar entorno virtual de proyecto y ejecutar bateria dirigida, sin alterar servicios.
+- Estado C35: preparacion software hermetica, NO operativo; transporte real, secretos, audio fisico y validacion pendientes. Ubuntu tiene numerosos cambios ajenos sin seguimiento: intactos. Snapshot global de 68 capacidades sin promocion por tests simulados.
