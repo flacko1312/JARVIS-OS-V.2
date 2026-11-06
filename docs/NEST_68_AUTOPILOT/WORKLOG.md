@@ -854,3 +854,11 @@ Inspeccionar exclusivamente el despacho de batch_home_action y la ruta de /api/c
 - Suite multiroom hermetica: 68/68 PASS (10 nuevas); git diff --check sin errores. Sin red, audio, servicios, HA, LILITH ni dispositivos.
 - C35 sigue AUSENTE como funcion fisica: ACK simulado no autentica un transporte real ni transmite sonido. Pendientes: autenticacion, transporte, sincronizacion y pruebas fisicas autorizadas.
 - Proximo bloque: especificar autenticacion del transporte y validar mensajes maliciosos con mocks sin desplegar.
+
+## 2026-11-06 14:00 — C35 autenticacion hermetica HMAC
+- Preflight: consultados STATUS_SNAPSHOT v12, MASTER_PLAN, HANDOFF, WORKLOG y Git Windows/Ubuntu. Windows HEAD f3f0f4d limpio; Ubuntu mantiene cambios ajenos intactos.
+- Nuevos archivos Windows core/multiroom_auth_dry_run.py y tests/test_multiroom_auth_dry_run.py. Firma HMAC-SHA256 con clave de prueba aportada en memoria; rechazo de manipulacion, identidad ajena, firma incorrecta, repeticion, sesion incorrecta y reutilizacion tras abort. Sin sockets ni audio.
+- Suite multiroom: 83/83 PASS (15 nuevas), 1968 pruebas no seleccionadas; 1 aviso de deprecacion externo. Primer intento con wildcard pytest en PowerShell no expandio; repetido correctamente con -k multiroom.
+- IMPORTANTE: C35 sigue AUSENTE fisicamente. Este codigo NO proporciona transporte, distribucion segura de claves, sincronizacion de audio ni prueba de red; prohibido llamarlo autenticacion desplegada.
+- Sin modificaciones Ubuntu/LILITH/HA/APK, SOAK, permisos, dispositivos o servicios.
+- Siguiente bloque: pruebas de robustez del protocolo ante mensajes malformados y expiracion de sesiones; despues propuesta de transporte para ventana autorizada.
