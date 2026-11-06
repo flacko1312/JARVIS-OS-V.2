@@ -789,3 +789,11 @@ Inspeccionar exclusivamente el despacho de batch_home_action y la ruta de /api/c
 - APK Debug compilada y firmada: 18 MiB, firma v2 válida, SHA-256 `76519a12b2cb1e55e184f2f2fd64a6c3ae781402395a62f0aeda84d3cbb9ae56`.
 - JARVIS y LILITH health OK; no reinicio, no instalación, doble Alexa intacta. Código Ubuntu/APK conserva otros cambios preexistentes; originales y parches bajo `/home/flako1312/jarvis-headless-backups/android_home_confirm_20261106_0535/`.
 - Informe: `ANDROID_CONFIRMATION_CONCURRENCY_2026-11-06.md`. Siguiente paso BLOQUEADO: reinicio autorizado de JARVIS y despliegue/supervisión de APK.
+
+## 2026-11-06 06:10 - JARVIS-only: timer, herramientas, conversación
+- Alcance: terminar solo los asistentes JARVIS/AURORA Windows y JARVIS Ubuntu; no APK ni cambios LILITH Core (M-3 a M-9 aparte). Automatización horaria actualizada a JARVIS - cierre autónomo.
+- Herramientas (timer, calendar, traffic, radio, podcast, alarm, transport, batch): Ubuntu 259/259 PASS. Windows inicialmente 258/259: test_fire_calls_player_speak fallo porque la notificación OS retrasaba la voz. Corregida prioridad de voz, aislada notificación real en tests, test de orden. Windows 260/260 PASS. Commit 333625b. Backup C:\Users\loren\JARVIS_BACKUPS\nest68_timer_20261106.
+- Conversación/persistencia/guards simulados: Windows 102/102 PASS, Ubuntu 100/100 PASS.
+- Nuevo test AST de contrato tests/test_tool_dispatch_contract.py: 1/1 PASS en Windows y 1/1 PASS en Ubuntu. Asegura rama de despacho por nombre declarado sin audio/red; no demuestra ejecución física.
+- Línea base STATUS_SNAPSHOT v12: 43 OPERATIVO declarado, 9 PARCIAL, 2 AUSENTE, 4 BLOQUEADO, 10 HARDWARE. Detalles en JARVIS_ONLY_EXIT_CRITERIA_2026-11-06.md.
+- Sin reinicios, sin cambios SOAK/LILITH/HA. Siguiente: voz simulada, seguridad del dispatcher y cierre de software sin dependencias externas.

@@ -242,3 +242,10 @@ ORS_API_KEY=                              FALTA — usuario debe registrar
 ## 2026-11-06 06:05 — Artefacto APK preservado
 - Copia independiente de la APK debug firmada (18 MiB) junto con checksum SHA-256 en `/home/flako1312/jarvis-headless-backups/android_home_confirm_20261106_0535/apk/jarvis-confirmation-debug-20261106.apk` y `.sha256`.
 - Copiados los helpers y tests nuevos al directorio de resguardo. Hash coincide con la APK generada. Sin reinicio ni instalación.
+
+## 2026-11-06 06:10 - JARVIS exclusivo: prioridad del usuario
+- Trabajar SOLAMENTE en JARVIS Windows (C:\JARVIS) y JARVIS Ubuntu (/home/flako1312/jarvis-headless). No APK, no LILITH Core, no hitos M-3 a M-9, no cambios Home Assistant; el usuario dirá cuándo reiniciar.
+- Documento de cierre honesto: docs/NEST_68_AUTOPILOT/JARVIS_ONLY_EXIT_CRITERIA_2026-11-06.md. No copiar conteos más antiguos de MASTER_PLAN sin revisión.
+- Test de herramientas: Ubuntu 259/259 PASS y Windows 260/260 PASS (Windows timer TTS corregido, commit 333625b). Conversación: Windows 102 PASS, Ubuntu 100 PASS. Test AST de despacho Gemini PASS en ambos.
+- Ubuntu tiene modificaciones previas sin seguimiento; no reiniciar, resetear, limpiar, hacer git add masivo ni tocar LILITH.
+- Próximo: pruebas simuladas de voz y reconexión, comparación de herramientas declaradas y errores reales de software.
