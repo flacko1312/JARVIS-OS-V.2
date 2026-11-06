@@ -827,3 +827,9 @@ Inspeccionar exclusivamente el despacho de batch_home_action y la ruta de /api/c
 - Pruebas aisladas: 21/21 PASS (11 anteriores de rutas + 10 nuevas de sincronización). Python invocado por ruta absoluta, pues alias python de Microsoft Store no sirve.
 - C35 sigue AUSENTE como función real: no existe transporte de audio ni sincronización física; únicamente planificador y simulador. Próximo: diseñar contrato de mensajes y pruebas de fallos/desconexiones entre dos asistentes sin tocar producción.
 - No se reiniciaron servicios, no se alteró Ubuntu/LILITH/HA, SOAK ni doble confirmación Alexa.
+
+## 2026-11-06 10:03 — C35 contrato hermético de mensajes Windows–Ubuntu
+- Preflight: STATUS_SNAPSHOT v12, MASTER_PLAN, HANDOFF, WORKLOG consultados; Windows HEAD 8928814 limpio, Ubuntu HEAD d5a1db8 con cambios ajenos preservados.
+- Nuevos archivos solo Windows: core/multiroom_protocol_dry_run.py y tests/test_multiroom_protocol_dry_run.py. Contrato puro de prepare/ready/start/abort/ack con sesión, pares autorizados, secuencia estricta y latencia acotada; rechaza replays, mensajes fuera de orden, campos extra y sesiones abortadas.
+- Tests aislados del conjunto C35: 38/38 PASS, git diff --check correcto. No transporte real, red, audio, HA ni LILITH write; C35 permanece AUSENTE en operación física.
+- Próximo bloque: modelar handshake y timeout/reintentos fail-closed con pruebas herméticas; integración real y sonido requieren autorización posterior.
