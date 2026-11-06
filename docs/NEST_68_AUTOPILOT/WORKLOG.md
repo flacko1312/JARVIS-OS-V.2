@@ -797,3 +797,9 @@ Inspeccionar exclusivamente el despacho de batch_home_action y la ruta de /api/c
 - Nuevo test AST de contrato tests/test_tool_dispatch_contract.py: 1/1 PASS en Windows y 1/1 PASS en Ubuntu. Asegura rama de despacho por nombre declarado sin audio/red; no demuestra ejecución física.
 - Línea base STATUS_SNAPSHOT v12: 43 OPERATIVO declarado, 9 PARCIAL, 2 AUSENTE, 4 BLOQUEADO, 10 HARDWARE. Detalles en JARVIS_ONLY_EXIT_CRITERIA_2026-11-06.md.
 - Sin reinicios, sin cambios SOAK/LILITH/HA. Siguiente: voz simulada, seguridad del dispatcher y cierre de software sin dependencias externas.
+
+## 2026-11-06 06:20 - JARVIS voice reconnection and interruption tests
+- Windows: tests/test_gemini_live_session.py, test_phy2_004_audio_interruption.py, test_phy2_004_speech_gate.py, test_audio_device_selector.py, test_local_file_audio_gate.py -> **115 passed, 1 warning**.
+- Ubuntu: tests/test_gemini_live_session.py, test_local_barge_in.py, test_barge_in_dedup.py, test_block9_voice_stability.py, test_catalog_voice.py, test_phy2_004_audio_interruption.py, test_phy2_004_speech_gate.py, test_headless_on_demand_wake.py, test_headless_hey_jarvis_wake.py -> **150 passed, 1 warning**.
+- Tests mocked / simulated: no physical microphone recording, audio playback, Gemini network session, action HA or LILITH Core write. Code has dispatch contract AST tests in Git on both hosts: Windows commit 3b6b91c; Ubuntu commit d5a1db8 with all other dirty files preserved.
+- Next permitted step: additional static/tool tests + controlled diagnosis. Hardware audio validation and any restart remain awaiting user authorization.

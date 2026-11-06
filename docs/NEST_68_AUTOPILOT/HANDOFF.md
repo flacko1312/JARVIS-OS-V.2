@@ -249,3 +249,9 @@ ORS_API_KEY=                              FALTA — usuario debe registrar
 - Test de herramientas: Ubuntu 259/259 PASS y Windows 260/260 PASS (Windows timer TTS corregido, commit 333625b). Conversación: Windows 102 PASS, Ubuntu 100 PASS. Test AST de despacho Gemini PASS en ambos.
 - Ubuntu tiene modificaciones previas sin seguimiento; no reiniciar, resetear, limpiar, hacer git add masivo ni tocar LILITH.
 - Próximo: pruebas simuladas de voz y reconexión, comparación de herramientas declaradas y errores reales de software.
+
+## 2026-11-06 06:20 - JARVIS software voice tests PASSED
+- Windows voice/reconnection/audio-routing unit suite 115/115 PASS. Ubuntu wakeword/barge-in/voice-stability/live-session unit suite 150/150 PASS. No hardware tests performed; these results do not mark G67 as physical PASS.
+- Windows Git latest for JARVIS-only closeout: 3b6b91c (criteria + AST dispatch test), preceded by 333625b (timer speech first). Ubuntu isolated static dispatch test committed d5a1db8, preserving ~60 unrelated modified/untracked entries.
+- Authoritative JARVIS-only closure document: docs/NEST_68_AUTOPILOT/JARVIS_ONLY_EXIT_CRITERIA_2026-11-06.md.
+- Do not restart production or modify APK, LILITH, HA. Prioritize software validation and prepare only supervised physical tests as final blockers.
