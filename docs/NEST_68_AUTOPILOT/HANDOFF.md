@@ -264,3 +264,11 @@ ORS_API_KEY=                              FALTA — usuario debe registrar
 - B22 sigue AUSENTE como automatización real: este es solo un componente aislado y probado. Integración del flujo de eventos, autorización y ejecución requiere diseño/validación con LILITH/HA y permiso; no marcar OPERATIVO.
 - C35 multiroom sigue AUSENTE. Próximo ciclo: diseñar planificador puro de zonas/altavoces y pruebas mock sin emitir audio.
 - Sin reinicios, cambios SOAK, APK, HA, LILITH, permisos ni audio físico.
+
+## 2026-11-06 07:55 — C35 planificador multiroom hermético
+- Preflight: leídos STATUS_SNAPSHOT v12, MASTER_PLAN, HANDOFF, WORKLOG y estados Git de ambos JARVIS. Windows limpio HEAD e978f19; Ubuntu HEAD d5a1db8 con cambios ajenos preservados.
+- Health GET: JARVIS Ubuntu 7471 ok/STANDBY; LILITH 8000 online, database=true, mqtt=true.
+- Nuevos archivos solo Windows: core/multiroom_dry_run.py y tests/test_multiroom_dry_run.py. Planificador puro que asigna zonas a altavoces disponibles y rechaza zonas duplicadas, desconocidas, altavoces no disponibles y conflictos de asignación. No usa red, dispositivos, audio ni reproducción.
+- Tests: 11/11 PASS (pytest aislado), git diff --check correcto. Sin cambios en Ubuntu/LILITH/HA, permisos, SOAK ni reinicios.
+- C35 permanece AUSENTE como reproducción real: este bloque solo prepara la lógica de asignación, NO sincronización, transporte, latencia ni ejecución física. B22 también permanece AUSENTE como automatización real.
+- Siguiente bloque: diseñar contrato de coordinación multiroom entre Windows y Ubuntu con mensajes simulados, tiempos y fallos; no habilitar reproducción sin autorización.
