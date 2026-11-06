@@ -682,3 +682,18 @@ Revisar los consumidores del snapshot y asegurar que no interpreten las anotacio
 - JARVIS Ubuntu /health: status ok, STANDBY; LILITH /health: online, database=true, mqtt=true.
 - Intento inicial de rg no disponible en PowerShell; se uso git grep como alternativa. Sin pruebas fisicas ni peticiones /api/chat con efectos.
 - Proximo bloque: inspeccionar de forma no destructiva gateway Android y probar contratos de herramientas mediante tests aislados, sin ejecutar rutinas fisicas.
+
+## 2026-11-06 02:00 - Gateway Android: prueba aislada y segura
+
+**Autor:** ChatGPT / NEST 68 nocturno
+
+- Preflight: Windows HEAD 137e472 limpio; Ubuntu HEAD c5c0516 y LILITH HEAD 9ba6550 con cambios locales anteriores, preservados.
+- Health Ubuntu JARVIS: status=ok, STANDBY. LILITH: online, database=true, mqtt=true.
+- Inspeccionado tests/test_android_gateway.py: contiene POST /api/chat real con Gemini; NO se ejecuto porque no es una prueba hermetica.
+- Ejecutado en Ubuntu: PYTHONDONTWRITEBYTECODE=1 python3 -m pytest -q -p no:cacheprovider tests/test_android_gateway_unit.py.
+- Resultado: **6 passed in 0.58s**. Pruebas con servidor local efimero, Jarvis simulado y sin acceso a Gemini/HA: canal Android y propietario de sesion, autenticacion, limites de entrada, confirmacion/cancelacion y seleccion de bind.
+- Primer intento mediante ejecutable pytest fallo durante carga de conftest con ModuleNotFoundError: api. Usando python3 -m pytest desde la raiz se resolvio; no se modifico codigo.
+- No se ejecutaron acciones domesticas ni se reiniciaron servicios. No se modificaron arboles Ubuntu/LILITH.
+
+### Siguiente bloque
+Revisar si el contrato /api/tool/invoke y sus permisos tienen pruebas hermeticas equivalentes; ampliar tests solo si existe hueco verificable, sin llamadas a produccion.

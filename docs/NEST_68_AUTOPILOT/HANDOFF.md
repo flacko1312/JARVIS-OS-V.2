@@ -176,3 +176,9 @@ ORS_API_KEY=                              FALTA — usuario debe registrar
 - Sin consumidores directos de STATUS_SNAPSHOT en codigo versionado Python/PowerShell/JS/TS (git grep). No se afirma ausencia de consumidores dinamicos.
 - Ubuntu JARVIS y LILITH health OK; cambios locales preservados.
 - Proximo bloque: auditoria de gateway Android y tests aislados no destructivos.
+
+## Auditoria nocturna 2026-11-06 02:00
+- Gateway Android: tests hermeticos 6/6 PASS via python3 -m pytest; sin Gemini ni acciones fisicas.
+- tests/test_android_gateway.py es prueba E2E real y se evito en horario nocturno.
+- Health JARVIS/LILITH OK; archivos Ubuntu/LILITH sin modificar.
+- Siguiente bloque: cobertura de permisos /api/tool/invoke sin produccion.
