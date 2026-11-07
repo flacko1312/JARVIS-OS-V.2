@@ -411,6 +411,21 @@ ORS_API_KEY=                              FALTA — usuario debe registrar
 - Creado docs/OVERNIGHT_DIAGNOSTICS/ (SYSTEM_STATE, TEST_RESULTS, PERFORMANCE_BASELINE, TROUBLESHOOTING).
 - PRÓXIMA TAREA: validación física de audio Ubuntu (TTS real del anuncio de alarma).
 
+## 2026-11-07 06:08 — Overnight verification night 8 — ALL PASS + RAM restart
+
+- Automated session. No user present.
+- **Ubuntu RAM: 1.88 GB — OOM risk. Service restarted at 06:05:14 CET.**
+- New PID 720285, RAM: 381 MB after restart (leak cleared).
+- Watcher confirmed post-restart: `SHARED_ALARM Ubuntu watcher started (feature gated)` at 06:05:18.
+- LILITH: online, database=true, mqtt=true. 2 real user alarms preserved throughout.
+- 84/84 Windows tests PASS. 78/78 Ubuntu tests PASS.
+- Live E2E against real LILITH: **18/18 PASS** (create, cross-node list, cancel, modify, restart-recovery, fail-closed, cleanup).
+- All N8 test alarms cleaned up. Real alarms intact.
+- **RAM leak rate: ~555 MB/hr. Next restart ETA: ~08:07 CET.**
+- Overnight diagnostics updated. Commit follows.
+- Ubuntu pre-existing changes preserved (not committed).
+- NEXT: User validates physical TTS alarm announcement on Ubuntu speaker. Monitor Ubuntu RAM.
+
 ## 2026-11-07 02:12 — Overnight verification night 4 — ALL PASS + RAM leak mitigated
 
 - Automated session. No user present.

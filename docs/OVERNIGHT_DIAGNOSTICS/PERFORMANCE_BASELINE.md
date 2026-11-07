@@ -1,5 +1,5 @@
 # PERFORMANCE_BASELINE — JARVIS Overnight Diagnostics
-Last updated: 2026-11-07 04:08 CET (automated overnight session — night 6)
+Last updated: 2026-11-07 06:08 CET (automated overnight session — night 8)
 First generated: 2026-11-06 23:13 CET
 
 All measurements taken with `JARVIS_SHARED_ALARMS_ENABLED=1`.
@@ -72,8 +72,35 @@ JARVIS Windows runs interactively; no persistent memory footprint to baseline.
 - Night 5: PID 559658, Memory 796 MB RSS (62min uptime) — same instance, leak ongoing
 - **Night 6 ACTION: Service restarted at 04:05:24 CET due to OOM risk (1.8 GB RSS)**
 - Night 6: PID 639077, Memory 288 MB RSS (2.6min uptime) — leak cleared by restart
-- RAM leak confirmed: ~394 MB/hour (night 5) vs ~630 MB/hour (nights 2-3); may vary by workload. Restart cadence needed (every 2-3 hours overnight).
+- Night 7: PID 639077, Memory 777 MB RSS (59min uptime) — same instance, leak ongoing
+- **Night 8 ACTION: Service restarted at 06:05:14 CET due to OOM risk (1.88 GB RSS, ~1h 59min uptime)**
+- Night 8: PID 720285, Memory 381 MB RSS (2.5min uptime) — leak cleared by restart
+- RAM leak confirmed: ~555 MB/hour (night 7 measurement: 777 MB at 59min from 231 MB base); restart every 2h needed overnight.
 - arecord subprocess: re-spawned after restart (new PID), running
+
+### Night 8 (2026-11-07 06:07)
+| Metric | Value | Type |
+|---|---|---|
+| Uptime (since night-8 restart) | ~2.5min | MEASURED |
+| RAM total | 7288 MB | MEASURED |
+| RAM used | 3338 MB | MEASURED |
+| RAM available | 3949 MB | MEASURED |
+| Disk / used | 84% | ESTIMATE (unchanged) |
+| jarvis-headless RSS | 381 MB | MEASURED |
+| RAM growth rate | ~555 MB/hr (from night 7 data: 231→777 MB over 59min) | MEASURED |
+| Restart threshold ~1.5 GB ETA | ~08:07 CET | ESTIMATE |
+
+### Night 7 (2026-11-07 05:04)
+| Metric | Value | Type |
+|---|---|---|
+| Uptime | 59min (since night-6 restart at 04:05) | MEASURED |
+| RAM total | 7288 MB | MEASURED |
+| RAM used | 3772 MB | MEASURED |
+| RAM available | 3515 MB | MEASURED |
+| Swap used | ~2.4 GB / 4.1 GB (59%) | MEASURED |
+| jarvis-headless RSS | 777 MB | MEASURED |
+| jarvis-headless CPU | 14min 13s / 59min = ~24% avg | MEASURED |
+| RAM growth rate | 231 MB → 777 MB in 59min = ~555 MB/hr | MEASURED |
 
 ### Night 5 (2026-11-07 03:07)
 | Metric | Value | Type |

@@ -1,6 +1,57 @@
 # TEST_RESULTS — JARVIS Overnight Diagnostics
-Last updated: 2026-11-07 05:12 CET (automated overnight session — night 7)
+Last updated: 2026-11-07 06:08 CET (automated overnight session — night 8)
 First generated: 2026-11-06 23:11 CET
+
+---
+
+## Overnight session 8 — 2026-11-07 (automated)
+
+### Pre-session state verification (06:05 CET)
+- Ubuntu jarvis-headless.service: **active/running** PID 639077 — but RSS **1.88 GB** (OOM risk — above 1.5 GB threshold)
+- Ubuntu system RAM: 4849 MB used / 7288 MB total (2438 MB available)
+- Swap: moderate (continuing drain pattern from prior nights)
+- LILITH: **online** (HTTP 200, database=true, mqtt=true)
+- Pre-existing alarms in LILITH: **2** real user alarms (preserved through all tests)
+- **No SOAK tests running** (all inactive)
+- **ACTION: Restarted jarvis-headless at 06:05:14 CET (PID 639077 → 720285, RSS 1.88 GB → 328 MB)**
+- Watcher confirmed: journal line `SHARED_ALARM Ubuntu watcher started (feature gated)` at 06:05:18
+
+### Regression tests (2026-11-07 ~06:06)
+| Suite | Command | Result |
+|---|---|---|
+| Windows: shared alarm | `.venv\Scripts\python -m pytest tests/test_shared_alarm_v2.py tests/test_alarm_control.py` | **84/84 PASS** |
+| Ubuntu: full shared alarm suite | `.venv/bin/python -m pytest tests/test_shared_alarm_v2.py tests/test_shared_alarm_runner.py tests/test_alarm_startup_and_crosscancel.py tests/test_alarm_control.py` | **78/78 PASS** |
+
+### Live E2E tests against real LILITH (2026-11-07 06:07 CET)
+**Mode: Real LILITH API, far-future fire_at (12 hours). All test alarms cleaned up after.**
+
+| Test | Result |
+|---|---|
+| alarm1 source is jarvis_windows | **PASS** |
+| alarm1 ID is 32-hex | **PASS** |
+| alarm1 in Windows list | **PASS** |
+| Ubuntu sees alarm1 (Windows-created) | **PASS** |
+| alarm2 source is jarvis_ubuntu | **PASS** |
+| Windows sees alarm2 (Ubuntu-created) | **PASS** |
+| alarm2 gone from Windows after cancel | **PASS** |
+| alarm2 gone from Ubuntu after cancel | **PASS** |
+| alarm3 present before cancel | **PASS** |
+| alarm3 gone after cancel | **PASS** |
+| No duplicate after modify (1 record only) | **PASS** |
+| Revision incremented after modify | **PASS** |
+| Modified label stored | **PASS** |
+| alarm1 survives store restart (Windows new instance) | **PASS** |
+| alarm4 (modified) survives store restart (Ubuntu new instance) | **PASS** |
+| LILITH unavailable raises SharedAlarmError | **PASS** |
+| Pre-existing real alarms preserved | **PASS** |
+| All N8 test alarms cleaned up | **PASS** |
+
+**Total night-8 E2E: 18/18 PASS**
+
+### LILITH alarm state after tests
+- **2 real user alarms preserved** (unchanged throughout)
+- 0 N8 test alarms remaining
+- 9 pre-existing old-format records (non-v2, safely ignored — unchanged)
 
 ---
 
