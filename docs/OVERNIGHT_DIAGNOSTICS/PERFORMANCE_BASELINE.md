@@ -1,5 +1,5 @@
 # PERFORMANCE_BASELINE — JARVIS Overnight Diagnostics
-Last updated: 2026-11-07 02:12 CET (automated overnight session — night 4)
+Last updated: 2026-11-07 03:08 CET (automated overnight session — night 5)
 First generated: 2026-11-06 23:13 CET
 
 All measurements taken with `JARVIS_SHARED_ALARMS_ENABLED=1`.
@@ -69,8 +69,24 @@ JARVIS Windows runs interactively; no persistent memory footprint to baseline.
 - Night 3: PID 441329, Memory 1.6 GB RSS, then 2.1 GB peak (2h 55min uptime) — OOM risk reached
 - **Night 4 ACTION: Service restarted at 02:05:46 CET due to OOM risk (2.1 GB RSS, 2.7 GB swap in use)**
 - Night 4: PID 559658, Memory 398 MB RSS (4min uptime) — leak cleared by restart
-- RAM leak confirmed: ~630 MB/hour growth rate. Restart cadence needed (every 2-3 hours overnight).
+- Night 5: PID 559658, Memory 796 MB RSS (62min uptime) — same instance, leak ongoing
+- RAM leak confirmed: ~394 MB/hour (night 5) vs ~630 MB/hour (nights 2-3); may vary by workload. Restart cadence needed (every 2-3 hours overnight).
 - arecord subprocess: re-spawned after restart (new PID), running
+
+### Night 5 (2026-11-07 03:07)
+| Metric | Value | Type |
+|---|---|---|
+| Uptime (since night-4 restart) | 1h 2min | MEASURED |
+| RAM total | 7.3 GB | MEASURED |
+| RAM used | 3.7 GB | MEASURED |
+| RAM available | 3.6 GB | MEASURED |
+| Swap used | 2.5 GB / 4.1 GB (61%) | MEASURED |
+| Disk / used | 84% | MEASURED |
+| jarvis-headless RSS | 796 MB | MEASURED |
+| jarvis-headless VmSwap | 0 kB | MEASURED |
+| jarvis-headless CPU (accumulated) | 13min 49s / 62min uptime = ~22% avg | MEASURED |
+| RAM growth rate (session 5) | 398 MB → 796 MB in 62min = ~394 MB/hour | MEASURED |
+| Restart threshold ~1.5 GB ETA | ~04:50 CET | ESTIMATE |
 
 ### Night 4 (2026-11-07 02:10)
 | Metric | Value | Type |

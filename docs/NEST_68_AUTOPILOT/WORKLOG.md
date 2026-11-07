@@ -2,6 +2,55 @@
 
 ---
 
+## 2026-11-07 03:08 CET — E41 shared alarms: overnight verification (night 5)
+
+**Author:** Claude Sonnet 4.6 (Scheduled overnight task — jaevis--headless)
+**Branch:** `codex/neural-voice-visual`
+
+### Work done
+
+#### Preflight
+- Read: HANDOFF, WORKLOG, SYSTEM_STATE, TEST_RESULTS, PERFORMANCE_BASELINE, all memory files.
+- Windows HEAD 776f706 — clean (only untracked pre-existing files).
+- Ubuntu HEAD b836e1f — pre-existing modified/untracked entries preserved, NO new commit.
+- LILITH: online, watcher polling every 2s (memory/context GET 200 OK confirmed).
+- Ubuntu jarvis-headless.service: active/running, PID 559658 (1h since night-4 restart at 02:05).
+- Ubuntu RSS: 796 MB at 03:07 — no restart needed (threshold 1.5 GB ~ 04:50 ETA).
+- LILITH alarm records: 2 real user alarms (pre-existing, preserved).
+
+#### Regression tests (all PASS)
+- Windows: 84/84 PASS (test_shared_alarm_v2 + test_alarm_control)
+- Ubuntu: 78/78 PASS (test_shared_alarm_v2 + test_shared_alarm_runner + test_alarm_startup_and_crosscancel + test_alarm_control)
+
+#### Live E2E against real LILITH (19/19 PASS)
+All tests used far-future fire_at (10h). All N5 test alarms cleaned up after. 2 real user alarms preserved.
+- Windows creates → Ubuntu sees it (source, ID, label verified) ✓ (4 checks)
+- Ubuntu creates → Windows sees and cancels; both nodes confirm deletion ✓ (4 checks)
+- Cancel before delivery → alarm gone ✓ (2 checks)
+- Modify → no duplicate, revision incremented, label updated ✓ (3 checks)
+- Restart recovery → alarm1 and alarm4 survive new store instances ✓ (2 checks)
+- LILITH unavailable → SharedAlarmError raised (injected bad client) ✓ (1 check)
+- Pre-existing real alarms preserved throughout all tests ✓ (1 check)
+- All N5 test alarms cleaned up ✓ (1 check) + test alarms present before cleanup ✓ (1 check)
+
+#### Performance observations
+- Ubuntu RAM: 398 MB (02:05 restart) → 796 MB (03:07) = +398 MB in 62min = ~394 MB/hour
+- Night-5 rate slower than nights 2-3 (630 MB/hour) — may be due to lower conversational activity
+- Restart threshold ~1.5 GB ETA: ~04:50 CET. Next scheduled session should check and restart if needed.
+- Ubuntu swap: 2.5 GB / 4.1 GB (61%) — still draining from night-4 OOM event
+- Ubuntu disk: 84% (unchanged, monitoring)
+
+#### Physical audio test
+NOT performed (automated session, no user present). Still pending user validation.
+
+### State after this session
+- Shared alarms: ENABLED on both nodes, watcher running, 2 real user alarms in LILITH (preserved)
+- Ubuntu service: NOT restarted (796 MB < threshold). Projected restart needed ~04:50 CET.
+- New Windows commits: diagnostics update (SYSTEM_STATE, TEST_RESULTS, PERFORMANCE_BASELINE, TROUBLESHOOTING, WORKLOG)
+- Ubuntu pre-existing changes preserved
+
+---
+
 ## 2026-11-07 01:09 CET — E41 shared alarms: overnight verification (night 3)
 
 **Author:** Claude Sonnet 4.6 (Scheduled overnight task — jaevis--headless)

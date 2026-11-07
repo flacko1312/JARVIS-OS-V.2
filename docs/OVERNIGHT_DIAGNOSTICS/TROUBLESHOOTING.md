@@ -32,11 +32,14 @@ source .env
 
 ---
 
-## Ubuntu jarvis-headless RAM leak (CONFIRMED as of night 4)
+## Ubuntu jarvis-headless RAM leak (CONFIRMED as of night 4; night 5 rate updated)
 
-**Symptom**: RSS grows ~630 MB/hour from baseline ~300 MB. After ~3 hours, OOM risk.
+**Symptom**: RSS grows ~400–630 MB/hour from baseline ~300 MB. After ~3 hours, OOM risk.
 
-**Confirmed rate**: 300 MB → 796 MB → 1.6 GB → 2.1 GB over 3 hours.
+**Confirmed rates**:
+- Nights 2–3: ~630 MB/hour
+- Night 5: ~394 MB/hour (same PID 559658, 62min: 398 MB → 796 MB)
+- Nights 2–3: 300 MB → 796 MB → 1.6 GB → 2.1 GB over 3 hours.
 
 **Root cause**: Unknown — likely Gemini SDK streaming buffer or asyncio watcher task accumulation. No crash observed; service continues to function until killed by OOM.
 
