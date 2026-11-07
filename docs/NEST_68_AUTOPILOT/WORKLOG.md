@@ -2,6 +2,56 @@
 
 ---
 
+## 2026-11-07 01:09 CET — E41 shared alarms: overnight verification (night 3)
+
+**Author:** Claude Sonnet 4.6 (Scheduled overnight task — jaevis--headless)
+**Branch:** `codex/neural-voice-visual`
+
+### Work done
+
+#### Preflight
+- Read: HANDOFF, WORKLOG, SYSTEM_STATE, TEST_RESULTS, PERFORMANCE_BASELINE.
+- Windows HEAD ab90563 — clean (only untracked pre-existing files).
+- Ubuntu HEAD b836e1f — pre-existing modified/untracked entries preserved, NO new commit.
+- LILITH: online, database=true, mqtt=true.
+- Ubuntu jarvis-headless.service: active/running, PID 441329 (~1h 55min uptime from 23:09:41).
+- Watcher: polling LILITH every 2s (memory/context GET 200 OK confirmed in journal).
+- LILITH alarm records: 0 (night 2 cleanup intact).
+
+#### Regression tests (all PASS)
+- Windows: 84/84 PASS (test_shared_alarm_v2 + test_alarm_control)
+- Ubuntu: 78/78 PASS (test_shared_alarm_v2 + test_shared_alarm_runner + test_alarm_startup_and_crosscancel + test_alarm_control)
+
+#### Live E2E against real LILITH (18/18 PASS)
+All tests used far-future fire_at (5h). All 2 test alarms cleaned up after.
+- Windows creates -> LILITH stores, ID format valid, source correct ✓ (3 checks)
+- Ubuntu can list Windows alarm, label matches ✓ (2 checks)
+- Ubuntu creates -> Windows lists and cancels; both nodes see deletion ✓ (4 checks)
+- Cancel before delivery -> alarm gone from LILITH ✓ (2 checks)
+- Modify -> revision increments 1->2, no duplicate, label updated ✓ (3 checks)
+- Restart recovery -> alarm1 and alarm4 survive new store instance ✓ (2 checks)
+- LILITH unavailable -> SharedAlarmError raised (injected bad client) ✓ (1 check)
+- All test alarms removed, 0 remaining ✓ (1 check)
+
+#### Performance observations (CONCERN)
+- Ubuntu RAM: 332 MB (night 1) -> 796 MB (night 2) -> 1.6 GB (night 3)
+- Growth rate: ~630 MB/hour. At this rate, may exhaust available RAM (~2 GB) by ~04:00
+- Likely cause: Gemini Live SDK session memory or asyncio buffer accumulation
+- Ubuntu swap: 51% (2.1 GB / 4.1 GB)
+- Ubuntu disk: 84% (unchanged, monitoring)
+- Ubuntu load: 1.07/0.73/0.61 (slightly up from 0.77 night 2 — normal)
+
+#### Physical audio test
+NOT performed (automated session, no user present). Still pending user validation.
+
+### State after this session
+- Shared alarms: ENABLED on both nodes, watcher running, 0 test alarms in LILITH
+- Ubuntu service: NOT restarted (preserved PID 441329 — user should restart if RAM concern)
+- New Windows commits: diagnostics update (SYSTEM_STATE, TEST_RESULTS, PERFORMANCE_BASELINE, HANDOFF, WORKLOG)
+- Ubuntu pre-existing changes preserved
+
+---
+
 ## 2026-11-07 00:08 CET — E41 shared alarms: overnight verification (night 2)
 
 **Author:** Claude Sonnet 4.6 (Scheduled overnight task — jaevis--headless)

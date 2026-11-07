@@ -1,5 +1,5 @@
 # SYSTEM_STATE — JARVIS Overnight Diagnostics
-Last updated: 2026-11-07 00:08 CET (automated overnight session — night 2)
+Last updated: 2026-11-07 01:09 CET (automated overnight session — night 3)
 First generated: 2026-11-06 23:11 CET
 
 ---
@@ -11,7 +11,7 @@ First generated: 2026-11-06 23:11 CET
 | Hostname | flako |
 | OS | Windows 11 Home |
 | Branch | codex/neural-voice-visual |
-| HEAD commit | e92a01a feat(alarm): deploy shared alarms E2E + overnight diagnostics |
+| HEAD commit | ab90563 docs(alarm): overnight verification night 2 — 20/20 E2E PASS + diagnostics update |
 | Working tree | Clean (only untracked: VOICE_CHECK_2026-11-06.md, lilith_client/*.bak, logs/) |
 | Untracked | VOICE_CHECK_2026-11-06.md, lilith_client/adapter_connector.py.bak.m3_20261106, logs/ |
 
@@ -45,10 +45,10 @@ GEMINI_VOICE_NAME=puck
 | HEAD commit | b836e1f test(alarm): extended runner coverage |
 | Working tree | Many preexisting modified/untracked entries (preserved, not committed) |
 | Service | jarvis-headless.service (systemd --user) |
-| PID | 441329 (unchanged — no restart tonight) |
-| Running since | 2026-11-06 23:09:41 CET (~58 min as of 00:07) |
-| CPU (accumulated) | 13 min 24 sec / ~58 min uptime = ~23% avg |
-| RAM (RSS) | 796 MB peak (from systemctl) |
+| PID | 441329 (unchanged — no restart night 2 or night 3) |
+| Running since | 2026-11-06 23:09:41 CET (~1h 55min as of 01:05) |
+| CPU (accumulated) | 27 min 8.504s / ~1h 55min uptime = ~24% avg |
+| RAM (RSS) | 1.6 GB peak (from systemctl — growing; watch trend) |
 
 ### Active services
 | Service | Port | State |

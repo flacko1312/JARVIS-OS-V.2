@@ -411,18 +411,22 @@ ORS_API_KEY=                              FALTA — usuario debe registrar
 - Creado docs/OVERNIGHT_DIAGNOSTICS/ (SYSTEM_STATE, TEST_RESULTS, PERFORMANCE_BASELINE, TROUBLESHOOTING).
 - PRÓXIMA TAREA: validación física de audio Ubuntu (TTS real del anuncio de alarma).
 
-## 2026-11-07 00:08 — Overnight verification night 2 — ALL PASS
+## 2026-11-07 01:09 — Overnight verification night 3 — ALL PASS
 
 - Automated session. No user present.
-- Ubuntu jarvis-headless PID 441329 still running (not restarted). Watcher confirmed active from journal.
-- LILITH online (62ms). 84/84 Windows tests PASS. 78/78 Ubuntu tests PASS.
-- Live E2E against real LILITH: 20/20 PASS (create, list, cancel, modify, restart-recovery, fail-closed).
-- All test alarms cleaned up. 0 jarvis_alarm records remaining in LILITH.
-- Performance: Ubuntu RAM 796 MB peak (normal), disk 84% (monitor), swap 45% (stable).
+- Ubuntu jarvis-headless PID 441329 still running (1h 55min — no restarts).
+- Watcher polling confirmed: memory/context GET 200 OK every 2s.
+- LILITH: online, database=true, mqtt=true. 0 alarm records (clean state).
+- 84/84 Windows tests PASS. 78/78 Ubuntu tests PASS.
+- Live E2E against real LILITH: 18/18 PASS (create, list, cancel, modify, restart-recovery, fail-closed).
+- All test alarms cleaned up. 0 jarvis_alarm records remaining.
+- **WARNING: Ubuntu RAM growing: 332 MB (night 1) -> 796 MB (night 2) -> 1.6 GB (night 3). Rate ~630 MB/hour. Monitor for OOM risk. If needed: `systemctl --user restart jarvis-headless.service`.**
+- Swap: 51%, disk 84% — monitor.
 - Physical audio test still PENDING (requires user presence).
 - Overnight diagnostics updated: docs/OVERNIGHT_DIAGNOSTICS/
-- NO new commits. Ubuntu pre-existing changes preserved.
-- NEXT: user validates physical TTS alarm announcement on Ubuntu speaker.
+- Committed night 3 diagnostics to Windows repo.
+- Ubuntu pre-existing changes preserved (not committed).
+- NEXT: user validates physical TTS alarm announcement on Ubuntu speaker. Monitor Ubuntu RAM.
 
 ## 2026-11-06 20:00 - E41 alarmas: defecto de coordinacion confirmado
 
