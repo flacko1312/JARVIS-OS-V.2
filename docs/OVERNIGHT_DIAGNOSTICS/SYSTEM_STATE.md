@@ -1,5 +1,5 @@
 # SYSTEM_STATE — JARVIS Overnight Diagnostics
-Last updated: 2026-11-07 07:15 CET (automated overnight session — night 9)
+Last updated: 2026-11-07 08:10 CET (automated overnight session — night 10)
 First generated: 2026-11-06 23:11 CET
 
 ---
@@ -11,8 +11,8 @@ First generated: 2026-11-06 23:11 CET
 | Hostname | flako |
 | OS | Windows 11 Home |
 | Branch | codex/neural-voice-visual |
-| HEAD commit | b39b5c7 docs(alarm): record Ubuntu HTTP client memory fix and pending deployment |
-| Working tree | Clean (only untracked: VOICE_CHECK_2026-11-06.md, lilith_client/*.bak, logs/) |
+| HEAD commit | f267cea docs(alarm): overnight verification night 9 — 9/9 E2E PASS + HTTP pool fix deployed |
+| Working tree | Modified: lilith_client/client.py; Untracked: VOICE_CHECK_2026-11-06.md, lilith_client/*.bak, logs/ |
 | Untracked | VOICE_CHECK_2026-11-06.md, lilith_client/adapter_connector.py.bak.m3_20261106, logs/ |
 
 ### Active processes (JARVIS)
@@ -42,14 +42,13 @@ GEMINI_VOICE_NAME=puck
 |---|---|
 | Hostname | server-lilith |
 | Branch | codex/neural-voice-visual |
-| HEAD commit | b836e1f test(alarm): extended runner coverage |
+| HEAD commit | cde8fbd fix(alarm): reuse HTTP client in Ubuntu shared-alarm watcher |
 | Working tree | Many preexisting modified/untracked entries (preserved, not committed) |
 | Service | jarvis-headless.service (systemd --user) |
 | PID | 1846 (server REBOOTED overnight — OOM kill ~07:08 CET; previous PID 720285) |
 | Running since | 2026-11-07 07:08 CET |
-| CPU (accumulated) | ~1min 11s at 07:10 CET |
-| RAM (RSS) | 322 MB at 07:10 CET; 324 MB at 07:14 CET; growth ~40 MB/hr (HTTP pool fix applied — DRAMATIC IMPROVEMENT from 555 MB/hr) |
-| HEAD commit | cde8fbd fix(alarm): reuse HTTP client in Ubuntu shared-alarm watcher |
+| CPU (accumulated) | 13min 26s at 08:07 CET (~59min uptime) |
+| RAM (RSS) | 322 MB at 07:10 (2min) → 345 MB at 08:07 (59min) → growth ~24 MB/hr (HTTP pool fix confirmed holding — from 555 MB/hr) |
 
 ### Active services
 | Service | Port | State |

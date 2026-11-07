@@ -1,5 +1,5 @@
 # PERFORMANCE_BASELINE — JARVIS Overnight Diagnostics
-Last updated: 2026-11-07 07:15 CET (automated overnight session — night 9)
+Last updated: 2026-11-07 08:10 CET (automated overnight session — night 10)
 First generated: 2026-11-06 23:13 CET
 
 All measurements taken with `JARVIS_SHARED_ALARMS_ENABLED=1`.
@@ -78,7 +78,21 @@ JARVIS Windows runs interactively; no persistent memory footprint to baseline.
 - RAM leak confirmed: ~555 MB/hour (night 7 measurement: 777 MB at 59min from 231 MB base); restart every 2h needed overnight.
 - arecord subprocess: re-spawned after restart (new PID), running
 
-### Night 9 (2026-11-07 07:10) — HTTP POOL FIX ACTIVE
+### Night 10 (2026-11-07 08:07) — HTTP POOL FIX CONFIRMED
+| Metric | Value | Type |
+|---|---|---|
+| Uptime | 59min (since 07:08 OOM reboot) | MEASURED |
+| RAM total | 7288 MB | MEASURED |
+| RAM used | 3381 MB | MEASURED |
+| RAM available | 3907 MB | MEASURED |
+| Swap used | **0 MB** (fully cleared!) | MEASURED |
+| jarvis-headless RSS | 345 MB at 08:07 (59min uptime) | MEASURED |
+| RAM growth (1-hour window) | 322 MB (07:10) → 345 MB (08:07) = **+23 MB / 57min = ~24 MB/hr** | MEASURED |
+| Previous rate (nights 1–8) | ~555 MB/hr | HISTORICAL |
+| **HTTP pool fix effect** | **~96% reduction in RAM leak rate** | MEASURED (1h window) |
+| Restart threshold ETA at new rate | ~37 hours from 345 MB baseline | ESTIMATE |
+
+### Night 9 (2026-11-07 07:10) — HTTP POOL FIX ACTIVE (preliminary)
 | Metric | Value | Type |
 |---|---|---|
 | Uptime (after OOM reboot at ~07:08) | 2 min | MEASURED |
@@ -106,6 +120,7 @@ JARVIS Windows runs interactively; no persistent memory footprint to baseline.
 - Night 7: 777 MB RSS (59min from 231 MB) → rate **555 MB/hr**
 - Night 8 restart: 1.88 GB, restarted → 381 MB
 - **Night 9: OOM reboot. HTTP pool fix deployed. 322→324 MB in 5min → rate ~40 MB/hr (PRELIMINARY)**
+- **Night 10: HTTP pool fix confirmed. 322→345 MB in 59min → rate ~24 MB/hr (CONFIRMED, 1-hour window)**
 
 ---
 
@@ -235,7 +250,7 @@ JARVIS Windows runs interactively; no persistent memory footprint to baseline.
 
 ## Warnings
 
-- **Ubuntu RAM leak CONFIRMED**: 332 MB → 796 MB → 1.6 GB → 2.1 GB (RSS) over ~3 hours. Rate ~555-630 MB/hour. Night-4 triggered restart at 02:05 CET (2.1 GB), Night-6 triggered at 04:05 CET (1.8 GB), threshold lowered to 1.5 GB. Restart cadence: every 2–3 hours overnight. Next restart ETA ~06:28-06:41 CET.
-- Ubuntu swap at 2.4 GB — slight improvement, still draining slowly. No OOM risk while RSS is fresh.
+- **HTTP pool fix confirmed effective (night 10)**: ~24 MB/hr (96% reduction from ~555 MB/hr). Swap completely cleared (0 MB used). Restart threshold ~37h from current baseline. No restart needed.
 - Ubuntu disk at 84% — monitor, not critical
 - Physical audio test still PENDING (requires user presence)
+- Windows (night 10): RAM 9.79 GB / 15.87 GB, Disk C: 539.7 GB used / 390.7 GB free

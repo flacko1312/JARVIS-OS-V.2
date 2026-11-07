@@ -1,6 +1,62 @@
 # TEST_RESULTS — JARVIS Overnight Diagnostics
-Last updated: 2026-11-07 07:15 CET (automated overnight session — night 9)
+Last updated: 2026-11-07 08:10 CET (automated overnight session — night 10)
 First generated: 2026-11-06 23:11 CET
+
+---
+
+## Overnight session 10 — 2026-11-07 (automated)
+
+### Pre-session state (08:05 CET)
+- **Ubuntu server**: running, PID 1846 (HTTP pool fix LIVE since ~07:08 CET reboot)
+- Ubuntu jarvis-headless: **active/running** PID 1846, RSS **345 MB** at 08:07 CET (59min uptime)
+- Ubuntu system RAM: 3381 MB used / 7288 MB total (3907 MB available)
+- Ubuntu swap: **0 MB used** (fully recovered from OOM event)
+- **HTTP pool fix rate confirmed**: 322 MB (07:10) → 345 MB (08:07) = **~24 MB/hr** (down from 555 MB/hr before fix)
+- LILITH: **online** (HTTP 200, database=true, mqtt=true)
+- Pre-existing real alarms in LILITH: **6**
+- No SOAK tests running
+
+### Regression tests (08:08 CET)
+| Suite | Command | Result |
+|---|---|---|
+| Windows: shared alarm | `.venv\Scripts\python -m pytest tests/test_shared_alarm_v2.py tests/test_alarm_control.py` | **84/84 PASS** |
+| Ubuntu: full shared alarm suite incl. HTTP pool | `.venv/bin/python -m pytest tests/test_shared_alarm_v2.py tests/test_shared_alarm_runner.py tests/test_alarm_startup_and_crosscancel.py tests/test_alarm_control.py tests/test_shared_alarm_http_pool.py` | **82/82 PASS** |
+
+### Live E2E tests against real LILITH (08:08–08:09 CET)
+**Mode: Real LILITH API, far-future fire_at (12–13h). All test alarms cleaned up after.**
+
+| Test | Result |
+|---|---|
+| 0.1 list() works from Windows | **PASS** |
+| 1.1 Windows create returns record | **PASS** |
+| 1.2 Ubuntu sees Windows alarm | **PASS** |
+| 1.3 source=jarvis_windows | **PASS** |
+| 1.4 label matches | **PASS** |
+| 2.1 Ubuntu create returns record | **PASS** |
+| 2.2 Windows sees Ubuntu alarm | **PASS** |
+| 2.3 source=jarvis_ubuntu | **PASS** |
+| 2.4 Cancelled alarm gone from Windows | **PASS** |
+| 2.5 Cancelled alarm gone from Ubuntu | **PASS** |
+| 3.1 Cancelled alarm not in list | **PASS** |
+| 3.2 Cancelled alarm not seen by Ubuntu | **PASS** |
+| 4.1 Modified alarm still present | **PASS** |
+| 4.2 revision incremented (1 → 2) | **PASS** |
+| 4.3 fire_at updated | **PASS** |
+| 4.4 no duplicates | **PASS** |
+| 5.1 alarm survives new Windows store | **PASS** |
+| 5.2 alarm survives new Ubuntu store | **PASS** |
+| 6.1 SharedAlarmError raised when LILITH unavailable | **PASS** |
+| 7.1 list() works after LILITH recovery | **PASS** |
+| 7.2 test alarms still present after recovery | **PASS** |
+| 8.1 all 6 real alarms preserved | **PASS** |
+| 9.1 all test alarms cleaned (3/3) | **PASS** |
+| 9.2 no test alarms remaining | **PASS** |
+
+**Night 10 E2E: 24/24 PASS**
+
+### LILITH alarm state after tests
+- **6 real user alarms preserved** (unchanged throughout)
+- 0 N10 test alarms remaining
 
 ---
 

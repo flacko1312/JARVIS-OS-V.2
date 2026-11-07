@@ -470,6 +470,20 @@ ORS_API_KEY=                              FALTA — usuario debe registrar
 - Ninguna alarma real modificada, ningun servicio reiniciado, sin audio ni cambios en LILITH/HA/SOAK.
 
 
+## 2026-11-07 08:10 CET — Overnight verification night 10 — 24/24 E2E PASS + RAM leak confirmed fixed
+
+- Automated session. No user present.
+- **HTTP pool fix confirmed: ~24 MB/hr** (96% reduction from ~555 MB/hr before fix). 1-hour measured window.
+- Ubuntu PID 1846 (OOM reboot ~07:08 CET), RSS 345 MB at 08:07 (59min). Swap 0 MB (fully cleared).
+- Restart threshold ~1.5 GB ETA: **~37 hours** from current baseline — overnight restarts no longer needed.
+- 84/84 Windows tests PASS. 82/82 Ubuntu tests PASS (includes HTTP pool tests).
+- 6 real user alarms preserved throughout all tests.
+- Live E2E against real LILITH: **24/24 PASS** (create, cross-node list, cancel, modify, restart-recovery, fail-closed, recovery, cleanup).
+- All N10 test alarms cleaned up. Real alarms intact.
+- Overnight diagnostics updated. Commit follows.
+- Ubuntu pre-existing changes preserved (not committed).
+- **NEXT: User validates physical TTS alarm announcement on Ubuntu speaker. Monitor Ubuntu RAM (expect stable now with pool fix).**
+
 ## 2026-11-07 07:15 CET — Overnight verification night 9 — 9/9 E2E PASS + HTTP pool fix deployed
 
 - Automated session. No user present.

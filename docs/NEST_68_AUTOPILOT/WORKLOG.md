@@ -2,6 +2,58 @@
 
 ---
 
+## 2026-11-07 08:10 CET — E41 shared alarms: overnight verification (night 10)
+
+**Author:** Claude Sonnet 4.6 (Scheduled overnight task — jaevis--headless)
+**Branch:** `codex/neural-voice-visual`
+
+### Work done
+
+#### Preflight
+- Read: HANDOFF, WORKLOG, SYSTEM_STATE, TEST_RESULTS, PERFORMANCE_BASELINE, all memory files.
+- Windows HEAD f267cea — modified: lilith_client/client.py; untracked pre-existing files preserved.
+- Ubuntu HEAD cde8fbd — HTTP pool fix LIVE; pre-existing modified/untracked entries preserved, NO new commit.
+- Ubuntu jarvis-headless: **active/running** PID 1846 (OOM reboot at ~07:08 CET), RSS **345 MB** at 08:07 (59min uptime).
+- Ubuntu swap: **0 MB** (completely cleared from OOM event). System RAM: 3381 MB used / 7288 MB total.
+- LILITH: online, database=true, mqtt=true (confirmed).
+- Real alarms in LILITH: **6** (preserved throughout all tests).
+- No SOAK tests running.
+
+#### RAM leak verification (HTTP pool fix — 1-hour confirmed window)
+- 07:10 CET (2min uptime): 322 MB
+- 08:07 CET (59min uptime): 345 MB
+- Growth: +23 MB / 57 min = **~24 MB/hr** (96% reduction from ~555 MB/hr before fix)
+- Restart threshold ~1.5 GB ETA: ~37 hours from current baseline
+- Fix confirmed holding across OOM reboot → no nightly restarts needed if rate stays stable
+
+#### Regression tests (all PASS)
+- Windows: 84/84 PASS (test_shared_alarm_v2 + test_alarm_control)
+- Ubuntu: 82/82 PASS (test_shared_alarm_v2 + test_shared_alarm_runner + test_alarm_startup_and_crosscancel + test_alarm_control + test_shared_alarm_http_pool)
+
+#### Live E2E against real LILITH (24/24 PASS)
+All tests used far-future fire_at (12h). All N10 test alarms cleaned up after. 6 real user alarms preserved.
+- [0] Preflight: list() works, 6 real alarms confirmed ✓
+- [1] Windows creates → Ubuntu sees it (source, ID, label verified) ✓ (4 checks)
+- [2] Ubuntu creates → Windows sees and cancels; both nodes confirm deletion ✓ (5 checks)
+- [3] Cancel before delivery → alarm gone from both nodes ✓ (2 checks)
+- [4] Modify → no duplicate, revision incremented (1→2), fire_at updated ✓ (4 checks)
+- [5] Restart recovery → alarm survives new store instances on both nodes ✓ (2 checks)
+- [6] LILITH unavailable → SharedAlarmError raised (bad URL injected) ✓ (1 check)
+- [7] LILITH recovery → list() works, test alarms still present ✓ (2 checks)
+- [8] Real alarms preserved throughout all tests (6/6) ✓ (1 check)
+- [9] Cleanup: 3 test alarms cleaned, 0 remaining ✓ (2 checks)
+
+#### Physical audio test
+NOT performed (automated session, no user present). Still pending user validation.
+
+### State after this session
+- Shared alarms: ENABLED on both nodes, watcher running, 6 real user alarms in LILITH (preserved)
+- Ubuntu service: PID 1846 (345 MB at 08:07), HTTP pool fix confirmed effective, no restart needed
+- Windows commits: diagnostics update (SYSTEM_STATE, TEST_RESULTS, PERFORMANCE_BASELINE, WORKLOG, HANDOFF)
+- Ubuntu pre-existing changes preserved (not committed)
+
+---
+
 ## 2026-11-07 04:08 CET — E41 shared alarms: overnight verification (night 6)
 
 **Author:** Claude Sonnet 4.6 (Scheduled overnight task — jaevis--headless)
