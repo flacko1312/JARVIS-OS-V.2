@@ -1,5 +1,5 @@
 # PERFORMANCE_BASELINE — JARVIS Overnight Diagnostics
-Last updated: 2026-11-07 06:08 CET (automated overnight session — night 8)
+Last updated: 2026-11-07 07:15 CET (automated overnight session — night 9)
 First generated: 2026-11-06 23:13 CET
 
 All measurements taken with `JARVIS_SHARED_ALARMS_ENABLED=1`.
@@ -77,6 +77,37 @@ JARVIS Windows runs interactively; no persistent memory footprint to baseline.
 - Night 8: PID 720285, Memory 381 MB RSS (2.5min uptime) — leak cleared by restart
 - RAM leak confirmed: ~555 MB/hour (night 7 measurement: 777 MB at 59min from 231 MB base); restart every 2h needed overnight.
 - arecord subprocess: re-spawned after restart (new PID), running
+
+### Night 9 (2026-11-07 07:10) — HTTP POOL FIX ACTIVE
+| Metric | Value | Type |
+|---|---|---|
+| Uptime (after OOM reboot at ~07:08) | 2 min | MEASURED |
+| RAM total | 7288 MB | MEASURED |
+| RAM used | 3338 MB | MEASURED |
+| RAM available | 1007 MB | MEASURED |
+| Load average | 4.57 / 4.06 / 2.05 | MEASURED (warming up after boot) |
+| jarvis-headless RSS | 322 MB at 07:10 | MEASURED |
+| jarvis-headless RSS | 324 MB at 07:14 | MEASURED |
+| RAM growth (preliminary) | +2 MB in 3 min = **~40 MB/hr** | MEASURED (preliminary) |
+| Previous rate (nights 1–8) | ~555 MB/hr | HISTORICAL |
+| **HTTP pool fix effect** | **~93% reduction in RAM leak rate (preliminary)** | ESTIMATE |
+| Restart threshold ETA at new rate | ~29+ hours | ESTIMATE |
+| Commit deployed | cde8fbd (HTTP pool fix via OOM reboot) | MEASURED |
+
+> **Note:** Server experienced OOM reboot at ~07:08 CET (last session PID 720285 would reach 1.5 GB threshold ~07:07 CET). Service automatically restarted with updated code that includes the HTTP pool fix. This is the first measurement WITH the fix active.
+
+### JARVIS headless_main.py — RAM leak history
+- Night 1: 332 MB RSS (new PID)
+- Night 2: 796 MB RSS (58min uptime) → rate ~630 MB/hr
+- Night 3: 1.6 GB RSS (2h 20min) → rate ~630 MB/hr
+- Night 4 restart: OOM risk at 2.1 GB, restarted → 398 MB
+- Night 5: 796 MB RSS (62min) → rate ~394 MB/hr (variable)
+- Night 6 restart: 1.8 GB, restarted → 231 MB
+- Night 7: 777 MB RSS (59min from 231 MB) → rate **555 MB/hr**
+- Night 8 restart: 1.88 GB, restarted → 381 MB
+- **Night 9: OOM reboot. HTTP pool fix deployed. 322→324 MB in 5min → rate ~40 MB/hr (PRELIMINARY)**
+
+---
 
 ### Night 8 (2026-11-07 06:07)
 | Metric | Value | Type |

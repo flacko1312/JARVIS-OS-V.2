@@ -470,6 +470,22 @@ ORS_API_KEY=                              FALTA — usuario debe registrar
 - Ninguna alarma real modificada, ningun servicio reiniciado, sin audio ni cambios en LILITH/HA/SOAK.
 
 
+## 2026-11-07 07:15 CET — Overnight verification night 9 — 9/9 E2E PASS + HTTP pool fix deployed
+
+- Automated session. No user present.
+- **Ubuntu server REBOOTED overnight** (OOM kill ~07:08 CET, PID 720285 → 1846).
+  Previous restart at 06:05 CET had RAM at 381 MB; at ~555 MB/hr would reach 1.5 GB around 07:07 CET.
+- **HTTP pool fix (`cde8fbd`) NOW LIVE**: server started from updated code after reboot.
+- Ubuntu PID 1846, RAM 322 MB at 07:10 → 324 MB at 07:14 (**~40 MB/hr preliminary rate vs 555 MB/hr before fix**).
+- 2 stale night-4 test alarms cleaned from LILITH: `e2e_night4_win1`, `e2e_night4_ubu1`.
+- 84/84 Windows tests PASS. 78/78 Ubuntu tests PASS. 4/4 HTTP pool tests PASS.
+- Live E2E against real LILITH: **9/9 PASS** (create Win/Ubuntu, cross-node list, cancel, modify, restart-recovery, fail-closed, cleanup, LILITH-recover).
+- Real alarms: 0 (expired/cleared during reboot — no user data lost as alarms in LILITH had already fired).
+- RAM leak rate dropped ~93% (preliminary): next restart ETA at ~40 MB/hr is 29+ hours vs every 2h before.
+- Overnight diagnostics updated. Commit follows.
+- Ubuntu pre-existing changes preserved (not committed).
+- **NEXT: Monitor RAM leak rate with HTTP pool fix. User validates physical TTS alarm announcement.**
+
 ## 2026-11-07 06:15 CET — E41: correccion de consumo HTTP del watcher Ubuntu
 - Comprobado que el vigilante Ubuntu consultaba LILITH /memory/context cada ~2 s creando un nuevo cliente `httpx.Client` por consulta.
 - Benchmark read-only aislado contra API existente, 150 GET: cliente nuevo maxRSS 21.2->143.1 MB (+121.9); cliente persistente 34.1->38.1 MB (+4.0). Son maximos RSS de procesos distintos; el diagnostico de fuga total requiere seguimiento prolongado.

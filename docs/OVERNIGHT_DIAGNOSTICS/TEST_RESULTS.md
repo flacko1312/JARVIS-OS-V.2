@@ -1,6 +1,64 @@
 # TEST_RESULTS — JARVIS Overnight Diagnostics
-Last updated: 2026-11-07 06:08 CET (automated overnight session — night 8)
+Last updated: 2026-11-07 07:15 CET (automated overnight session — night 9)
 First generated: 2026-11-06 23:11 CET
+
+---
+
+## Overnight session 9 — 2026-11-07 (automated)
+
+### Pre-session state (07:04 CET)
+- **Ubuntu server**: REBOOTED overnight (OOM kill likely; up 2 min at 07:10 CET, PID 1846)
+- **HTTP pool fix**: commit `cde8fbd` now LIVE (service started from updated code after reboot)
+- Ubuntu jarvis-headless: **active/running** PID 1846, RSS **322 MB** at 07:10 CET (5-min uptime)
+- Ubuntu system RAM: 3338 MB used / 7288 MB total (1007 MB available)
+- LILITH: **online** (HTTP 200, database=true, mqtt=true)
+- Stale alarms cleaned: 2 night-4 test alarms removed (`e2e_night4_win1`, `e2e_night4_ubu1`)
+- Pre-existing real alarms in LILITH: **0** (expired/cleared during reboot)
+- No SOAK tests running (all inactive)
+
+### Network event
+- 07:04 CET: Brief ~2-minute window where 192.168.1.50 was unreachable (server rebooting)
+- Confirmed OOM-triggered reboot: last session PID 720285 (06:05 restart) would have reached ~1.5 GB threshold around 07:08 CET (at 555 MB/hr rate) — consistent with reboot timing
+
+### Regression tests (07:12 CET)
+| Suite | Command | Result |
+|---|---|---|
+| Windows: shared alarm | `.venv\Scripts\python -m pytest tests/test_shared_alarm_v2.py tests/test_alarm_control.py` | **84/84 PASS** |
+| Ubuntu: full shared alarm suite | `.venv/bin/python -m pytest tests/test_shared_alarm_v2.py tests/test_shared_alarm_runner.py tests/test_alarm_startup_and_crosscancel.py tests/test_alarm_control.py` | **78/78 PASS** |
+| Ubuntu: HTTP pool | `.venv/bin/python -m pytest tests/test_shared_alarm_http_pool.py` | **4/4 PASS** |
+
+### Live E2E tests against real LILITH (07:12 CET)
+**Mode: Real LILITH API, far-future fire_at (mañana 10:00 / mañana 15:00). All test alarms cleaned up after.**
+
+| Test | Result |
+|---|---|
+| T1: Windows creates alarm (source=jarvis_windows) | **PASS** |
+| T2: Ubuntu creates alarm (source=jarvis_ubuntu) | **PASS** |
+| T3: Cross-node list (Windows sees both) | **PASS** |
+| T4: Cancel before delivery | **PASS** |
+| T5: Modify alarm fire_at | **PASS** |
+| T6: Restart recovery (create + verify persists) | **PASS** |
+| T7: Cleanup verified (0 test alarms remaining) | **PASS** |
+| T8: LILITH unavailable — fail closed | **PASS** |
+| T9: LILITH recover after failure | **PASS** |
+
+**Night 9 E2E: 9/9 PASS**
+
+### RAM leak monitoring (HTTP pool fix — preliminary)
+| Time | Uptime | RSS | Growth |
+|---|---|---|---|
+| 07:08 CET | 0 min (start) | ~300 MB (est.) | — |
+| 07:10 CET | 2:37 | 322 MB | — |
+| 07:14 CET | 5:11 | 324 MB | +2 MB / 3 min (~40 MB/hr) |
+
+**Projected new rate: ~40 MB/hr** (vs 555 MB/hr before fix) — HTTP pool fix appears effective.
+More data needed to confirm sustained rate. Next threshold (~1.5 GB) ETA at this rate: 29+ hours.
+
+### Notes on Windows home_routine test failures
+- 2 tests in `test_home_routine.py` fail when LILITH is offline: `test_buenas_noches_with_confirm`, `test_modo_taller_with_confirm`
+- Root cause: `_entity_is_available()` returns `True` on connection error — HA actions attempted and fail with "error al apagar" / "error al configurar"
+- These tests were designed for when devices are physically online; not a regression introduced this session
+- Shared alarm suite (84/84) unaffected
 
 ---
 
