@@ -1,5 +1,5 @@
 # SYSTEM_STATE — JARVIS Overnight Diagnostics
-Last updated: 2026-11-07 03:08 CET (automated overnight session — night 5)
+Last updated: 2026-11-07 04:08 CET (automated overnight session — night 6)
 First generated: 2026-11-06 23:11 CET
 
 ---
@@ -11,7 +11,7 @@ First generated: 2026-11-06 23:11 CET
 | Hostname | flako |
 | OS | Windows 11 Home |
 | Branch | codex/neural-voice-visual |
-| HEAD commit | 776f706 docs(alarm): overnight verification night 4 — 16/16 E2E PASS + RAM leak mitigated |
+| HEAD commit | b3123e0 docs(alarm): overnight verification night 5 — 19/19 E2E PASS + RAM stable |
 | Working tree | Clean (only untracked: VOICE_CHECK_2026-11-06.md, lilith_client/*.bak, logs/) |
 | Untracked | VOICE_CHECK_2026-11-06.md, lilith_client/adapter_connector.py.bak.m3_20261106, logs/ |
 
@@ -45,10 +45,10 @@ GEMINI_VOICE_NAME=puck
 | HEAD commit | b836e1f test(alarm): extended runner coverage |
 | Working tree | Many preexisting modified/untracked entries (preserved, not committed) |
 | Service | jarvis-headless.service (systemd --user) |
-| PID | 559658 (restarted night 4 at 02:05:46 CET — previous PID 441329 killed due to 2.1 GB RAM leak) |
-| Running since | 2026-11-07 02:05:46 CET |
-| CPU (accumulated) | 13min 49s / 62min uptime = ~22% avg |
-| RAM (RSS) | 796 MB at 03:07 CET (growing ~394 MB/hour; threshold ~1.5 GB at ~04:50 CET) |
+| PID | 639077 (restarted night 6 at 04:05:24 CET — previous PID 559658 killed due to 1.8 GB RAM leak) |
+| Running since | 2026-11-07 04:05:24 CET |
+| CPU (accumulated) | 39s / 2.6min uptime = ~24% avg |
+| RAM (RSS) | 288 MB at 04:08 CET (fresh after restart; threshold ~1.5 GB ETA ~06:00 CET) |
 
 ### Active services
 | Service | Port | State |

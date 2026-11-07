@@ -1,5 +1,5 @@
 # PERFORMANCE_BASELINE — JARVIS Overnight Diagnostics
-Last updated: 2026-11-07 03:08 CET (automated overnight session — night 5)
+Last updated: 2026-11-07 04:08 CET (automated overnight session — night 6)
 First generated: 2026-11-06 23:13 CET
 
 All measurements taken with `JARVIS_SHARED_ALARMS_ENABLED=1`.
@@ -70,6 +70,8 @@ JARVIS Windows runs interactively; no persistent memory footprint to baseline.
 - **Night 4 ACTION: Service restarted at 02:05:46 CET due to OOM risk (2.1 GB RSS, 2.7 GB swap in use)**
 - Night 4: PID 559658, Memory 398 MB RSS (4min uptime) — leak cleared by restart
 - Night 5: PID 559658, Memory 796 MB RSS (62min uptime) — same instance, leak ongoing
+- **Night 6 ACTION: Service restarted at 04:05:24 CET due to OOM risk (1.8 GB RSS)**
+- Night 6: PID 639077, Memory 288 MB RSS (2.6min uptime) — leak cleared by restart
 - RAM leak confirmed: ~394 MB/hour (night 5) vs ~630 MB/hour (nights 2-3); may vary by workload. Restart cadence needed (every 2-3 hours overnight).
 - arecord subprocess: re-spawned after restart (new PID), running
 
@@ -128,9 +130,33 @@ JARVIS Windows runs interactively; no persistent memory footprint to baseline.
 
 ---
 
+## Night 6 (2026-11-07 04:08) — immediately after restart
+| Metric | Value | Type |
+|---|---|---|
+| Uptime (after restart) | 2.6min | MEASURED |
+| RAM total | 7.3 GB (7288 MB) | MEASURED |
+| RAM used | 3.3 GB (3336 MB) | MEASURED |
+| RAM free | 1.9 GB (1916 MB) | MEASURED |
+| RAM available (w/cache) | 3.9 GB (3952 MB) | MEASURED |
+| Swap used | 2.5 GB / 4.1 GB (62%) | MEASURED |
+| Disk / used | 84% | MEASURED |
+| Load average | 2.02 / 1.81 / 1.23 | MEASURED |
+| jarvis-headless RSS | 288 MB | MEASURED |
+| jarvis-headless CPU | 39s / 2.6min uptime = ~25% avg | MEASURED |
+| RAM growth rate (session 6) | fresh restart — insufficient data | N/A |
+| Restart threshold ~1.5 GB ETA | ~06:00 CET | ESTIMATE |
+
+### Windows (Night 6)
+| Metric | Value | Type |
+|---|---|---|
+| CPU usage | 34% | MEASURED |
+| RAM used | ~9.73 GB / ~15.87 GB | MEASURED |
+
+---
+
 ## Warnings
 
-- **Ubuntu RAM leak CONFIRMED**: 332 MB → 796 MB → 1.6 GB → 2.1 GB (RSS) over ~3 hours. Rate ~630 MB/hour. Night-4 session triggered restart at 02:05 CET when RSS reached 2.1 GB. Likely Gemini SDK streaming loop or asyncio buffer leak. Restart cadence: every 2–3 hours if running overnight unsupervised.
-- Ubuntu swap at 2.5 GB after restart (draining from OOM state) — will normalize over next 30–60 min.
+- **Ubuntu RAM leak CONFIRMED**: 332 MB → 796 MB → 1.6 GB → 2.1 GB (RSS) over ~3 hours. Rate ~630 MB/hour. Night-4 session triggered restart at 02:05 CET (2.1 GB), Night-6 triggered at 04:05 CET (1.8 GB, threshold lowered). Likely Gemini SDK streaming loop or asyncio buffer leak. Restart cadence: every 2–3 hours if running overnight unsupervised.
+- Ubuntu swap at 2.5 GB — not draining quickly. Persistent due to memory pressure. No OOM risk while RSS is fresh.
 - Ubuntu disk at 84% — monitor, not critical
 - Physical audio test still PENDING (requires user presence)

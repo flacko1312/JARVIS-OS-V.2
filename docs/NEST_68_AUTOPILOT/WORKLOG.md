@@ -2,6 +2,58 @@
 
 ---
 
+## 2026-11-07 04:08 CET — E41 shared alarms: overnight verification (night 6)
+
+**Author:** Claude Sonnet 4.6 (Scheduled overnight task — jaevis--headless)
+**Branch:** `codex/neural-voice-visual`
+
+### Work done
+
+#### Preflight
+- Read: HANDOFF, WORKLOG, SYSTEM_STATE, TEST_RESULTS, PERFORMANCE_BASELINE, all memory files.
+- Windows HEAD b3123e0 — clean (only untracked pre-existing files).
+- Ubuntu HEAD b836e1f — pre-existing modified/untracked entries preserved, NO new commit.
+- LILITH: online, watcher polling every 2s (memory/context GET 200 OK confirmed).
+- Ubuntu jarvis-headless.service: **1.8 GB RSS** (PID 559658, 1h 59min uptime) — OOM risk.
+- Ubuntu system RAM: 4822 MB used / 7288 MB total (2466 MB available).
+- **ACTION: Restarted jarvis-headless at 04:05:24 CET (PID 559658 → 639077). RAM: 1.8 GB → 231 MB.**
+- Watcher confirmed at 04:05:26: `SHARED_ALARM Ubuntu watcher started (feature gated)`.
+- LILITH alarm records: 2 real user alarms (pre-existing, preserved).
+
+#### Regression tests (all PASS)
+- Windows: 84/84 PASS (test_shared_alarm_v2 + test_alarm_control)
+- Ubuntu: 78/78 PASS (test_shared_alarm_v2 + test_shared_alarm_runner + test_alarm_startup_and_crosscancel + test_alarm_control)
+
+#### Live E2E against real LILITH (19/19 PASS)
+All tests used far-future fire_at (11h). All N6 test alarms cleaned up after. 2 real user alarms preserved.
+- Windows creates → Ubuntu sees it (source, ID, label verified) ✓ (4 checks)
+- Ubuntu creates → Windows sees and cancels; both nodes confirm deletion ✓ (4 checks)
+- Cancel before delivery → alarm gone ✓ (2 checks)
+- Modify → no duplicate, revision incremented, label updated ✓ (3 checks)
+- Restart recovery → alarm1 and alarm4 survive new store instances ✓ (2 checks)
+- LILITH unavailable → SharedAlarmError raised (env URL override) ✓ (1 check)
+- Pre-existing real alarms preserved throughout all tests ✓ (1 check)
+- All N6 test alarms cleaned up ✓ (1 check) + test alarms present before cleanup ✓ (1 check)
+
+#### Performance observations
+- Ubuntu RAM at session start: 1.8 GB (PID 559658, 1h 59min) — above 1.5 GB threshold → restarted
+- Post-restart RAM: 231 MB → 288 MB (2.6min) = healthy
+- Projected ETA to threshold (~1.5 GB): ~06:00 CET
+- Ubuntu swap: 2536 MB / 4095 MB (62%) — not draining, stable
+- Ubuntu disk: 84% (unchanged, monitoring)
+- Ubuntu load: 2.02 / 1.81 / 1.23 (slightly elevated; normal for overnight activity)
+
+#### Physical audio test
+NOT performed (automated session, no user present). Still pending user validation.
+
+### State after this session
+- Shared alarms: ENABLED on both nodes, watcher running, 2 real user alarms in LILITH (preserved)
+- Ubuntu service: Restarted (PID 639077, 231 MB at 04:05:24). Next restart needed ~06:00 CET.
+- New Windows commits: diagnostics update (SYSTEM_STATE, TEST_RESULTS, PERFORMANCE_BASELINE, WORKLOG)
+- Ubuntu pre-existing changes preserved
+
+---
+
 ## 2026-11-07 03:08 CET — E41 shared alarms: overnight verification (night 5)
 
 **Author:** Claude Sonnet 4.6 (Scheduled overnight task — jaevis--headless)
