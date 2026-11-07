@@ -104,6 +104,11 @@ class LilithBridge:
         except Exception:  # noqa: BLE001
             return False
 
+    @property
+    def client(self):
+        """Underlying LilithClient (for M7 and other direct API calls)."""
+        return getattr(self._runtime, "client", None)
+
     async def start(self) -> bool:
         """Start the runtime/monitor. Never raises; LILITH offline is not an error."""
         try:

@@ -21,6 +21,7 @@ from lilith_client.errors import (
 logger = logging.getLogger("jarvis.lilith_client")
 
 _INTEGRATION = "/api/v1/integration"
+_SHARED_CONVERSATIONS = "/api/v1/shared-conversations"
 
 
 class LilithClient:
@@ -400,3 +401,35 @@ class LilithClient:
             "POST", f"{_INTEGRATION}/home/resolve-approval",
             json={"token": token, "resolution": resolution},
         )
+
+    # M7: Core owns shared text sessions; Windows owns its local audio stream.
+    async def create_shared_conversation_session(self) -> dict:
+        """Start a deliberate new logical conversation in LILITH Core."""
+        return await self._request("POST", f"{_SHARED_CONVERSATIONS}/sessions")
+
+    async def resume_shared_conversation_session(self) -> dict:
+        """Find or create the shared session for the authenticated owner."""
+        return await self._request("POST", f"{_SHARED_CONVERSATIONS}/sessions/resume")
+
+    async def append_shared_conversation_turn(
+        self, *, session_id: str, turn_id: str, correlation_id: str,
+        channel: str, role: str, text: str, occurred_at: str,
+    ) -> dict:
+        """Append a channel-labelled turn; identity and order belong to Core."""
+        return await self._request(
+            "POST", f"{_SHARED_CONVERSATIONS}/turns",
+            json={
+                "session_id": session_id, "turn_id": turn_id,
+                "correlation_id": correlation_id, "channel": channel,
+                "role": role, "text": text, "occurred_at": occurred_at,
+            },
+        )
+
+    async def get_shared_conversation_turns(
+        self, session_id: str, *, limit: int = 100,
+    ) -> list[dict]:
+        """Read a bounded set of turns from Core; no Windows memory duplicate."""
+        result = await self._request(
+            "GET", f"{_SHARED_CONVERSATIONS}/sessions/{session_id}/turns?limit={limit}",
+        )
+        return list(result.get("turns", []))

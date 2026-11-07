@@ -25,6 +25,7 @@ from google.genai import types
 from api import status as jarvis_status
 from core.jarvis_client import JarvisClient
 from core.lilith_gateway import LilithBridge
+from core.shared_conversation_writer import SharedConversationWriter
 from memory.memory_manager import (
     load_memory, format_memory_for_prompt,
 )
@@ -3062,6 +3063,8 @@ class JarvisLive:
         self._tour_active = False
         # JL-W003: optional LILITH bridge for typed input (None when not configured).
         self._lilith: LilithBridge | None = None
+        # M7: optional Core-owned shared conversation writer (None when not configured/enabled).
+        self._m7_writer: SharedConversationWriter | None = None
         self.ui.on_conversation_toggle = self.toggle_conversation
         self.ui.on_audio_devices_request = self.audio_devices_snapshot
         self.ui.on_audio_input_select = self.select_audio_input
@@ -3232,6 +3235,49 @@ class JarvisLive:
             self._conversation_metadata = dict(updated["metadata"])
             self._persist_conversation_state()
 
+    # ── M7: Core-owned shared conversation ──────────────────────────────
+
+    def _schedule_m7_turn(self, role: str, text: str) -> None:
+        """Schedule a fire-and-forget M7 Core write; never blocks the voice pipeline."""
+        writer = getattr(self, "_m7_writer", None)
+        if writer is None or not text:
+            return
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(writer.write_turn(role, text))
+        except RuntimeError:
+            pass
+
+    async def _restore_core_history_if_needed(self) -> None:
+        """Populate local continuity from Core when connecting on a device with no local history."""
+        writer = getattr(self, "_m7_writer", None)
+        if writer is None:
+            return
+        if self._conversation_continuity:
+            return  # local store already has history; don't overwrite
+        try:
+            core_turns = await writer.fetch_history(limit=50)
+        except Exception:
+            return
+        if not core_turns:
+            return
+        # Map Core turn format → local continuity format
+        mapped: list[dict] = []
+        for t in core_turns:
+            role = str(t.get("role") or "")
+            text = str(t.get("text") or "").strip()
+            if role in ("user", "assistant") and text:
+                mapped.append({"role": role, "text": text})
+        if mapped:
+            with self._conversation_lock:
+                if not self._conversation_continuity:  # still empty under lock
+                    self._conversation_continuity = mapped
+                    self._logical_conversation_started = True
+                    self._resume_from_local_continuity = True
+            logger.info("M7: restored %d turns from Core for cross-device continuity", len(mapped))
+
+    # ── end M7 ───────────────────────────────────────────────────────────
+
     def _remember_conversation_tool_result(
         self,
         tool: str,
@@ -3382,6 +3428,7 @@ class JarvisLive:
         self._last_input_transcript = self._current_input_transcript
         self._last_input_transcript_at = time.monotonic()
         self._remember_conversation_text("user", self._current_input_transcript)
+        self._schedule_m7_turn("user", self._current_input_transcript)
         outgoing_text = self._current_input_transcript
         authority = getattr(self, "_date_time_authority", None)
         if authority is None:
@@ -6139,6 +6186,7 @@ class JarvisLive:
                                         expected_conversation_id=receive_conversation_id,
                                         turn_id=live_turn_id,
                                     )
+                                    self._schedule_m7_turn("user", full_in)
                             in_buf = []
 
                             full_out = _dedupe_repeated_output(" ".join(out_buf).strip())
@@ -6150,6 +6198,7 @@ class JarvisLive:
                                     expected_conversation_id=receive_conversation_id,
                                     turn_id=live_turn_id,
                                 )
+                                self._schedule_m7_turn("assistant", full_out)
                             if (
                                 getattr(self, "_pending_self_quit", False)
                                 and (full_out or turn_had_audio)
@@ -6465,6 +6514,13 @@ class JarvisLive:
                     f"SYS: Integración con LILITH {state}." if started
                     else "SYS: Integración con LILITH no disponible."
                 )
+                # M7: initialize Core shared conversation writer after bridge is started.
+                channel = "ubuntu" if getattr(self, "headless", False) else "windows"
+                self._m7_writer = SharedConversationWriter.from_bridge(
+                    self._lilith, channel=channel,
+                )
+                if self._m7_writer is not None:
+                    self.ui.write_log(f"SYS: M7 conversación compartida activa (canal={channel}).")
         self._loop = asyncio.get_running_loop()
         if not self._conversation_requested.is_set():
             self._set_conversation_state(ConversationState.STANDBY)
@@ -6566,6 +6622,8 @@ class JarvisLive:
                     ConversationState.RECONNECTING if ever_connected
                     else ConversationState.CONNECTING
                 )
+                # M7: restore Core history on cross-device reconnect (before Gemini session opens).
+                await self._restore_core_history_if_needed()
                 # JL-M003: fetch LILITH personal knowledge for system-prompt injection.
                 lilith_ctx = None
                 bridge = getattr(self, "_lilith", None)
