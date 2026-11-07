@@ -32,6 +32,31 @@ source .env
 
 ---
 
+## Ubuntu jarvis-headless RAM leak (CONFIRMED as of night 4)
+
+**Symptom**: RSS grows ~630 MB/hour from baseline ~300 MB. After ~3 hours, OOM risk.
+
+**Confirmed rate**: 300 MB → 796 MB → 1.6 GB → 2.1 GB over 3 hours.
+
+**Root cause**: Unknown — likely Gemini SDK streaming buffer or asyncio watcher task accumulation. No crash observed; service continues to function until killed by OOM.
+
+**Mitigation**: Restart service when RSS exceeds ~1.5 GB or after 2–3 hours continuous uptime.
+
+```bash
+# Check current RAM
+systemctl --user status jarvis-headless.service | grep Memory
+
+# Safe restart (alarms persist in LILITH; watcher re-registers on startup)
+systemctl --user restart jarvis-headless.service
+
+# Verify watcher re-confirmed after restart
+journalctl --user-unit jarvis-headless.service -n 20 | grep SHARED_ALARM
+```
+
+**Note**: Alarms are stored in LILITH (not in memory), so restart does NOT lose pending alarms.
+
+---
+
 ## Shared alarm watcher not running
 
 Symptoms: Alarms created on Windows don't ring on Ubuntu.

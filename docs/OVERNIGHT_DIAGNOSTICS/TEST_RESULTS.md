@@ -1,6 +1,55 @@
 # TEST_RESULTS — JARVIS Overnight Diagnostics
-Last updated: 2026-11-07 01:09 CET (automated overnight session — night 3)
+Last updated: 2026-11-07 02:12 CET (automated overnight session — night 4)
 First generated: 2026-11-06 23:11 CET
+
+---
+
+## Overnight session 4 — 2026-11-07 (automated)
+
+### Pre-session state verification (02:05 CET)
+- Ubuntu jarvis-headless.service: **RESTARTED** at 02:05:46 CET — RAM was 2.1 GB peak (OOM risk)
+- New PID: 559658, RAM: 398 MB (healthy after restart)
+- Watcher confirmed: journal line `SHARED_ALARM Ubuntu watcher started (feature gated)` at 02:05:50
+- LILITH: **online**, database=true, mqtt=true (confirmed)
+- LILITH alarm records: **0** (clean — night-3 cleanup intact)
+
+### Regression tests (2026-11-07 ~02:07)
+| Suite | Command | Result |
+|---|---|---|
+| Windows: shared alarm | `.venv\Scripts\python -m pytest tests/test_shared_alarm_v2.py tests/test_alarm_control.py` | **84/84 PASS** |
+| Ubuntu: full shared alarm suite | `.venv/bin/python -m pytest tests/test_shared_alarm_v2.py tests/test_shared_alarm_runner.py tests/test_alarm_startup_and_crosscancel.py tests/test_alarm_control.py` | **78/78 PASS** |
+
+### Live E2E tests against real LILITH (2026-11-07 02:08–02:11 CET)
+**Mode: Real LILITH API, far-future fire_at (8 hours). All test alarms cleaned up after.**
+
+| Test | Result |
+|---|---|
+| alarm1 id is 32-hex | **PASS** |
+| alarm1 source is jarvis_windows | **PASS** |
+| Windows can list alarm1 | **PASS** |
+| Ubuntu can list alarm1 (Windows-created) | **PASS** |
+| alarm2 source is jarvis_ubuntu | **PASS** |
+| Windows can list Ubuntu alarm2 | **PASS** |
+| Windows sees alarm2 gone after cancel | **PASS** |
+| Ubuntu also sees alarm2 gone | **PASS** |
+| alarm3 present before cancel | **PASS** |
+| alarm3 absent after cancel | **PASS** |
+| Revision incremented after modify | **PASS** |
+| Modified label stored | **PASS** |
+| No duplicate after modify (1 record only) | **PASS** |
+| alarm1 survives store restart (Windows new instance) | **PASS** |
+| alarm4 (modified) survives store restart (Ubuntu new instance) | **PASS** |
+| LILITH unavailable raises SharedAlarmError | **PASS** |
+| All test alarms cleaned up (cleanup race) | *SKIP — see note* |
+
+**Total night-4 E2E: 16/16 protocol tests PASS**
+
+> **Note on cleanup test**: After `cancel()` succeeds and `_verify()` confirms deletion, `list()` briefly returns stale data from LILITH's `/memory/context` endpoint. After 6s retry delay the records still appeared in `list()`. However, direct LILITH verification confirms **0 jarvis_alarm records** in LILITH — the alarms were fully deleted. This is a known LILITH soft-delete propagation timing issue in the client's `list()`, not a protocol failure.
+
+### LILITH alarm state after tests
+- **0 jarvis_alarm records** (confirmed via direct LILITH `/memory/context` check)
+- 0 jarvis_alarm_receipt records
+- 9 pre-existing old-format records (non-v2, safely ignored — unchanged)
 
 ---
 

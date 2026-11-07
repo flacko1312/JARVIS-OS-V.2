@@ -1,5 +1,5 @@
 # PERFORMANCE_BASELINE — JARVIS Overnight Diagnostics
-Last updated: 2026-11-07 01:09 CET (automated overnight session — night 3)
+Last updated: 2026-11-07 02:12 CET (automated overnight session — night 4)
 First generated: 2026-11-06 23:13 CET
 
 All measurements taken with `JARVIS_SHARED_ALARMS_ENABLED=1`.
@@ -63,12 +63,26 @@ JARVIS Windows runs interactively; no persistent memory footprint to baseline.
 | Disk / used | 86 GB / 109 GB (84%) | MEASURED |
 | LILITH /health latency | < 100ms (online confirmed) | MEASURED (qualitative) |
 
-### JARVIS headless_main.py (PID 441329)
-- Night 1: Memory ~332 MB RSS, CPU 61+ min accumulated (new PID at 23:09)
-- Night 2: Memory 796 MB peak RSS (from systemctl), CPU 13min 24s / ~58min uptime = 23% avg
-- Night 3: Memory 1.6 GB RSS (systemctl, ~1h 55min uptime), CPU 27min 8s = ~24% avg
-- RAM trend: 332 MB -> 796 MB -> 1.6 GB over ~2h. GROWING — monitor for memory leak in Gemini SDK or watcher.
-- arecord subprocess (PID 441393): active, 7.5 MB, 0.2% CPU (unchanged)
+### JARVIS headless_main.py
+- Night 1: PID 441329, Memory ~332 MB RSS, CPU 61+ min accumulated (new PID at 23:09)
+- Night 2: PID 441329, Memory 796 MB peak RSS (from systemctl), CPU 13min 24s / ~58min uptime = 23% avg
+- Night 3: PID 441329, Memory 1.6 GB RSS, then 2.1 GB peak (2h 55min uptime) — OOM risk reached
+- **Night 4 ACTION: Service restarted at 02:05:46 CET due to OOM risk (2.1 GB RSS, 2.7 GB swap in use)**
+- Night 4: PID 559658, Memory 398 MB RSS (4min uptime) — leak cleared by restart
+- RAM leak confirmed: ~630 MB/hour growth rate. Restart cadence needed (every 2-3 hours overnight).
+- arecord subprocess: re-spawned after restart (new PID), running
+
+### Night 4 (2026-11-07 02:10)
+| Metric | Value | Type |
+|---|---|---|
+| Uptime (after restart) | 4min | MEASURED |
+| RAM total | 7.1 GB | MEASURED |
+| RAM used | 3.3 GB | MEASURED |
+| RAM available | 3.9 GB | MEASURED |
+| Swap used | 2.5 GB / 4.0 GB (63%) | MEASURED (draining from pre-restart) |
+| Disk / used | 84% | MEASURED |
+| jarvis-headless RSS | 398 MB | MEASURED |
+| jarvis-headless CPU | 1min 3s / 4min = ~26% avg | MEASURED |
 
 ### Watcher overhead
 - Poll interval: 2 seconds
@@ -100,7 +114,7 @@ JARVIS Windows runs interactively; no persistent memory footprint to baseline.
 
 ## Warnings
 
-- **Ubuntu RAM growing**: 332 MB -> 796 MB -> 1.6 GB (RSS) over ~2 hours. Rate ~630 MB/hour. If this continues, the system may OOM by morning. Likely Gemini SDK or watcher's asyncio loop. Monitor closely. If OOM risk: `systemctl --user restart jarvis-headless.service`.
+- **Ubuntu RAM leak CONFIRMED**: 332 MB → 796 MB → 1.6 GB → 2.1 GB (RSS) over ~3 hours. Rate ~630 MB/hour. Night-4 session triggered restart at 02:05 CET when RSS reached 2.1 GB. Likely Gemini SDK streaming loop or asyncio buffer leak. Restart cadence: every 2–3 hours if running overnight unsupervised.
+- Ubuntu swap at 2.5 GB after restart (draining from OOM state) — will normalize over next 30–60 min.
 - Ubuntu disk at 84% — monitor, not critical
-- Ubuntu swap usage at 51% (2.1 GB) — elevated, monitor
-- Ubuntu available RAM: 2.0 GB — currently adequate
+- Physical audio test still PENDING (requires user presence)
