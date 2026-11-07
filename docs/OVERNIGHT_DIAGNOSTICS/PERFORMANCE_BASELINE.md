@@ -154,9 +154,30 @@ JARVIS Windows runs interactively; no persistent memory footprint to baseline.
 
 ---
 
+## Night 7 (2026-11-07 05:04 CET) — session start (59min uptime since night-6 restart)
+| Metric | Value | Type |
+|---|---|---|
+| Uptime (since night-6 restart) | 59min | MEASURED |
+| RAM total | 7.3 GB (7288 MB) | MEASURED |
+| RAM used | 3.8 GB (3772 MB) | MEASURED |
+| RAM free | 1.4 GB (1400 MB) | MEASURED |
+| RAM available (w/cache) | 3.5 GB (3515 MB) | MEASURED |
+| Swap used | 2.4 GB / 4.1 GB (59%) | MEASURED |
+| jarvis-headless RSS | 777 MB (795856 KB) | MEASURED |
+| RAM growth rate (session 7 start) | 231 MB → 777 MB in 59min = **~555 MB/hour** | MEASURED |
+| Restart threshold ~1.5 GB ETA | ~06:28-06:41 CET | ESTIMATE |
+
+### Windows (Night 7)
+| Metric | Value | Type |
+|---|---|---|
+| LILITH /health | HTTP 200 (online) | MEASURED |
+| Feature flag | JARVIS_SHARED_ALARMS_ENABLED=1 | MEASURED |
+
+---
+
 ## Warnings
 
-- **Ubuntu RAM leak CONFIRMED**: 332 MB → 796 MB → 1.6 GB → 2.1 GB (RSS) over ~3 hours. Rate ~630 MB/hour. Night-4 session triggered restart at 02:05 CET (2.1 GB), Night-6 triggered at 04:05 CET (1.8 GB, threshold lowered). Likely Gemini SDK streaming loop or asyncio buffer leak. Restart cadence: every 2–3 hours if running overnight unsupervised.
-- Ubuntu swap at 2.5 GB — not draining quickly. Persistent due to memory pressure. No OOM risk while RSS is fresh.
+- **Ubuntu RAM leak CONFIRMED**: 332 MB → 796 MB → 1.6 GB → 2.1 GB (RSS) over ~3 hours. Rate ~555-630 MB/hour. Night-4 triggered restart at 02:05 CET (2.1 GB), Night-6 triggered at 04:05 CET (1.8 GB), threshold lowered to 1.5 GB. Restart cadence: every 2–3 hours overnight. Next restart ETA ~06:28-06:41 CET.
+- Ubuntu swap at 2.4 GB — slight improvement, still draining slowly. No OOM risk while RSS is fresh.
 - Ubuntu disk at 84% — monitor, not critical
 - Physical audio test still PENDING (requires user presence)

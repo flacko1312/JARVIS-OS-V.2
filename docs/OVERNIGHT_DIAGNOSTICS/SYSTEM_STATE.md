@@ -1,5 +1,5 @@
 # SYSTEM_STATE — JARVIS Overnight Diagnostics
-Last updated: 2026-11-07 04:08 CET (automated overnight session — night 6)
+Last updated: 2026-11-07 05:12 CET (automated overnight session — night 7)
 First generated: 2026-11-06 23:11 CET
 
 ---
@@ -11,7 +11,7 @@ First generated: 2026-11-06 23:11 CET
 | Hostname | flako |
 | OS | Windows 11 Home |
 | Branch | codex/neural-voice-visual |
-| HEAD commit | b3123e0 docs(alarm): overnight verification night 5 — 19/19 E2E PASS + RAM stable |
+| HEAD commit | 67680f1 docs(alarm): overnight verification night 6 — 19/19 E2E PASS + RAM restart 1.8 GB → 231 MB |
 | Working tree | Clean (only untracked: VOICE_CHECK_2026-11-06.md, lilith_client/*.bak, logs/) |
 | Untracked | VOICE_CHECK_2026-11-06.md, lilith_client/adapter_connector.py.bak.m3_20261106, logs/ |
 
@@ -47,13 +47,14 @@ GEMINI_VOICE_NAME=puck
 | Service | jarvis-headless.service (systemd --user) |
 | PID | 639077 (restarted night 6 at 04:05:24 CET — previous PID 559658 killed due to 1.8 GB RAM leak) |
 | Running since | 2026-11-07 04:05:24 CET |
-| CPU (accumulated) | 39s / 2.6min uptime = ~24% avg |
-| RAM (RSS) | 288 MB at 04:08 CET (fresh after restart; threshold ~1.5 GB ETA ~06:00 CET) |
+| CPU (accumulated) | 14min 13s / 59min uptime = ~24% avg |
+| RAM (RSS) | 777 MB at 05:04 CET (59min uptime; growth ~555 MB/hr; threshold ~1.5 GB ETA ~06:28-06:41 CET) |
 
 ### Active services
 | Service | Port | State |
 |---|---|---|
 | jarvis-headless | 7471 (HTTP gateway) | active/running |
+| jarvis-neural-telemetry | - | active/running |
 | LILITH Core | 8000 | online (db=true, mqtt=true) |
 | chat-api | - | running |
 | jarvis-telegram | - | running |
