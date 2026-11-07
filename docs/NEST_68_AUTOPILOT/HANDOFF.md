@@ -468,3 +468,13 @@ ORS_API_KEY=                              FALTA — usuario debe registrar
 - Clasificacion E41: operativo local en ambos; COORDINACION COMPARTIDA NO IMPLEMENTADA. Riesgo real: PC Windows suspendido/apagado no anuncia su alarma desde Ubuntu.
 - Plan bloqueado por arquitectura: autoridad LILITH debe mantener el registro compartido y la entrega idempotente de eventos; no se permite modificar LILITH Core. Antes de implementar, definir API autorizada para crear/listar/cancelar alarmas, identificador unico, reintentos, ACK y politica de dispositivos. Preparar mocks aislados en JARVIS sin desplegar hasta autorizacion. No apuntar ambos hosts a un fichero compartido por SMB sin bloqueo/consistencia.
 - Ninguna alarma real modificada, ningun servicio reiniciado, sin audio ni cambios en LILITH/HA/SOAK.
+
+
+## 2026-11-07 06:15 CET — E41: correccion de consumo HTTP del watcher Ubuntu
+- Comprobado que el vigilante Ubuntu consultaba LILITH /memory/context cada ~2 s creando un nuevo cliente `httpx.Client` por consulta.
+- Benchmark read-only aislado contra API existente, 150 GET: cliente nuevo maxRSS 21.2->143.1 MB (+121.9); cliente persistente 34.1->38.1 MB (+4.0). Son maximos RSS de procesos distintos; el diagnostico de fuga total requiere seguimiento prolongado.
+- En JARVIS Ubuntu, commit `cde8fbd`: `SharedAlarmStore.persistent()`, cliente HTTP reutilizable para el watcher, cierre en finally y recuperacion tras desconexion; pruebas hermeticas añadidas en `tests/test_shared_alarm_http_pool.py`.
+- Regresion dirigida Ubuntu 97/97 PASS; AST y git diff --check OK. Contrato LILITH, configuracion de alarmas, intervalos y sonido sin cambios.
+- NO se ha reiniciado JARVIS Ubuntu, NO se han modificado alarmas reales ni LILITH Core, HA, APK, SOAK o credenciales. El proceso actual sigue usando codigo antiguo hasta un reinicio expresamente autorizado.
+- E41: software compartido implementado; quedaran despliegue del parche con autorizacion, estabilidad prolongada y prueba fisica del altavoz Ubuntu. Sin cambio de porcentaje por pruebas simuladas.
+- Informe: `/home/flako1312/jarvis-headless/docs/ALARM_HTTP_POOL_2026-11-07.md`.
